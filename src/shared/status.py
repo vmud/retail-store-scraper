@@ -110,6 +110,9 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
         "phase4_extract": {"name": "Extract Details", "total": 0, "completed": 0, "status": "pending", "last_updated": None},
     }
     
+    # Track store count for Phase 4 (stores to extract)
+    store_count = 0
+    
     # Phase 1: States
     states_path = get_checkpoint_path(retailer, "states")
     if states_path.exists():
@@ -156,14 +159,17 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
             if isinstance(stores_data, dict):
                 stores = stores_data.get('stores', [])
                 completed_cities = stores_data.get('completed_cities', [])
-                phases["phase3_urls"]["total"] = len(stores) if stores else 0
+                total_cities = stores_data.get('total_cities', 0)
+                store_count = len(stores)
+                
+                phases["phase3_urls"]["total"] = total_cities
                 phases["phase3_urls"]["completed"] = len(completed_cities)
                 phases["phase3_urls"]["status"] = "in_progress" if completed_cities else "pending"
                 phases["phase3_urls"]["last_updated"] = datetime.fromtimestamp(
                     stores_path.stat().st_mtime
                 ).isoformat()
                 
-                if len(stores) > 0 and len(completed_cities) >= len(stores):
+                if total_cities > 0 and len(completed_cities) >= total_cities:
                     phases["phase3_urls"]["status"] = "complete"
         except Exception:
             pass
@@ -181,9 +187,9 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
                 output_path.stat().st_mtime
             ).isoformat()
             
-            if phases["phase3_urls"]["total"] > 0:
-                phases["phase4_extract"]["total"] = phases["phase3_urls"]["total"]
-                if count >= phases["phase3_urls"]["total"]:
+            if store_count > 0:
+                phases["phase4_extract"]["total"] = store_count
+                if count >= store_count:
                     phases["phase4_extract"]["status"] = "complete"
         except Exception:
             pass
