@@ -5,7 +5,23 @@
       "Bash(tree:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(git checkout:*)",
+      "Skill(frontend-design)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(git push:*)",
+      "Bash(curl:*)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "Bash(open http://localhost:5001/)",
+      "mcp__kapture__list_tabs",
+      "mcp__kapture__navigate",
+      "mcp__kapture__show",
+      "mcp__kapture__screenshot",
+      "mcp__kapture__keypress",
+      "mcp__kapture__click",
+      "mcp__kapture__reload",
+      "Bash(gh pr create:*)"
     ]
   }
 }
