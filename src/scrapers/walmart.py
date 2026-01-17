@@ -279,3 +279,41 @@ def reset_request_counter() -> None:
 def get_request_count() -> int:
     """Get current request count"""
     return _request_counter.count
+
+
+def run(session, config: dict, **kwargs) -> dict:
+    """Standard scraper entry point.
+    
+    Args:
+        session: Configured session (requests.Session or ProxyClient)
+        config: Retailer configuration dict from retailers.yaml
+        **kwargs: Additional options
+            - resume: bool - Resume from checkpoint
+            - limit: int - Max stores to process
+            - incremental: bool - Only process changes
+    
+    Returns:
+        dict with keys:
+            - stores: List[dict] - Scraped store data
+            - count: int - Number of stores processed
+            - checkpoints_used: bool - Whether resume was used
+    """
+    limit = kwargs.get('limit')
+    
+    reset_request_counter()
+    
+    store_urls = get_store_urls_from_sitemap(session)
+    if limit:
+        store_urls = store_urls[:limit]
+    
+    stores = []
+    for url in store_urls:
+        store_obj = extract_store_details(session, url)
+        if store_obj:
+            stores.append(store_obj.to_dict())
+    
+    return {
+        'stores': stores,
+        'count': len(stores),
+        'checkpoints_used': False
+    }

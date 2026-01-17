@@ -31,7 +31,8 @@ Do not make assumptions on important decisions — get clarification first.
 
 ---
 
-### [ ] Step: Implement Reference Scraper
+### [x] Step: Implement Reference Scraper
+<!-- chat-id: c5112f0a-f3a4-48ea-acf1-389a39f25db5 -->
 
 Implement the `run()` function in one scraper as a reference implementation.
 
@@ -42,8 +43,8 @@ Implement the `run()` function in one scraper as a reference implementation.
 - Return dict with `stores`, `count`, `checkpoints_used`
 
 **Verification**: 
-- Syntax check: `python -m py_compile src/scrapers/walmart.py`
-- Read code to verify interface matches spec
+- Syntax check: `python -m py_compile src/scrapers/walmart.py` ✓
+- Read code to verify interface matches spec ✓
 
 ---
 
