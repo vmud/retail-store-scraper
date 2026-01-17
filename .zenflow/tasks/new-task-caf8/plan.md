@@ -416,6 +416,7 @@ CSS Additions:
 ---
 
 ### [ ] Step: Polish & Documentation
+<!-- chat-id: e307f8b8-61b2-42fa-90c4-ecb2926ebc6b -->
 
 Final improvements and user documentation.
 
