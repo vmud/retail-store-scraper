@@ -280,7 +280,8 @@ def _looks_like_service_name(text: str) -> bool:
         'location', 'hours', 'contact', 'phone', 'address', 'directions',
         'map', 'find', 'search', 'menu', 'home', 'back', 'next', 'previous',
         'services offered', 'service', 'offered', 'available', 'see all',
-        'specialty shops', 'shops and', 'and more', 'experience only'
+        'specialty shops', 'shops and', 'and more', 'experience only',
+        'and', 'or', '&', 'services and', 'experience and'
     }
 
     # Skip if it's a generic phrase
@@ -372,6 +373,11 @@ def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
         seen_urls = set()
 
         for url in urls:
+            # Skip state directory pages (pattern: /[state-code].html)
+            if re.match(r'https://stores\.bestbuy\.com/[a-z]{2}\.html$', url):
+                logging.debug(f"Skipping state directory: {url}")
+                continue
+            
             # Skip non-store URLs (404 pages, etc.)
             if '/404.html' in url or not url.endswith('.html'):
                 continue
@@ -607,7 +613,7 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
         return None
 
 
-def _parse_store_data_legacy(store_data: Dict[str, Any], store_id: str) -> Optional[BestBuyStore]:
+def _parse_store_data_legacy(store_data: Dict[str, Any], store_id: str, url: str = None) -> Optional[BestBuyStore]:
     """Parse API response data to BestBuyStore object.
 
     Args:
@@ -645,8 +651,9 @@ def _parse_store_data_legacy(store_data: Dict[str, Any], store_id: str) -> Optio
         has_pickup = store_data.get('hasPickup', False)
         curbside_enabled = store_data.get('curbsideEnabled', False)
 
-        # Build store URL
-        store_url = f"https://stores.bestbuy.com/{store_id}.html"
+        # Use the actual URL if provided, otherwise construct from store_id
+        # This preserves the full URL path which may differ from store_id.html pattern
+        store_url = url if url else f"https://stores.bestbuy.com/{store_id}.html"
 
         # Create BestBuyStore object
         store = BestBuyStore(
