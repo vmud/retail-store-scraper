@@ -177,7 +177,7 @@ function updateGlobalStatus(data) {
             ${activeCount} Scraper${activeCount > 1 ? 's' : ''} Running
         `;
     } else {
-        globalStatusEl.className = 'global-status';
+        globalStatusEl.className = 'global-status inactive';
         globalStatusEl.innerHTML = 'All Scrapers Idle';
     }
 }

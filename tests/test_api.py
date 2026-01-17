@@ -99,7 +99,7 @@ class TestAPIEndpoints:
         """Test that invalid YAML syntax returns 400"""
         invalid_yaml = "retailers:\n  verizon:\n    - invalid syntax ["
         response = client.post('/api/config',
-                              json={'config': invalid_yaml},
+                              json={'content': invalid_yaml},
                               content_type='application/json')
         assert response.status_code == 400
         data = response.get_json()
