@@ -36,6 +36,26 @@ from .proxy_client import (
     create_proxy_client,
 )
 
+from .scraper_manager import (
+    ScraperManager,
+    get_scraper_manager,
+)
+
+from .run_tracker import (
+    RunTracker,
+    get_run_history,
+    get_latest_run,
+    get_active_run,
+    cleanup_old_runs,
+)
+
+from .status import (
+    get_retailer_status,
+    get_all_retailers_status,
+    get_progress_status,
+    load_retailers_config,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -68,4 +88,18 @@ __all__ = [
     # Per-retailer proxy configuration
     'get_retailer_proxy_config',
     'load_retailer_config',
+    # Scraper management
+    'ScraperManager',
+    'get_scraper_manager',
+    # Run tracking
+    'RunTracker',
+    'get_run_history',
+    'get_latest_run',
+    'get_active_run',
+    'cleanup_old_runs',
+    # Status tracking
+    'get_retailer_status',
+    'get_all_retailers_status',
+    'get_progress_status',
+    'load_retailers_config',
 ]

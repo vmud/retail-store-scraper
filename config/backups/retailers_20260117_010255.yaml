@@ -1,0 +1,236 @@
+# Dashboard configuration test
+# Multi-Retailer Store Scraper Configuration
+# This file contains configuration for all supported retailers
+
+# =============================================================================
+# PROXY CONFIGURATION (Oxylabs Integration)
+# =============================================================================
+# Credentials are loaded from environment variables:
+#   OXYLABS_USERNAME - Your Oxylabs username
+#   OXYLABS_PASSWORD - Your Oxylabs password
+#
+# Modes:
+#   direct          - No proxy (default, use built-in delays)
+#   residential     - Oxylabs Residential Proxies (175M+ IPs)
+#   web_scraper_api - Oxylabs Web Scraper API (managed service)
+# =============================================================================
+
+proxy:
+  # Global proxy settings (can be overridden per retailer)
+  mode: "direct"  # Options: direct, residential, web_scraper_api
+
+  # Residential proxy settings
+  residential:
+    endpoint: "pr.oxylabs.io:7777"
+    country_code: "us"
+    session_type: "rotating"  # rotating or sticky
+
+  # Web Scraper API settings
+  web_scraper_api:
+    endpoint: "https://realtime.oxylabs.io/v1/queries"
+    render_js: false    # Enable for JS-heavy sites (Walmart, etc.)
+    parse: false        # Return parsed JSON instead of HTML
+
+  # Request settings when using proxies
+  timeout: 60
+  max_retries: 3
+  retry_delay: 2.0
+
+# =============================================================================
+# DEFAULT SETTINGS
+# =============================================================================
+# Can be overridden per retailer
+
+defaults:
+  min_delay: 2.0
+  max_delay: 5.0
+  max_retries: 3
+  timeout: 30
+  rate_limit_base_wait: 30
+  pause_50_requests: 50
+  pause_50_min: 30
+  pause_50_max: 60
+  pause_200_requests: 200
+  pause_200_min: 120
+  pause_200_max: 180
+  checkpoint_interval: 100
+
+# Retailer-specific configurations
+retailers:
+  verizon:
+    name: "Verizon"
+    enabled: true
+    base_url: "https://www.verizon.com"
+    # Verizon uses 4-phase discovery (no sitemap)
+    sitemap_urls: []
+    discovery_method: "html_crawl"
+    min_delay: 2.0
+    max_delay: 5.0
+    checkpoint_interval: 10
+    # Proxy override: Verizon works well with residential proxies
+    # proxy:
+    #   mode: "residential"
+    #   render_js: false
+    output_fields:
+      - name
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - url
+      - scraped_at
+
+  att:
+    name: "AT&T"
+    enabled: true
+    base_url: "https://www.att.com"
+    sitemap_urls:
+      - "https://www.att.com/stores/sitemap_0.xml"
+    discovery_method: "sitemap"
+    min_delay: 0.5
+    max_delay: 1.0
+    checkpoint_interval: 100
+    output_fields:
+      - store_id
+      - name
+      - telephone
+      - street_address
+      - city
+      - state
+      - postal_code
+      - country
+      - rating_value
+      - rating_count
+      - url
+      - scraped_at
+
+  target:
+    name: "Target"
+    enabled: true
+    base_url: "https://www.target.com"
+    sitemap_urls:
+      - "https://www.target.com/store-locator/sitemap.xml.gz"
+    discovery_method: "sitemap_gzip"
+    api_url: "https://redsky.target.com/redsky_aggregations/v1/web/store_location_v1"
+    min_delay: 0.1
+    max_delay: 0.5
+    checkpoint_interval: 100
+    output_fields:
+      - store_id
+      - name
+      - status
+      - format
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - capabilities
+      - building_area
+      - url
+      - scraped_at
+
+  tmobile:
+    name: "T-Mobile"
+    enabled: true
+    base_url: "https://www.t-mobile.com"
+    sitemap_urls:
+      - "https://www.t-mobile.com/stores/sitemap1.xml"
+      - "https://www.t-mobile.com/stores/sitemap2.xml"
+    discovery_method: "sitemap_paginated"
+    min_delay: 0.5
+    max_delay: 1.0
+    checkpoint_interval: 100
+    output_fields:
+      - store_id
+      - branch_code
+      - name
+      - store_type
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - opening_hours
+      - url
+      - scraped_at
+
+  walmart:
+    name: "Walmart"
+    enabled: true
+    base_url: "https://www.walmart.com"
+    sitemap_urls:
+      - "https://www.walmart.com/store/sitemap_store_supercenter.xml.gz"
+      - "https://www.walmart.com/store/sitemap_store_discount.xml.gz"
+      - "https://www.walmart.com/store/sitemap_store_neighborhood.xml.gz"
+      - "https://www.walmart.com/store/sitemap_store_other.xml.gz"
+    discovery_method: "sitemap_gzip"
+    min_delay: 1.0
+    max_delay: 2.0
+    checkpoint_interval: 100
+    # Proxy override: Walmart uses __NEXT_DATA__ which benefits from JS rendering
+    # proxy:
+    #   mode: "web_scraper_api"
+    #   render_js: true
+    output_fields:
+      - store_id
+      - name
+      - store_type
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - capabilities
+      - is_glass_eligible
+      - url
+      - scraped_at
+
+  bestbuy:
+    name: "Best Buy"
+    enabled: false  # WIP
+    base_url: "https://www.bestbuy.com"
+    sitemap_urls:
+      - "https://stores.bestbuy.com/sitemap1.xml"
+    discovery_method: "sitemap"
+    batch_size: 50
+    min_delay: 0.5
+    max_delay: 1.0
+    checkpoint_interval: 100
+    # Proxy override: Best Buy has stronger anti-bot, recommend Web Scraper API
+    # proxy:
+    #   mode: "web_scraper_api"
+    #   render_js: true
+    output_fields:
+      - store_id
+      - name
+      - status
+      - store_type
+      - display_name
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - services
+      - hours
+      - has_pickup
+      - curbside_enabled
+      - url
+      - scraped_at

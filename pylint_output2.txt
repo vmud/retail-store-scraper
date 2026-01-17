@@ -1,0 +1,340 @@
+************* Module src.change_detector
+src/change_detector.py:214:9: E0001: Parsing failed: 'invalid syntax (src.change_detector, line 214)' (syntax-error)
+************* Module src.scrapers.att
+src/scrapers/att.py:65:85: E0001: Parsing failed: 'invalid decimal literal (src.scrapers.att, line 65)' (syntax-error)
+************* Module src.scrapers.bestbuy
+src/scrapers/bestbuy.py:336:85: E0001: Parsing failed: 'invalid decimal literal (src.scrapers.bestbuy, line 336)' (syntax-error)
+************* Module src.scrapers.target
+src/scrapers/target.py:89:85: E0001: Parsing failed: 'invalid decimal literal (src.scrapers.target, line 89)' (syntax-error)
+************* Module src.scrapers.tmobile
+src/scrapers/tmobile.py:77:85: E0001: Parsing failed: 'invalid decimal literal (src.scrapers.tmobile, line 77)' (syntax-error)
+************* Module src.scrapers.verizon
+src/scrapers/verizon.py:120:85: E0001: Parsing failed: 'invalid decimal literal (src.scrapers.verizon, line 120)' (syntax-error)
+************* Module src.scrapers.walmart
+src/scrapers/walmart.py:86:85: E0001: Parsing failed: 'invalid decimal literal (src.scrapers.walmart, line 86)' (syntax-error)
+************* Module src.shared.proxy_client
+src/shared/proxy_client.py:393:90: E0001: Parsing failed: 'invalid decimal literal (src.shared.proxy_client, line 393)' (syntax-error)
+************* Module src.shared.request_counter
+src/shared/request_counter.py:55:85: E0001: Parsing failed: 'invalid decimal literal (src.shared.request_counter, line 55)' (syntax-error)
+************* Module src.shared.utils
+src/shared/utils.py:79:48: E0001: Parsing failed: 'invalid decimal literal (src.shared.utils, line 79)' (syntax-error)
+************* Module app
+dashboard/app.py:10:0: C0413: Import "from flask import Flask, jsonify" should be placed at the top of the module (wrong-import-position)
+dashboard/app.py:11:0: C0413: Import "from src import status" should be placed at the top of the module (wrong-import-position)
+dashboard/app.py:11:0: E0611: No name 'status' in module 'src' (no-name-in-module)
+dashboard/app.py:297:11: W0718: Catching too general exception Exception (broad-exception-caught)
+************* Module run
+run.py:95:0: C0301: Line too long (106/100) (line-too-long)
+run.py:193:0: C0301: Line too long (104/100) (line-too-long)
+run.py:235:0: C0301: Line too long (110/100) (line-too-long)
+run.py:20:0: E0001: Cannot import 'src.shared.utils' due to 'invalid decimal literal (src.shared.utils, line 79)' (syntax-error)
+run.py:20:0: E0611: No name 'utils' in module 'src.shared' (no-name-in-module)
+run.py:187:15: W0718: Catching too general exception Exception (broad-exception-caught)
+run.py:148:0: E0001: Cannot import 'src.shared.utils' due to 'invalid decimal literal (src.shared.utils, line 79)' (syntax-error)
+run.py:148:12: C0415: Import outside toplevel (src.shared.utils.load_checkpoint) (import-outside-toplevel)
+run.py:148:12: E0611: No name 'utils' in module 'src.shared' (no-name-in-module)
+run.py:149:12: C0415: Import outside toplevel (os) (import-outside-toplevel)
+run.py:173:28: C0415: Import outside toplevel (json) (import-outside-toplevel)
+run.py:180:35: W0718: Catching too general exception Exception (broad-exception-caught)
+run.py:144:4: R1702: Too many nested blocks (7/5) (too-many-nested-blocks)
+run.py:135:0: R0912: Too many branches (15/12) (too-many-branches)
+run.py:148:12: W0611: Unused load_checkpoint imported from src.shared.utils (unused-import)
+run.py:225:11: W0718: Catching too general exception Exception (broad-exception-caught)
+run.py:207:0: E0001: Cannot import 'src.shared.utils' due to 'invalid decimal literal (src.shared.utils, line 79)' (syntax-error)
+run.py:207:8: C0415: Import outside toplevel (src.shared.utils.load_retailer_config, src.shared.utils.create_proxied_session) (import-outside-toplevel)
+run.py:207:8: E0611: No name 'utils' in module 'src.shared' (no-name-in-module)
+run.py:193:0: W0613: Unused argument 'kwargs' (unused-argument)
+run.py:266:0: R0914: Too many local variables (25/15) (too-many-locals)
+run.py:284:8: C0415: Import outside toplevel (src.shared.init_proxy_from_yaml, src.shared.get_proxy_client, src.shared.ProxyConfig, src.shared.ProxyMode) (import-outside-toplevel)
+run.py:285:8: C0415: Import outside toplevel (os) (import-outside-toplevel)
+run.py:337:15: W0718: Catching too general exception Exception (broad-exception-caught)
+run.py:335:12: C0415: Import outside toplevel (src.shared.init_proxy_from_yaml) (import-outside-toplevel)
+run.py:402:11: W0718: Catching too general exception Exception (broad-exception-caught)
+run.py:393:49: E0602: Undefined variable 'stores' (undefined-variable)
+run.py:407:0: E0001: Cannot import 'src.shared.utils' due to 'invalid decimal literal (src.shared.utils, line 79)' (syntax-error)
+run.py:407:8: C0415: Import outside toplevel (src.shared.utils.close_all_proxy_clients) (import-outside-toplevel)
+run.py:407:8: E0611: No name 'utils' in module 'src.shared' (no-name-in-module)
+run.py:266:0: R0911: Too many return statements (7/6) (too-many-return-statements)
+run.py:266:0: R0912: Too many branches (21/12) (too-many-branches)
+run.py:266:0: R0915: Too many statements (83/50) (too-many-statements)
+run.py:322:8: W0612: Unused variable 'proxy_config' (unused-variable)
+run.py:284:8: W0611: Unused get_proxy_client imported from src.shared (unused-import)
+run.py:284:8: W0611: Unused ProxyConfig imported from src.shared (unused-import)
+************* Module src.scrapers
+src/scrapers/__init__.py:21:4: C0415: Import outside toplevel (importlib) (import-outside-toplevel)
+************* Module src.shared.__init__
+src/shared/__init__.py:3:0: E0001: Cannot import 'utils' due to 'invalid decimal literal (src.shared.utils, line 79)' (syntax-error)
+src/shared/__init__.py:31:0: E0001: Cannot import 'proxy_client' due to 'invalid decimal literal (src.shared.proxy_client, line 393)' (syntax-error)
+************* Module src.shared.status
+src/shared/status.py:55:0: C0301: Line too long (110/100) (line-too-long)
+src/shared/status.py:79:0: C0301: Line too long (110/100) (line-too-long)
+src/shared/status.py:128:0: C0301: Line too long (106/100) (line-too-long)
+src/shared/status.py:17:0: R0914: Too many local variables (27/15) (too-many-locals)
+src/shared/status.py:43:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/shared/status.py:67:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/shared/status.py:91:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/shared/status.py:112:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/shared/status.py:136:4: C0415: Import outside toplevel (time) (import-outside-toplevel)
+src/shared/status.py:17:0: R0912: Too many branches (23/12) (too-many-branches)
+src/shared/status.py:17:0: R0915: Too many statements (83/50) (too-many-statements)
+src/shared/status.py:6:0: W0611: Unused Optional imported from typing (unused-import)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.att_config:[9:58]
+==config.tmobile_config:[9:58]
+USER_AGENTS = [
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+     "(KHTML, like Gecko) Version/17.1 Safari/605.1.15"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"),
+]
+
+# Default headers template
+def get_headers(user_agent=None):
+    """Get headers dict with optional user agent rotation"""
+    if user_agent is None:
+        user_agent = random.choice(USER_AGENTS)
+
+    return {
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": BASE_URL,
+    }
+
+# Delay constants (faster than Verizon)
+MIN_DELAY = 0.5  # Minimum delay between requests (seconds)
+MAX_DELAY = 1.0  # Maximum delay between requests (seconds)
+
+# Pause thresholds
+PAUSE_50_REQUESTS = 50  # Pause after this many requests
+PAUSE_50_MIN = 30  # Minimum pause duration (seconds)
+PAUSE_50_MAX = 60  # Maximum pause duration (seconds)
+
+PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
+PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
+PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+
+# Retry settings
+MAX_RETRIES = 3
+TIMEOUT = 30  # Request timeout in seconds
+
+# Rate limit handling
+RATE_LIMIT_BASE_WAIT = 30  # Base wait time for 429 errors (seconds)
+
+# Checkpoint settings
+CHECKPOINT_STORES_INTERVAL = 100  # Save checkpoint every N stores (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.att_config:[9:37]
+==config.verizon_config:[7:35]
+USER_AGENTS = [
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+     "(KHTML, like Gecko) Version/17.1 Safari/605.1.15"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"),
+]
+
+# Default headers template
+def get_headers(user_agent=None):
+    """Get headers dict with optional user agent rotation"""
+    if user_agent is None:
+        user_agent = random.choice(USER_AGENTS)
+
+    return {
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": BASE_URL,
+    }
+
+# Delay constants (faster than Verizon) (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.tmobile_config:[9:37]
+==config.walmart_config:[16:44]
+USER_AGENTS = [
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+     "(KHTML, like Gecko) Version/17.1 Safari/605.1.15"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"),
+]
+
+# Default headers template
+def get_headers(user_agent=None):
+    """Get headers dict with optional user agent rotation"""
+    if user_agent is None:
+        user_agent = random.choice(USER_AGENTS)
+
+    return {
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": BASE_URL,
+    }
+
+# Delay constants (faster than Verizon) (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.att_config:[9:28]
+==config.bestbuy_config:[9:28]
+USER_AGENTS = [
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+     "(KHTML, like Gecko) Version/17.1 Safari/605.1.15"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"),
+]
+
+# Default headers template
+def get_headers(user_agent=None):
+    """Get headers dict with optional user agent rotation"""
+    if user_agent is None:
+        user_agent = random.choice(USER_AGENTS)
+
+    return {
+        "User-Agent": user_agent, (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.att_config:[33:58]
+==config.bestbuy_config:[33:60]
+        "Referer": BASE_URL,
+    }
+
+# Delay constants (faster than Verizon)
+MIN_DELAY = 0.5  # Minimum delay between requests (seconds)
+MAX_DELAY = 1.0  # Maximum delay between requests (seconds)
+
+# Pause thresholds
+PAUSE_50_REQUESTS = 50  # Pause after this many requests
+PAUSE_50_MIN = 30  # Minimum pause duration (seconds)
+PAUSE_50_MAX = 60  # Maximum pause duration (seconds)
+
+PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
+PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
+PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+
+# Retry settings
+MAX_RETRIES = 3
+TIMEOUT = 30  # Request timeout in seconds
+
+# Rate limit handling
+RATE_LIMIT_BASE_WAIT = 30  # Base wait time for 429 errors (seconds)
+
+# Checkpoint settings
+CHECKPOINT_STORES_INTERVAL = 100  # Save checkpoint every N stores (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.bestbuy_config:[18:37]
+==config.target_config:[23:42]
+]
+
+# Default headers template
+def get_headers(user_agent=None):
+    """Get headers dict with optional user agent rotation"""
+    if user_agent is None:
+        user_agent = random.choice(USER_AGENTS)
+
+    return {
+        "User-Agent": user_agent,
+        "Accept": ("application/json, text/html,application/xhtml+xml,"
+                   "application/xml;q=0.9,*/*;q=0.8"),
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Referer": BASE_URL,
+    }
+
+# Delay constants (per spec: 0.5s between batches) (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.att_config:[41:58]
+==config.walmart_config:[48:65]
+PAUSE_50_REQUESTS = 50  # Pause after this many requests
+PAUSE_50_MIN = 30  # Minimum pause duration (seconds)
+PAUSE_50_MAX = 60  # Maximum pause duration (seconds)
+
+PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
+PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
+PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+
+# Retry settings
+MAX_RETRIES = 3
+TIMEOUT = 30  # Request timeout in seconds
+
+# Rate limit handling
+RATE_LIMIT_BASE_WAIT = 30  # Base wait time for 429 errors (seconds)
+
+# Checkpoint settings
+CHECKPOINT_STORES_INTERVAL = 100  # Save checkpoint every N stores (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.att_config:[41:57]
+==config.verizon_config:[39:55]
+PAUSE_50_REQUESTS = 50  # Pause after this many requests
+PAUSE_50_MIN = 30  # Minimum pause duration (seconds)
+PAUSE_50_MAX = 60  # Maximum pause duration (seconds)
+
+PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
+PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
+PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+
+# Retry settings
+MAX_RETRIES = 3
+TIMEOUT = 30  # Request timeout in seconds
+
+# Rate limit handling
+RATE_LIMIT_BASE_WAIT = 30  # Base wait time for 429 errors (seconds)
+
+# Checkpoint settings (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.att_config:[45:58]
+==config.target_config:[47:62]
+PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
+PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
+PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+
+# Retry settings
+MAX_RETRIES = 3
+TIMEOUT = 30  # Request timeout in seconds
+
+# Rate limit handling
+RATE_LIMIT_BASE_WAIT = 30  # Base wait time for 429 errors (seconds)
+
+# Checkpoint settings
+CHECKPOINT_STORES_INTERVAL = 100  # Save checkpoint every N stores (duplicate-code)
+src/shared/status.py:1:0: R0801: Similar lines in 2 files
+==config.target_config:[47:59]
+==config.verizon_config:[43:55]
+PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
+PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
+PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+
+# Retry settings
+MAX_RETRIES = 3
+TIMEOUT = 30  # Request timeout in seconds
+
+# Rate limit handling
+RATE_LIMIT_BASE_WAIT = 30  # Base wait time for 429 errors (seconds)
+
+# Checkpoint settings (duplicate-code)
+
+------------------------------------------------------------------
+Your code has been rated at 6.35/10 (previous run: 6.35/10, +0.00)
+
