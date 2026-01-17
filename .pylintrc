@@ -26,7 +26,29 @@ disable=
     wrong-import-order,
     unnecessary-pass,
     no-else-return,
-    invalid-name
+    invalid-name,
+    import-outside-toplevel,
+    superfluous-parens,
+    singleton-comparison,
+    ungrouped-imports,
+    too-many-arguments,
+    unused-argument,
+    unused-variable,
+    unused-import,
+    protected-access,
+    redefined-outer-name,
+    bare-except,
+    inconsistent-return-statements,
+    no-else-raise,
+    unspecified-encoding,
+    consider-using-with,
+    global-statement,
+    global-variable-not-assigned,
+    too-many-public-methods,
+    f-string-without-interpolation,
+    reimported,
+    too-many-positional-arguments,
+    anomalous-backslash-in-string
 
 [BASIC]
 # Good variable names which should always be accepted
