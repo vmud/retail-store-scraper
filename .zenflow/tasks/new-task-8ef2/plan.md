@@ -153,8 +153,14 @@ Run comprehensive tests across all retailers and modes.
 - ✅ Logs show proper session creation and mode selection
 - ✅ Checkpoint save/load working correctly
 
-**Bug Fixed During Testing**:
-- Fixed `utils.get_with_retry()` None response handling (line 131-133)
+**Bugs Fixed During Testing**:
+1. Fixed `utils.get_with_retry()` None response handling (utils.py:131-133)
+2. **CRITICAL**: Fixed directory mismatch between checkpoints and outputs
+   - Scrapers were using `config['name']` (display name) creating `data/at&t/`, `data/best buy/`
+   - run.py was using internal name creating `data/att/output/`, `data/bestbuy/output/`
+   - Fix: Pass internal `retailer` name to scrapers via kwargs
+   - Modified: run.py:223 + all 6 scrapers
+   - Verified: AT&T resume tested successfully (3→8 stores)
 
 **Known Issues (Non-Integration)**:
 - Walmart: Website structure changed (`__NEXT_DATA__` tag missing)

@@ -303,7 +303,7 @@ def run(session, config: dict, **kwargs) -> dict:
     
     reset_request_counter()
     
-    retailer_name = config.get('name', 'walmart').lower()
+    retailer_name = kwargs.get('retailer', 'walmart')
     checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
     checkpoint_interval = config.get('checkpoint_interval', 100)
     

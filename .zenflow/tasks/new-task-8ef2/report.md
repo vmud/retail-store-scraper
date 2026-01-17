@@ -1,12 +1,15 @@
 # Integration Testing Report
 **Date**: 2026-01-17  
-**Task**: Proxy Config Integration - Scraper Integration
+**Task**: Proxy Config Integration - Scraper Integration  
+**Updated**: 2026-01-17 01:08 (Critical Bug Fix Applied)
 
 ## Executive Summary
 
-✅ **Integration Status**: SUCCESSFUL
+✅ **Integration Status**: SUCCESSFUL (after critical bug fix)
 
 All scrapers successfully integrated with the new proxy client architecture. The standardized `run()` entry point, checkpoint/resume functionality, and output handling are working correctly across all retailers.
+
+⚠️ **Critical Bug Found & Fixed**: Directory mismatch between checkpoints and outputs resolved (see Bug #2 below)
 
 ---
 
@@ -191,6 +194,49 @@ if response is None:
 
 ---
 
+### Bug #2: Directory Mismatch Between Checkpoints and Outputs (CRITICAL)
+**Files**: All scrapers + `run.py:223`  
+**Symptom**: Checkpoints and outputs created in different directories
+- Checkpoints: `data/at&t/`, `data/best buy/`, `data/t-mobile/`
+- Outputs: `data/att/`, `data/bestbuy/`, `data/tmobile/`
+
+**Root Cause**: Scrapers used `config.get('name', ...).lower()` (display name) while run.py used internal retailer name for outputs
+
+**Impact**: 
+- Resume functionality broken for affected retailers (att, bestbuy, tmobile)
+- Duplicate directory structure
+- Inconsistent data organization
+
+**Fix Applied**:
+1. `run.py:223` - Pass internal retailer name: `scraper_module.run(session, retailer_config, retailer=retailer, **kwargs)`
+2. All scrapers - Use passed name: `retailer_name = kwargs.get('retailer', 'default')`
+
+**Files Modified**:
+- `run.py:223`
+- `src/scrapers/att.py:263`
+- `src/scrapers/bestbuy.py:718`
+- `src/scrapers/target.py:388`
+- `src/scrapers/tmobile.py:390`
+- `src/scrapers/verizon.py:575`
+- `src/scrapers/walmart.py:306`
+
+**Verification**:
+```bash
+# Before fix
+data/at&t/checkpoints/scrape_progress.json
+data/att/output/stores_latest.json
+
+# After fix
+data/att/checkpoints/scrape_progress.json
+data/att/output/stores_latest.json
+```
+
+**Resume Testing**: ✅ AT&T tested successfully (3→8 stores, no duplicates)
+
+**Status**: ✅ Fixed, tested, and verified
+
+---
+
 ## Integration Verification Checklist
 
 ### Core Integration Points
@@ -274,18 +320,24 @@ Once Oxylabs credentials are available:
 
 ## Conclusion
 
-**Integration Status**: ✅ **SUCCESSFUL**
+**Integration Status**: ✅ **SUCCESSFUL** (after critical bug fix)
 
 All scrapers successfully integrated with:
 - Standardized `run()` entry point interface
 - Proper session/proxy client handling  
-- Checkpoint/resume functionality
+- Checkpoint/resume functionality (now working correctly)
 - Standardized output formats (JSON/CSV)
+- Unified directory structure (checkpoints + outputs)
 - Error handling and logging
 
-**Issues Found**: 
-- 1 bug in utils.py (fixed)
-- 2 website structure changes (walmart, tmobile) - not integration issues
+**Bugs Found & Fixed**: 
+1. ✅ **Bug #1**: utils.py None response handling (fixed in utils.py:131-133)
+2. ✅ **Bug #2 (CRITICAL)**: Directory mismatch between checkpoints and outputs (fixed in run.py + all scrapers)
+
+**Non-Integration Issues**: 
+- 2 website structure changes (walmart, tmobile) - scraper logic needs updating, not integration bugs
+
+**Resume Functionality**: ✅ Verified working on Target (3→8) and AT&T (3→8)
 
 **Ready for Production**: YES (with proxy credentials for full testing)
 

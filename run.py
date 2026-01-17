@@ -220,7 +220,7 @@ async def run_retailer_async(retailer: str, cli_proxy_override: Optional[str] = 
 
         # Call scraper entry point
         logging.info(f"[{retailer}] Calling scraper run() function")
-        scraper_result = scraper_module.run(session, retailer_config, **kwargs)
+        scraper_result = scraper_module.run(session, retailer_config, retailer=retailer, **kwargs)
         
         # Extract data from scraper result
         stores = scraper_result.get('stores', [])
