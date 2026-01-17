@@ -30,6 +30,7 @@ Do not make assumptions on important decisions — get clarification first.
 ---
 
 ### [ ] Step: Backend - Multi-Retailer Status System
+<!-- chat-id: bcee6ba8-85c8-4815-93ad-9fa80a66ae0c -->
 
 Refactor status tracking from Verizon-only to support all retailers dynamically.
 
