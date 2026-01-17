@@ -1,6 +1,8 @@
 let refreshInterval = null;
 let refreshTimeInterval = null;
 let lastUpdateTime = null;
+let cachedStatusData = null;
+let domCache = {};
 
 const RETAILER_CONFIG = {
     verizon: { name: 'Verizon', logo: 'VZ', class: 'verizon' },
@@ -144,13 +146,13 @@ function renderRetailerCard(retailerId, data) {
                 </div>
             </div>
             <div class="control-buttons">
-                <button class="control-btn start-btn" onclick="startScraper('${retailerId}')" title="Start scraper">
+                <button class="control-btn start-btn" onclick="startScraper('${retailerId}')" title="Start scraping this retailer (resumes from last checkpoint)">
                     ▶ Start
                 </button>
-                <button class="control-btn stop-btn" onclick="stopScraper('${retailerId}')" title="Stop scraper">
+                <button class="control-btn stop-btn" onclick="stopScraper('${retailerId}')" title="Stop the running scraper gracefully">
                     ⏹ Stop
                 </button>
-                <button class="control-btn restart-btn" onclick="restartScraper('${retailerId}')" title="Restart scraper">
+                <button class="control-btn restart-btn" onclick="restartScraper('${retailerId}')" title="Stop and restart the scraper with resume enabled">
                     🔄 Restart
                 </button>
             </div>
@@ -184,24 +186,49 @@ function updateGlobalStatus(data) {
 
 function updateSummaryCards(data) {
     const summary = data.summary || {};
+    const oldSummary = cachedStatusData?.summary || {};
     
-    document.getElementById('total-stores').textContent = formatNumber(summary.total_stores || 0);
-    document.getElementById('active-retailers').textContent = `${summary.active_retailers || 0} / ${summary.total_retailers || 6}`;
-    document.getElementById('overall-progress').textContent = `${(summary.overall_progress || 0).toFixed(1)}%`;
-    document.getElementById('estimated-time').textContent = formatDuration(summary.estimated_remaining_seconds);
+    if (summary.total_stores !== oldSummary.total_stores) {
+        document.getElementById('total-stores').textContent = formatNumber(summary.total_stores || 0);
+    }
+    
+    if (summary.active_retailers !== oldSummary.active_retailers || summary.total_retailers !== oldSummary.total_retailers) {
+        document.getElementById('active-retailers').textContent = `${summary.active_retailers || 0} / ${summary.total_retailers || 6}`;
+    }
+    
+    if (summary.overall_progress !== oldSummary.overall_progress) {
+        document.getElementById('overall-progress').textContent = `${(summary.overall_progress || 0).toFixed(1)}%`;
+    }
+    
+    if (summary.estimated_remaining_seconds !== oldSummary.estimated_remaining_seconds) {
+        document.getElementById('estimated-time').textContent = formatDuration(summary.estimated_remaining_seconds);
+    }
 }
 
 function updateRetailers(data) {
     const container = document.getElementById('retailer-grid');
     const retailers = data.retailers || {};
+    const oldRetailers = cachedStatusData?.retailers || {};
     
-    let html = '';
-    for (const [retailerId, retailerData] of Object.entries(RETAILER_CONFIG)) {
-        const data = retailers[retailerId] || { status: 'pending' };
-        html += renderRetailerCard(retailerId, data);
+    let needsFullUpdate = false;
+    for (const retailerId of Object.keys(RETAILER_CONFIG)) {
+        const newData = retailers[retailerId] || { status: 'pending' };
+        const oldData = oldRetailers[retailerId] || { status: 'pending' };
+        
+        if (JSON.stringify(newData) !== JSON.stringify(oldData)) {
+            needsFullUpdate = true;
+            break;
+        }
     }
     
-    container.innerHTML = html;
+    if (needsFullUpdate) {
+        let html = '';
+        for (const [retailerId, retailerData] of Object.entries(RETAILER_CONFIG)) {
+            const data = retailers[retailerId] || { status: 'pending' };
+            html += renderRetailerCard(retailerId, data);
+        }
+        container.innerHTML = html;
+    }
 }
 
 async function updateDashboard() {
@@ -213,12 +240,15 @@ async function updateDashboard() {
         
         const data = await response.json();
         
-        updateGlobalStatus(data);
-        updateSummaryCards(data);
-        updateRetailers(data);
-        
-        lastUpdateTime = Date.now();
-        updateLastRefreshTime();
+        requestAnimationFrame(() => {
+            updateGlobalStatus(data);
+            updateSummaryCards(data);
+            updateRetailers(data);
+            
+            cachedStatusData = data;
+            lastUpdateTime = Date.now();
+            updateLastRefreshTime();
+        });
         
         const errorEl = document.getElementById('error-message');
         if (errorEl) {
@@ -239,7 +269,16 @@ async function updateDashboard() {
             );
         }
         
-        errorEl.innerHTML = `<strong>Error loading dashboard:</strong> ${error.message}`;
+        let userMessage = 'Unable to connect to the scraper API. ';
+        if (error.message.includes('Failed to fetch')) {
+            userMessage += 'Please ensure the dashboard server is running.';
+        } else if (error.message.includes('500')) {
+            userMessage += 'The server encountered an error. Check the server logs.';
+        } else {
+            userMessage += error.message;
+        }
+        
+        errorEl.innerHTML = `<strong>⚠️ Connection Error:</strong> ${userMessage}`;
         errorEl.style.display = 'block';
     }
 }
@@ -292,26 +331,26 @@ function toggleRunHistory(retailer) {
 
 async function loadRunHistory(retailer) {
     const listContainer = document.getElementById(`history-list-${retailer}`);
-    listContainer.innerHTML = '<div class="run-history-empty">Loading...</div>';
+    listContainer.innerHTML = '<div class="run-history-empty"><div class="spinner"></div> Loading run history...</div>';
     
     try {
         const response = await fetch(`/api/runs/${retailer}?limit=5`);
         const data = await response.json();
         
         if (data.error) {
-            listContainer.innerHTML = `<div class="run-history-empty">Error: ${data.error}</div>`;
+            listContainer.innerHTML = `<div class="run-history-empty">⚠️ Could not load run history: ${data.error}</div>`;
             return;
         }
         
         if (!data.runs || data.runs.length === 0) {
-            listContainer.innerHTML = '<div class="run-history-empty">No runs found</div>';
+            listContainer.innerHTML = '<div class="run-history-empty">📭 No previous runs found. Start a scraper to see history here.</div>';
             return;
         }
         
         listContainer.innerHTML = data.runs.map(run => createRunItem(retailer, run)).join('');
     } catch (error) {
         console.error('Error loading run history:', error);
-        listContainer.innerHTML = `<div class="run-history-empty">Failed to load run history</div>`;
+        listContainer.innerHTML = `<div class="run-history-empty">⚠️ Unable to connect to server. Please check your connection.</div>`;
     }
 }
 
@@ -368,7 +407,7 @@ function openLogViewer(retailer, runId) {
     const logContainer = document.getElementById('log-content');
     
     modalTitle.textContent = `Logs - ${config.name} - ${runId}`;
-    logContainer.innerHTML = '<div class="log-loading">Loading logs...</div>';
+    logContainer.innerHTML = '<div class="log-loading"><div class="spinner"></div>Loading logs...</div>';
     
     modal.classList.add('open');
     
@@ -391,7 +430,7 @@ async function loadLogs() {
         const data = await response.json();
         
         if (data.error) {
-            logContainer.innerHTML = `<div class="log-error">Error loading logs: ${data.error}</div>`;
+            logContainer.innerHTML = `<div class="log-error">⚠️ Unable to load logs: ${data.error}. The log file may have been deleted or is not accessible.</div>`;
             return;
         }
         
@@ -514,6 +553,12 @@ function updateLogFilterButtons() {
 }
 
 async function startScraper(retailer) {
+    const btn = event?.target;
+    if (btn) {
+        btn.classList.add('loading');
+        btn.disabled = true;
+    }
+    
     try {
         const response = await fetch('/api/scraper/start', {
             method: 'POST',
@@ -529,17 +574,28 @@ async function startScraper(retailer) {
         const result = await response.json();
         
         if (response.ok) {
-            showNotification(`✅ Started ${retailer} scraper`, 'success');
-            updateDashboard();
+            showNotification(`✅ Started ${RETAILER_CONFIG[retailer]?.name || retailer} scraper successfully`, 'success');
+            setTimeout(updateDashboard, 500);
         } else {
-            showNotification(`❌ Error: ${result.error}`, 'error');
+            showNotification(`❌ Unable to start scraper: ${result.error}`, 'error');
         }
     } catch (error) {
-        showNotification(`❌ Failed to start scraper: ${error.message}`, 'error');
+        showNotification(`❌ Connection failed: Unable to reach the server. Please check if the dashboard is running.`, 'error');
+    } finally {
+        if (btn) {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
     }
 }
 
 async function stopScraper(retailer) {
+    const btn = event?.target;
+    if (btn) {
+        btn.classList.add('loading');
+        btn.disabled = true;
+    }
+    
     try {
         const response = await fetch('/api/scraper/stop', {
             method: 'POST',
@@ -555,17 +611,28 @@ async function stopScraper(retailer) {
         const result = await response.json();
         
         if (response.ok) {
-            showNotification(`⏹ Stopped ${retailer} scraper`, 'success');
-            updateDashboard();
+            showNotification(`⏹ Stopped ${RETAILER_CONFIG[retailer]?.name || retailer} scraper successfully`, 'success');
+            setTimeout(updateDashboard, 500);
         } else {
-            showNotification(`❌ Error: ${result.error}`, 'error');
+            showNotification(`❌ Unable to stop scraper: ${result.error}`, 'error');
         }
     } catch (error) {
-        showNotification(`❌ Failed to stop scraper: ${error.message}`, 'error');
+        showNotification(`❌ Connection failed: Unable to reach the server. Please check if the dashboard is running.`, 'error');
+    } finally {
+        if (btn) {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
     }
 }
 
 async function restartScraper(retailer) {
+    const btn = event?.target;
+    if (btn) {
+        btn.classList.add('loading');
+        btn.disabled = true;
+    }
+    
     try {
         const response = await fetch('/api/scraper/restart', {
             method: 'POST',
@@ -582,13 +649,18 @@ async function restartScraper(retailer) {
         const result = await response.json();
         
         if (response.ok) {
-            showNotification(`🔄 Restarted ${retailer} scraper`, 'success');
-            updateDashboard();
+            showNotification(`🔄 Restarted ${RETAILER_CONFIG[retailer]?.name || retailer} scraper successfully`, 'success');
+            setTimeout(updateDashboard, 500);
         } else {
-            showNotification(`❌ Error: ${result.error}`, 'error');
+            showNotification(`❌ Unable to restart scraper: ${result.error}`, 'error');
         }
     } catch (error) {
-        showNotification(`❌ Failed to restart scraper: ${error.message}`, 'error');
+        showNotification(`❌ Connection failed: Unable to reach the server. Please check if the dashboard is running.`, 'error');
+    } finally {
+        if (btn) {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
     }
 }
 
@@ -620,7 +692,8 @@ async function openConfigModal() {
     const alertDiv = document.getElementById('modal-alert');
     
     alertDiv.style.display = 'none';
-    editor.value = 'Loading configuration...';
+    editor.value = '';
+    editor.placeholder = 'Loading configuration...';
     modal.classList.add('open');
     
     try {
@@ -629,13 +702,14 @@ async function openConfigModal() {
         
         if (response.ok) {
             editor.value = data.content;
+            editor.placeholder = '';
         } else {
-            showModalAlert(`Error loading configuration: ${data.error}`, 'error');
-            editor.value = '';
+            showModalAlert(`⚠️ Unable to load configuration: ${data.error}`, 'error');
+            editor.placeholder = 'Failed to load configuration';
         }
     } catch (error) {
-        showModalAlert(`Failed to load configuration: ${error.message}`, 'error');
-        editor.value = '';
+        showModalAlert(`⚠️ Connection failed: Unable to reach the server. Please ensure the dashboard is running.`, 'error');
+        editor.placeholder = 'Connection error';
     }
 }
 

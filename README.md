@@ -234,6 +234,81 @@ OXYLABS_USERNAME=user OXYLABS_PASSWORD=pass \
 | IP blocking risk | Medium | Very Low |
 | Rate limit handling | Manual delays | Automatic |
 
+## Web Dashboard
+
+The scraper includes a real-time web dashboard for monitoring and controlling scrapers.
+
+### Starting the Dashboard
+
+```bash
+# Start the dashboard server
+cd dashboard
+python app.py
+
+# Dashboard will be available at http://localhost:5001
+```
+
+### Dashboard Features
+
+**Real-Time Monitoring:**
+- Live progress tracking for all retailers
+- Auto-refreshing every 5 seconds
+- Visual progress bars with phase indicators
+- Summary statistics (total stores, active scrapers, overall progress)
+
+**Scraper Control:**
+- **Start**: Begin scraping with automatic resume from checkpoints
+- **Stop**: Gracefully stop running scrapers
+- **Restart**: Stop and restart scrapers with resume enabled
+
+**Run History:**
+- View past 5 runs per retailer
+- Run status (complete, failed, running)
+- Timestamps and statistics for each run
+- Access logs for any historical run
+
+**Log Viewer:**
+- Real-time log viewing for any run
+- Filter logs by level (All, Info, Warning, Error, Debug)
+- Syntax highlighting for log levels and timestamps
+- Dark terminal-style interface
+
+**Configuration Editor:**
+- Edit `config/retailers.yaml` directly from the UI
+- Automatic validation before saving
+- Automatic backup creation on every save
+- Real-time error feedback
+
+**Mobile Responsive:**
+- Fully responsive design works on tablets and phones
+- Touch-friendly controls
+- Optimized layout for small screens
+
+### Dashboard Usage
+
+1. **Monitor Progress**: View real-time status of all scrapers on the main dashboard
+2. **Start Scraping**: Click the "Start" button on any retailer card to begin scraping
+3. **View History**: Click "View Run History" to see past runs and access logs
+4. **Check Logs**: Click "View Logs" on any run to see detailed execution logs
+5. **Edit Config**: Click the "⚙️ Configuration" button in the header to edit settings
+6. **Stop Scrapers**: Use the "Stop" button to gracefully halt running scrapers
+
+### API Endpoints
+
+The dashboard exposes REST API endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/status` | GET | Get status for all retailers |
+| `/api/status/<retailer>` | GET | Get status for specific retailer |
+| `/api/scraper/start` | POST | Start scraper(s) |
+| `/api/scraper/stop` | POST | Stop scraper(s) |
+| `/api/scraper/restart` | POST | Restart scraper(s) |
+| `/api/runs/<retailer>` | GET | Get run history |
+| `/api/logs/<retailer>/<run_id>` | GET | Get logs for a run |
+| `/api/config` | GET | Get configuration |
+| `/api/config` | POST | Update configuration |
+
 ## Supported Retailers
 
 | Retailer | Status | Discovery Method |
