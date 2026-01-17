@@ -7,6 +7,7 @@ import random
 import logging
 import tempfile
 import shutil
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Union
@@ -32,8 +33,8 @@ DEFAULT_USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
 ]
 
-# Global proxy client instance (lazy initialized)
-_proxy_client: Optional[ProxyClient] = None
+# Global proxy client instances (lazy initialized per retailer)
+_proxy_clients: Dict[str, ProxyClient] = {}
 
 
 def setup_logging(log_file: str = "logs/scraper.log") -> None:
@@ -256,37 +257,213 @@ def save_to_json(stores: List[Dict[str, Any]], filepath: str) -> None:
 
 
 # =============================================================================
+# PER-RETAILER PROXY CONFIGURATION
+# =============================================================================
+
+def _build_proxy_config_dict(mode: str, **kwargs) -> Dict[str, Any]:
+    """Build proxy config dict from mode string and optional overrides"""
+    config = {'mode': mode}
+    config.update(kwargs)
+    return config
+
+
+def _merge_proxy_config(
+    retailer_proxy: Dict[str, Any],
+    global_proxy: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Merge retailer-specific proxy config with global settings.
+    Retailer settings take precedence.
+    """
+    mode = retailer_proxy.get('mode', global_proxy.get('mode', 'direct'))
+
+    config = {'mode': mode}
+
+    if mode == 'residential' and 'residential' in global_proxy:
+        config.update(global_proxy['residential'])
+    elif mode == 'web_scraper_api' and 'web_scraper_api' in global_proxy:
+        config.update(global_proxy['web_scraper_api'])
+
+    for key in ['timeout', 'max_retries', 'retry_delay']:
+        if key in global_proxy:
+            config[key] = global_proxy[key]
+
+    config.update(retailer_proxy)
+
+    return config
+
+
+def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any]:
+    """Build config dict from global YAML proxy section"""
+    mode = global_proxy.get('mode', 'direct')
+    config = {'mode': mode}
+
+    if mode == 'residential' and 'residential' in global_proxy:
+        config.update(global_proxy['residential'])
+    elif mode == 'web_scraper_api' and 'web_scraper_api' in global_proxy:
+        config.update(global_proxy['web_scraper_api'])
+
+    for key in ['timeout', 'max_retries', 'retry_delay']:
+        if key in global_proxy:
+            config[key] = global_proxy[key]
+
+    return config
+
+
+def get_retailer_proxy_config(
+    retailer: str,
+    yaml_path: str = "config/retailers.yaml",
+    cli_override: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get proxy configuration for specific retailer with priority resolution.
+
+    Priority (highest to lowest):
+    1. CLI override (--proxy flag)
+    2. Retailer-specific config in YAML
+    3. Global proxy section in YAML
+    4. Environment variables (PROXY_MODE)
+    5. Default: direct mode
+
+    Args:
+        retailer: Retailer name
+        yaml_path: Path to retailers.yaml file
+        cli_override: CLI proxy mode override (from --proxy flag)
+
+    Returns:
+        Dict compatible with ProxyConfig.from_dict()
+    """
+    VALID_MODES = {'direct', 'residential', 'web_scraper_api'}
+
+    if cli_override:
+        if cli_override not in VALID_MODES:
+            logging.warning(f"[{retailer}] Invalid CLI proxy mode '{cli_override}', falling back to direct")
+            return _build_proxy_config_dict(mode='direct')
+        logging.info(f"[{retailer}] Using CLI override proxy mode: {cli_override}")
+        return _build_proxy_config_dict(mode=cli_override)
+
+    try:
+        import yaml
+        with open(yaml_path, 'r') as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        logging.warning(f"[{retailer}] Config file {yaml_path} not found")
+        config = {}
+    except Exception as e:
+        logging.warning(f"[{retailer}] Error loading config: {e}")
+        config = {}
+
+    retailer_config = config.get('retailers', {}).get(retailer, {})
+    if 'proxy' in retailer_config:
+        proxy_settings = retailer_config['proxy']
+        merged_config = _merge_proxy_config(proxy_settings, config.get('proxy', {}))
+        mode = merged_config.get('mode', 'direct')
+        if mode not in VALID_MODES:
+            logging.warning(f"[{retailer}] Invalid retailer proxy mode '{mode}', falling back to direct")
+            merged_config['mode'] = 'direct'
+        else:
+            logging.info(f"[{retailer}] Using retailer-specific proxy mode: {mode}")
+        return merged_config
+
+    if 'proxy' in config:
+        proxy_config = _build_proxy_config_from_yaml(config['proxy'])
+        mode = proxy_config.get('mode', 'direct')
+        if mode not in VALID_MODES:
+            logging.warning(f"[{retailer}] Invalid global proxy mode '{mode}', falling back to direct")
+            proxy_config['mode'] = 'direct'
+        else:
+            logging.info(f"[{retailer}] Using global YAML proxy mode: {mode}")
+        return proxy_config
+
+    env_mode = os.getenv('PROXY_MODE')
+    if env_mode:
+        if env_mode not in VALID_MODES:
+            logging.warning(f"[{retailer}] Invalid environment proxy mode '{env_mode}', falling back to direct")
+            return _build_proxy_config_dict(mode='direct')
+        logging.info(f"[{retailer}] Using environment variable proxy mode: {env_mode}")
+        return _build_proxy_config_dict(mode=env_mode)
+
+    logging.info(f"[{retailer}] Using default proxy mode: direct")
+    return {'mode': 'direct'}
+
+
+def load_retailer_config(
+    retailer: str,
+    cli_proxy_override: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Load full retailer configuration including proxy settings.
+
+    Args:
+        retailer: Retailer name
+        cli_proxy_override: Optional CLI proxy mode override
+
+    Returns:
+        Dict with retailer config including 'proxy' key
+    """
+    import yaml
+
+    try:
+        with open('config/retailers.yaml', 'r') as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        logging.error(f"[{retailer}] Config file config/retailers.yaml not found")
+        return {'proxy': {'mode': 'direct'}}
+    except Exception as e:
+        logging.error(f"[{retailer}] Error loading config: {e}")
+        return {'proxy': {'mode': 'direct'}}
+
+    retailer_config = config.get('retailers', {}).get(retailer, {})
+
+    proxy_config = get_retailer_proxy_config(retailer, cli_override=cli_proxy_override)
+    retailer_config['proxy'] = proxy_config
+
+    return retailer_config
+
+
+# =============================================================================
 # OXYLABS PROXY INTEGRATION
 # =============================================================================
 
-def get_proxy_client(config: Optional[Dict[str, Any]] = None) -> ProxyClient:
+def get_proxy_client(config: Optional[Dict[str, Any]] = None, retailer: Optional[str] = None) -> ProxyClient:
     """
     Get or create a proxy client instance.
+
+    If retailer is specified, returns/creates retailer-specific client.
+    Otherwise returns/creates global client.
 
     Args:
         config: Optional proxy configuration dictionary. If None, loads from
                 environment variables.
+        retailer: Optional retailer name for per-retailer client caching
 
     Returns:
         Configured ProxyClient instance
     """
-    global _proxy_client
+    global _proxy_clients
 
-    if config is not None:
-        # Create new client with provided config
+    cache_key = retailer if retailer else '__global__'
+
+    if cache_key in _proxy_clients and config is None:
+        return _proxy_clients[cache_key]
+
+    if config:
         proxy_config = ProxyConfig.from_dict(config)
-        return ProxyClient(proxy_config)
+    else:
+        proxy_config = ProxyConfig.from_env()
 
-    if _proxy_client is None:
-        # Create default client from environment
-        _proxy_client = ProxyClient(ProxyConfig.from_env())
+    client = ProxyClient(proxy_config)
+    _proxy_clients[cache_key] = client
 
-    return _proxy_client
+    return client
 
 
 def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClient:
     """
     Initialize proxy client from retailers.yaml configuration.
+
+    Deprecated: Use get_retailer_proxy_config() + create_proxied_session() for new code.
+    This function loads global proxy config and caches it under '__global__' key.
 
     Args:
         yaml_path: Path to retailers.yaml file
@@ -294,8 +471,6 @@ def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClien
     Returns:
         Configured ProxyClient instance
     """
-    global _proxy_client
-
     try:
         import yaml
         with open(yaml_path, 'r') as f:
@@ -304,7 +479,6 @@ def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClien
         proxy_config = config.get('proxy', {})
         mode = proxy_config.get('mode', 'direct')
 
-        # Build config dict from YAML structure
         config_dict = {
             'mode': mode,
             'timeout': proxy_config.get('timeout', 60),
@@ -312,7 +486,6 @@ def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClien
             'retry_delay': proxy_config.get('retry_delay', 2.0),
         }
 
-        # Add mode-specific settings
         if mode == 'residential':
             res_config = proxy_config.get('residential', {})
             config_dict.update({
@@ -328,9 +501,9 @@ def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClien
                 'parse': api_config.get('parse', False),
             })
 
-        _proxy_client = get_proxy_client(config_dict)
+        client = get_proxy_client(config_dict)
         logging.info(f"Initialized proxy client from {yaml_path} in {mode} mode")
-        return _proxy_client
+        return client
 
     except FileNotFoundError:
         logging.warning(f"Config file {yaml_path} not found, using environment config")
@@ -386,31 +559,60 @@ def create_proxied_session(
     Returns:
         Session-compatible object
     """
-    # Check for retailer-specific proxy override
-    proxy_config = None
-    if retailer_config and 'proxy' in retailer_config:
-        proxy_config = retailer_config['proxy']
+    proxy_config_dict = retailer_config.get('proxy', {}) if retailer_config else {}
+    mode = proxy_config_dict.get('mode', 'direct')
+    retailer_name = retailer_config.get('name', 'unknown') if retailer_config else 'unknown'
 
-    # Get global proxy config
-    client = get_proxy_client(proxy_config)
+    if mode == 'direct':
+        session = requests.Session()
+        session.headers.update(get_headers())
+        logging.info(f"[{retailer_name}] Created Session for mode: {mode}")
+        return session
 
-    if client.config.mode == ProxyMode.DIRECT:
-        # Return standard session for backward compatibility
+    try:
+        client = get_proxy_client(proxy_config_dict, retailer=retailer_name)
+
+        if not client.config.validate():
+            logging.error(f"[{retailer_name}] Missing credentials for {mode} mode, falling back to direct")
+            session = requests.Session()
+            session.headers.update(get_headers())
+            return session
+
+        logging.info(f"[{retailer_name}] Created ProxyClient for mode: {mode}")
+        return client
+
+    except Exception as e:
+        logging.error(f"[{retailer_name}] Error creating proxy client: {e}, falling back to direct")
         session = requests.Session()
         session.headers.update(get_headers())
         return session
 
-    # Return proxy client (has compatible .get() method)
-    return client
-
 
 def close_proxy_client() -> None:
-    """Close the global proxy client and release resources."""
-    global _proxy_client
-    if _proxy_client is not None:
-        _proxy_client.close()
-        _proxy_client = None
-        logging.info("Proxy client closed")
+    """Close the global proxy client and release resources.
+
+    Deprecated: Use close_all_proxy_clients() for new code.
+    """
+    global _proxy_clients
+    if '__global__' in _proxy_clients:
+        _proxy_clients['__global__'].close()
+        del _proxy_clients['__global__']
+        logging.info("Global proxy client closed")
+
+
+def close_all_proxy_clients() -> None:
+    """Close all proxy client sessions and clear cache"""
+    global _proxy_clients
+
+    for name, client in _proxy_clients.items():
+        try:
+            client.close()
+            logging.debug(f"Closed proxy client: {name}")
+        except Exception as e:
+            logging.warning(f"Error closing proxy client {name}: {e}")
+
+    _proxy_clients.clear()
+    logging.info("All proxy clients closed")
 
 
 class ProxiedSession:

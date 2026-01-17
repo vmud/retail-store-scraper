@@ -21,7 +21,11 @@ from .utils import (
     init_proxy_from_yaml,
     create_proxied_session,
     close_proxy_client,
+    close_all_proxy_clients,
     ProxiedSession,
+    # Per-retailer proxy configuration
+    get_retailer_proxy_config,
+    load_retailer_config,
 )
 
 from .proxy_client import (
@@ -79,7 +83,11 @@ __all__ = [
     'init_proxy_from_yaml',
     'create_proxied_session',
     'close_proxy_client',
+    'close_all_proxy_clients',
     'ProxiedSession',
+# Per-retailer proxy configuration
+    'get_retailer_proxy_config',
+    'load_retailer_config',
     # Scraper management
     'ScraperManager',
     'get_scraper_manager',

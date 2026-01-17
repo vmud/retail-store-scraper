@@ -20,12 +20,12 @@ class RequestCounter:
     """Track request count for pause logic"""
     def __init__(self):
         self.count = 0
-    
+
     def increment(self) -> int:
         """Increment counter and return current count"""
         self.count += 1
         return self.count
-    
+
     def reset(self) -> None:
         """Reset counter"""
         self.count = 0
@@ -52,7 +52,7 @@ class TMobileStore:
     opening_hours: Optional[List[str]]
     url: str
     scraped_at: str
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for export"""
         result = asdict(self)
@@ -70,7 +70,7 @@ class TMobileStore:
 def _check_pause_logic() -> None:
     """Check if we need to pause based on request count"""
     count = _request_counter.count
-    
+
     if count % tmobile_config.PAUSE_200_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(tmobile_config.PAUSE_200_MIN, tmobile_config.PAUSE_200_MAX)
         logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
@@ -83,14 +83,14 @@ def _check_pause_logic() -> None:
 
 def _extract_state_from_url(url: str) -> Optional[str]:
     """Extract state code from T-Mobile URL pattern.
-    
+
     URL pattern: /stores/bd/t-mobile-{city}-{state}-{zip}-{id}
     Note: City can contain hyphens (e.g., "new-york"), so we need to match carefully.
     We look for the two-letter state code followed by a hyphen and digits (zip code).
-    
+
     Args:
         url: Store URL
-        
+
     Returns:
         Lowercase state code (e.g., "ca", "ny", "tx") or None if pattern doesn't match
     """
@@ -108,11 +108,11 @@ def _extract_state_from_url(url: str) -> Optional[str]:
 
 def _filter_urls_by_state(urls: List[str], state_code: str) -> List[str]:
     """Filter URLs by state code (case-insensitive).
-    
+
     Args:
         urls: List of store URLs
         state_code: State code to filter by (e.g., "ca", "ny", "tx")
-        
+
     Returns:
         List of URLs matching the specified state
     """
@@ -127,17 +127,17 @@ def _filter_urls_by_state(urls: List[str], state_code: str) -> List[str]:
 
 def _extract_store_type_from_title(page_title: str) -> Optional[str]:
     """Extract store type from T-Mobile store page title.
-    
+
     Args:
         page_title: The HTML <title> content from a store detail page
-        
+
     Returns:
         Normalized store type string, or None if not found
-        
+
     Examples:
         >>> _extract_store_type_from_title("T-Mobile Penn & I-494: Experience Store in Bloomington, MN")
         'T-Mobile Experience Store'
-        
+
         >>> _extract_store_type_from_title("T-Mobile The Richfield Hub: Authorized Retailer in Richfield, MN")
         'T-Mobile Authorized Retailer'
     """
@@ -147,20 +147,20 @@ def _extract_store_type_from_title(page_title: str) -> Optional[str]:
         (r':\s*(Neighborhood Store)\s+in', 'T-Mobile Neighborhood Store'),
         (r':\s*(Store)\s+in', 'T-Mobile Store'),
     ]
-    
+
     for pattern, store_type in patterns:
         if re.search(pattern, page_title, re.IGNORECASE):
             return store_type
-    
+
     return None
 
 
 def _extract_store_type_from_dom(soup: BeautifulSoup) -> Optional[str]:
     """Extract store type from page DOM as fallback.
-    
+
     Args:
         soup: BeautifulSoup parsed HTML
-        
+
     Returns:
         Normalized store type string, or None if not found
     """
@@ -170,102 +170,102 @@ def _extract_store_type_from_dom(soup: BeautifulSoup) -> Optional[str]:
         'T-Mobile Neighborhood Store',
         'T-Mobile Store'
     ]
-    
+
     page_text = soup.get_text()
     for store_type in store_types:
         if store_type in page_text:
             return store_type
-    
+
     return None
 
 
 def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
     """Fetch all store URLs from the T-Mobile paginated sitemaps.
-    
+
     Returns:
         List of store URLs (filtered to only those containing /stores/bd/)
     """
     all_store_urls = []
-    
+
     for page in tmobile_config.SITEMAP_PAGES:
         if page == 1:
             sitemap_url = tmobile_config.SITEMAP_BASE_URL
         else:
             sitemap_url = f"{tmobile_config.SITEMAP_BASE_URL}?p={page}"
-        
+
         logging.info(f"Fetching sitemap page {page} from {sitemap_url}")
-        
+
         response = utils.get_with_retry(session, sitemap_url)
         if not response:
             logging.error(f"Failed to fetch sitemap page {page}")
             continue
-        
+
         _request_counter.increment()
         _check_pause_logic()
-        
+
         try:
             # Parse XML
             root = ET.fromstring(response.content)
             namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-            
+
             # Extract all URLs
             for loc in root.findall(".//sm:loc", namespace):
                 url = loc.text
                 if url and '/stores/bd/' in url:
                     all_store_urls.append(url)
-            
+
             logging.info(f"Found {len(all_store_urls)} store URLs from page {page}")
-            
+
         except ET.ParseError as e:
             logging.error(f"Failed to parse XML sitemap page {page}: {e}")
             continue
         except Exception as e:
             logging.error(f"Unexpected error parsing sitemap page {page}: {e}")
             continue
-    
+
     logging.info(f"Total store URLs collected: {len(all_store_urls)}")
     return all_store_urls
 
 
 def extract_store_details(session: requests.Session, url: str) -> Optional[TMobileStore]:
     """Extract store data from a single T-Mobile store page.
-    
+
     Args:
         session: Requests session object
         url: Store page URL
-        
+
     Returns:
         TMobileStore object if successful, None otherwise
     """
     logging.debug(f"Extracting details from {url}")
-    
+
     response = utils.get_with_retry(session, url)
     if not response:
         logging.warning(f"Failed to fetch store details: {url}")
         return None
-    
+
     _request_counter.increment()
     _check_pause_logic()
-    
+
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
-        
+
         # Extract store type from page title (with DOM fallback)
         store_type = None
         title_tag = soup.find('title')
         if title_tag and title_tag.string:
             store_type = _extract_store_type_from_title(title_tag.string)
-        
+
         # Fallback to DOM extraction if title parsing fails
         if not store_type:
             store_type = _extract_store_type_from_dom(soup)
-        
+
         # Find all JSON-LD script tags (there may be multiple)
         scripts = soup.find_all('script', type='application/ld+json')
         if not scripts:
             logging.warning(f"No JSON-LD found for {url}")
             return None
-        
+
         # Try each script until we find a Store
         data = None
         for script in scripts:
@@ -273,9 +273,9 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
                 script_content = script.string
                 if not script_content:
                     continue
-                    
+
                 script_data = json.loads(script_content)
-                
+
                 # Handle both single objects and arrays
                 if isinstance(script_data, list):
                     for item in script_data:
@@ -284,14 +284,14 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
                             break
                 elif script_data.get('@type') == 'Store':
                     data = script_data
-                
+
                 if data:
                     break
-                    
+
             except json.JSONDecodeError as e:
                 logging.debug(f"Failed to parse JSON-LD script for {url}: {e}")
                 continue
-        
+
         # If no Store found, log and return None
         if not data:
             if scripts:
@@ -304,31 +304,31 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
                 except Exception:
                     logging.debug(f"Skipping {url}: No Store found")
             return None
-        
+
         # Extract address components
         address = data.get('address', {})
-        
+
         # Handle addressCountry (can be string or object)
         address_country = address.get('addressCountry', 'US')
         if isinstance(address_country, dict):
             country = address_country.get('name', 'US')
         else:
             country = address_country if address_country else 'US'
-        
+
         # Extract geo coordinates
         geo = data.get('geo', {})
         latitude = geo.get('latitude', '')
         longitude = geo.get('longitude', '')
-        
+
         # Extract openingHours (array)
         opening_hours = data.get('openingHours', [])
         if isinstance(opening_hours, str):
             # If it's a single string, convert to list
             opening_hours = [opening_hours]
-        
+
         # Extract branchCode
         branch_code = data.get('branchCode', '')
-        
+
         # Create TMobileStore object
         store = TMobileStore(
             branch_code=branch_code,
@@ -346,10 +346,10 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
             url=url,
             scraped_at=datetime.now().isoformat()
         )
-        
+
         logging.debug(f"Extracted store: {store.name}")
         return store
-        
+
     except Exception as e:
         logging.warning(f"Error extracting store data from {url}: {e}")
         return None
