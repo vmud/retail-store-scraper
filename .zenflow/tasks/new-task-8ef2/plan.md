@@ -18,47 +18,105 @@ Do not make assumptions on important decisions — get clarification first.
 
 ## Workflow Steps
 
-### [ ] Step: Technical Specification
+### [x] Step: Technical Specification
+<!-- chat-id: 0e17490a-fb1c-4638-baed-801ae9e5eeee -->
 
-Assess the task's difficulty, as underestimating it leads to poor outcomes.
-- easy: Straightforward implementation, trivial bug fix or feature
-- medium: Moderate complexity, some edge cases or caveats to consider
-- hard: Complex logic, many caveats, architectural considerations, or high-risk changes
-
-Create a technical specification for the task that is appropriate for the complexity level:
-- Review the existing codebase architecture and identify reusable components.
-- Define the implementation approach based on established patterns in the project.
-- Identify all source code files that will be created or modified.
-- Define any necessary data model, API, or interface changes.
-- Describe verification steps using the project's test and lint commands.
-
-Save the output to `{@artifacts_path}/spec.md` with:
-- Technical context (language, dependencies)
-- Implementation approach
-- Source code structure changes
-- Data model / API / interface changes
-- Verification approach
-
-If the task is complex enough, create a detailed implementation plan based on `{@artifacts_path}/spec.md`:
-- Break down the work into concrete tasks (incrementable, testable milestones)
-- Each task should reference relevant contracts and include verification steps
-- Replace the Implementation step below with the planned tasks
-
-Rule of thumb for step size: each step should represent a coherent unit of work (e.g., implement a component, add an API endpoint, write tests for a module). Avoid steps that are too granular (single function).
-
-Save to `{@artifacts_path}/plan.md`. If the feature is trivial and doesn't warrant this breakdown, keep the Implementation step below as is.
+**Completed**: Created spec.md with:
+- Difficulty assessment: Medium
+- Technical context and current state analysis
+- Problem statement and implementation approach
+- Interface contract definition
+- File-by-file change plan for 7 files
+- Verification approach with test commands
 
 ---
 
-### [ ] Step: Implementation
+### [ ] Step: Implement Reference Scraper
 
-Implement the task according to the technical specification and general engineering best practices.
+Implement the `run()` function in one scraper as a reference implementation.
 
-1. Break the task into steps where possible.
-2. Implement the required changes in the codebase.
-3. Add and run relevant tests and linters.
-4. Perform basic manual verification if applicable.
-5. After completion, write a report to `{@artifacts_path}/report.md` describing:
-   - What was implemented
-   - How the solution was tested
-   - The biggest issues or challenges encountered
+**Target**: `src/scrapers/walmart.py`
+- Add `run(session, config, **kwargs)` function
+- Integrate existing `get_store_urls_from_sitemap()` and `extract_store_details()`
+- Support `limit` parameter
+- Return dict with `stores`, `count`, `checkpoints_used`
+
+**Verification**: 
+- Syntax check: `python -m py_compile src/scrapers/walmart.py`
+- Read code to verify interface matches spec
+
+---
+
+### [ ] Step: Update run.py Integration
+
+Modify `run_retailer_async()` to call scraper entry point and handle output.
+
+**Changes in** `run.py:194-234`:
+- Call `scraper_module.run(session, retailer_config, **kwargs)`
+- Extract result dict (stores, count)
+- Save outputs using `utils.save_to_json()` and `utils.save_to_csv()`
+- Update return value with actual counts
+- Add error handling
+
+**Verification**:
+- Syntax check: `python -m py_compile run.py`
+- Test with walmart: `python run.py --retailer walmart --limit 5 --verbose`
+- Check output files: `ls -lh data/walmart/output/`
+
+---
+
+### [ ] Step: Update Remaining Scrapers
+
+Implement `run()` function in the remaining 5 scrapers.
+
+**Files**:
+- `src/scrapers/bestbuy.py`
+- `src/scrapers/target.py`
+- `src/scrapers/tmobile.py`
+- `src/scrapers/att.py`
+- `src/scrapers/verizon.py`
+
+**Pattern**: Follow walmart.py implementation
+- Use existing helper functions
+- Support limit parameter
+- Return standardized dict
+
+**Verification**:
+- Syntax check all: `python -m py_compile src/scrapers/*.py`
+- Test each with limit: `python run.py --retailer {name} --limit 5`
+
+---
+
+### [ ] Step: Add Checkpoint Support
+
+Enhance scrapers with resume capability using existing checkpoint utilities.
+
+**Changes**:
+- Integrate `utils.save_checkpoint()` and `utils.load_checkpoint()`
+- Save progress every N stores (from config)
+- Resume from checkpoint when `--resume` flag is used
+
+**Verification**:
+- Test resume: Start scraping, interrupt (Ctrl+C), resume with `--resume`
+- Check checkpoint files: `ls data/{retailer}/checkpoints/`
+
+---
+
+### [ ] Step: Integration Testing
+
+Run comprehensive tests across all retailers and modes.
+
+**Test Cases**:
+1. Single retailer with limit: `python run.py --retailer walmart --limit 10`
+2. All retailers test mode: `python run.py --all --test`
+3. Different proxy modes (if credentials available)
+4. Resume functionality
+5. Output file validation
+
+**Verification**:
+- All scrapers run without errors
+- Output files created for each retailer
+- Data structure matches expected format
+- Logs show session usage (direct vs proxy)
+
+**Deliverable**: Write report to `.zenflow/tasks/new-task-8ef2/report.md`
