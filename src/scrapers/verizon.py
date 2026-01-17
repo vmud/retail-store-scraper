@@ -7,6 +7,7 @@ import re
 import time
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import requests
 
@@ -468,7 +469,9 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
              'verizon_uid': '1135614'}
     """
     # Extract slug from URL (last path component)
-    slug = url.rstrip('/').split('/')[-1]
+    # Use urlparse to strip query parameters and fragments, then lowercase for consistent matching
+    parsed_url = urlparse(url)
+    slug = parsed_url.path.rstrip('/').split('/')[-1].lower()
     parts = slug.split('-')
 
     # Dealer patterns: (prefix_parts, display_name, sub_channel)
