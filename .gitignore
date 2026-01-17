@@ -87,3 +87,10 @@ fix_pylint*.py
 # OS files
 .DS_Store
 Thumbs.db
+
+# Node.js
+node_modules/
+dashboard/node_modules/
+
+# Dashboard build output (regenerated on build)
+dashboard/static/dist/
