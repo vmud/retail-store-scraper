@@ -56,13 +56,19 @@ Implement scraper lifecycle management and control system.
 
 **Files to Create:**
 - `src/shared/scraper_manager.py` - Process lifecycle management
-  - Start/stop/pause/resume scrapers
-  - Track running processes
-  - Handle graceful shutdown
+  - Start/stop scrapers (subprocess.Popen wrapper)
+  - Track running processes (in-memory dict)
+  - Handle graceful shutdown (SIGTERM)
+  - Support restart with resume (--resume flag)
+
+**Reuse Existing:**
+- Use existing `run.py` CLI interface via subprocess
+- Leverage existing checkpoint system for resume
 
 **Verification:**
-- Start a scraper via manager
-- Stop a running scraper gracefully
+- Start a scraper via manager (verify process spawned)
+- Stop a running scraper gracefully (verify SIGTERM sent)
+- Restart with resume flag (verify checkpoint loaded)
 - Handle errors during scraper execution
 
 ---
@@ -75,17 +81,23 @@ Add REST API endpoints for scraper control and monitoring.
 - `dashboard/app.py` - Add new endpoints
   - `GET /api/status` - All retailers status
   - `GET /api/status/<retailer>` - Single retailer
-  - `POST /api/scraper/start` - Start scraper(s)
+  - `POST /api/scraper/start` - Start scraper(s) with optional resume
   - `POST /api/scraper/stop` - Stop scraper(s)
-  - `POST /api/scraper/pause` - Pause scraper(s)
-  - `POST /api/scraper/resume` - Resume scraper(s)
   - `GET /api/runs/<retailer>` - Historical runs
   - `GET /api/config` - Get configuration
-  - `POST /api/config` - Update configuration
+  - `POST /api/config` - Update configuration with validation
+
+**Key Implementations:**
+- Config validation: YAML syntax, required fields, type checking
+- Config backup: Create timestamped backup before update
+- Atomic writes: Temp file → validate → move (no partial updates)
+- Error responses: Return validation errors with details
 
 **Verification:**
 - Test each endpoint with curl/Postman
 - Verify error handling (invalid retailer, missing params)
+- Test config update with invalid YAML (should rollback)
+- Test config update with valid YAML (should create backup)
 - Check concurrent request handling
 
 ---
@@ -105,17 +117,23 @@ Build main dashboard interface with retailer cards and status display.
 1. Header with global status
 2. Summary cards (total stores, active retailers, progress)
 3. Retailer cards grid with:
-   - Status indicators
-   - Progress bars
+   - Status indicators (running/complete/pending/disabled)
+   - Progress bars with percentage
    - Stats (stores/duration/requests)
-   - Phase indicators
-   - Control buttons
+   - Phase indicators (Phase 1-4 for Verizon, different for sitemap scrapers)
+   - Control buttons (start/stop/restart with resume/configure)
+
+**Design Guidelines:**
+- Match mockup.html color scheme (dark blue gradient)
+- Retailer-specific brand colors (Verizon #cd040b, AT&T #00a8e0, etc.)
+- Smooth animations and hover effects
 
 **Verification:**
-- Dashboard loads successfully
+- Dashboard loads successfully with all 6 retailers
 - All retailers display correctly
-- Cards match mockup design
-- Responsive layout works
+- Cards match mockup design aesthetically
+- Responsive layout works on desktop
+- No console errors in browser
 
 ---
 
@@ -146,20 +164,28 @@ Add configuration editor and modal interface.
 **Files to Modify:**
 - `dashboard/static/dashboard.js` - Configuration modal
 - `dashboard/static/dashboard.css` - Modal styles
-- `dashboard/app.py` - Config save validation
 
 **Features:**
-- Modal to edit retailer settings
-- Enable/disable retailers
-- Proxy configuration UI
-- Rate limiting settings
-- Validation and error handling
+- Modal to view/edit retailer settings (JSON editor or form)
+- Enable/disable retailers (toggle switches)
+- Proxy configuration UI (mode, country, render_js)
+- Rate limiting settings (min_delay, max_delay, etc.)
+- Client-side validation before API call
+- Display server-side validation errors
+- Show success message with backup file path
+
+**Validation Strategy:**
+- Client-side: Check required fields, numeric types
+- Server-side: Full YAML validation (already implemented in Step 3)
+- Show user-friendly error messages
 
 **Verification:**
-- Open config modal, edit settings
-- Save and verify changes persist
-- Test validation (invalid values)
+- Open config modal, displays current YAML correctly
+- Edit settings (enable/disable retailer, change delays)
+- Save with valid changes (verify backup created)
+- Save with invalid YAML (verify error shown, no changes made)
 - Verify YAML file updated correctly
+- Check backup file exists in `config/` directory
 
 ---
 
@@ -189,25 +215,35 @@ Implement historical run tracking and log viewer.
 
 ### [ ] Step: Testing & Bug Fixes
 
-Write tests and fix issues discovered during integration.
+Write smoke tests and fix issues discovered during integration.
 
-**Tests to Write:**
-- `tests/test_multi_retailer_status.py` - Status calculation
-- `tests/test_run_tracker.py` - Run metadata tracking
-- `tests/test_scraper_manager.py` - Lifecycle management
-- `tests/test_dashboard_api.py` - API endpoints
+**Test Infrastructure Setup:**
+1. Create `tests/` directory
+2. Add `pytest-flask` to requirements.txt
+3. Create `tests/conftest.py` with fixtures
+
+**Smoke Tests to Write:**
+- `tests/test_status.py` - Status calculation
+  - Test `get_retailer_status('verizon')` with mock checkpoints
+  - Test `get_all_retailers_status()` returns all 6 retailers
+  - Test phase detection for different scraper types
+- `tests/test_api.py` - API endpoints
+  - Test `GET /api/status` returns valid JSON
+  - Test `POST /api/scraper/start` with invalid retailer returns 400
+  - Test `POST /api/config` with invalid YAML returns error
 
 **Manual Testing:**
-- Run all scrapers concurrently
-- Test pause/resume functionality
-- Verify error handling displays properly
-- Check edge cases (no data, failed runs, etc.)
+- Run all scrapers concurrently (verify no conflicts)
+- Test stop functionality (verify graceful shutdown)
+- Test restart with resume (verify checkpoint usage)
+- Verify error handling displays properly in UI
+- Check edge cases (no data, failed runs, missing checkpoints)
 
 **Verification:**
-- All tests pass: `pytest tests/`
-- Manual test checklist completed
+- All smoke tests pass: `pytest tests/`
+- Manual test checklist completed (see spec.md)
 - No console errors in browser
-- API returns proper status codes
+- API returns proper status codes (200, 400, 500)
 
 ---
 

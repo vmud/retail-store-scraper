@@ -4,11 +4,17 @@
 
 This task requires:
 - Multi-retailer status tracking system (backend refactor)
-- Scraper orchestration and control (start/stop/configure)
+- Scraper orchestration and control (start/stop/restart with resume)
 - Real-time progress monitoring UI
-- Configuration management interface
+- Configuration management interface with validation/rollback
 - Historical run tracking
 - Error handling and logging UI
+
+**Scope Decisions**:
+- **No pause/resume**: Use restart-from-checkpoint workflow instead
+- **Internal tool**: Flask development server is sufficient
+- **Smoke tests only**: Minimal automated testing for critical paths
+- **Config editing**: Full implementation with robust validation and rollback
 
 ## 1. Technical Context
 
@@ -27,6 +33,7 @@ This task requires:
 - CLI orchestration (`run.py`) with concurrent execution support
 
 ### Dependencies
+All required dependencies already exist in `requirements.txt`:
 ```
 flask>=3.0.0
 requests>=2.31.0
@@ -34,6 +41,37 @@ beautifulsoup4>=4.12.0
 pyyaml>=6.0.0
 aiohttp>=3.9.0  (for async scraping)
 ```
+
+### Existing Utilities to Reuse
+
+The codebase has robust utilities in `src/shared/utils.py` that should be leveraged:
+
+**Progress Tracking:**
+- `save_checkpoint(data, filepath)` - Atomic checkpoint saves with temp file
+- `load_checkpoint(filepath)` - Load checkpoint data
+- Both handle JSON serialization and error handling
+
+**Logging:**
+- `setup_logging(log_file)` - Configured logging with file + console handlers
+- Already creates log directories and handles log rotation
+
+**Data Export:**
+- `save_to_csv(stores, filepath, fieldnames)` - CSV export utility
+- `save_to_json(stores, filepath)` - JSON export utility
+
+**Request Handling:**
+- `get_with_retry()` - Request retry logic with exponential backoff
+- `random_delay()` - Rate limiting delays
+- `get_headers()` - User agent rotation
+
+**Proxy Integration:**
+- `ProxyClient` - Existing proxy client with Oxylabs support
+- `get_proxy_client()` - Client instance management
+
+**Reuse Strategy:**
+- Run tracker should use `save_checkpoint()` for metadata persistence
+- Logs should use existing `setup_logging()` infrastructure
+- Status calculation should leverage existing checkpoint format
 
 ## 2. Implementation Approach
 
@@ -59,21 +97,20 @@ Add endpoints to manage scraping operations.
 ```
 GET  /api/status                    # All retailers status
 GET  /api/status/<retailer>         # Single retailer status
-POST /api/scraper/start             # Start scraper(s)
+POST /api/scraper/start             # Start scraper(s) with optional resume
 POST /api/scraper/stop              # Stop scraper(s)
-POST /api/scraper/pause             # Pause scraper(s)
-POST /api/scraper/resume            # Resume scraper(s)
 GET  /api/config                    # Get configuration
-POST /api/config                    # Update configuration
+POST /api/config                    # Update configuration (with validation)
 GET  /api/runs/<retailer>           # Historical runs
 GET  /api/logs/<retailer>/<run_id>  # Run logs
 ```
 
 **Implementation Strategy:**
-- Use threading/subprocess to run scrapers asynchronously
+- Use `subprocess.Popen()` to run scrapers asynchronously
 - Store process references in memory (dict keyed by retailer)
-- Signal-based pause/resume mechanism
-- Atomic checkpoint updates for safety
+- Graceful shutdown via process termination (SIGTERM)
+- Resume via checkpoint detection (existing `--resume` flag in `run.py`)
+- Config updates use atomic write (temp file + move) with YAML validation
 
 ### Phase 3: Frontend - Dashboard UI
 Build comprehensive monitoring and control interface.
@@ -94,8 +131,8 @@ Build comprehensive monitoring and control interface.
    - Individual retailer status (running/complete/pending/disabled)
    - Progress bars with percentage
    - Stats grid (stores/duration/requests)
-   - Phase indicators
-   - Control buttons (start/stop/pause/configure)
+   - Phase indicators (Phase 1: States, Phase 2: Cities, Phase 3: URLs, Phase 4: Extract)
+   - Control buttons (start/stop/restart-with-resume/configure)
 
 4. **Configuration Modal**
    - Edit retailer-specific settings
@@ -132,19 +169,34 @@ dashboard/
     dashboard.css          # Extracted styles
     dashboard.js           # Frontend logic
 src/shared/
-  run_tracker.py           # Run metadata tracking
-  scraper_manager.py       # Scraper lifecycle management
-data/
-  {retailer}/
-    runs/
-      {run_id}.json        # Run metadata
-    logs/
-      {run_id}.log         # Run logs
-    checkpoints/
-      {checkpoint}.json    # Progress checkpoints
-    output/
-      {file}.json/csv      # Final output
+  run_tracker.py           # Run metadata tracking (uses utils.save_checkpoint)
+  scraper_manager.py       # Scraper lifecycle management (subprocess wrapper)
+tests/                     # NEW: Test infrastructure
+  test_status.py           # Smoke tests for status calculation
+  test_api.py              # Smoke tests for API endpoints
 ```
+
+### New Directories (Data Structure)
+```
+data/{retailer}/          # Existing: per-retailer data
+  runs/                   # NEW: Run metadata files
+    {run_id}.json         # Run metadata (start/end times, stats, errors)
+  checkpoints/            # EXISTING: Progress checkpoints
+    states.json           # Phase 1: States (Verizon only)
+    cities.json           # Phase 2: Cities (Verizon only)
+    store_urls.json       # Phase 3: Store URLs (Verizon only)
+    sitemap_urls.json     # Sitemap-based scrapers (AT&T, Target, etc.)
+  output/                 # EXISTING: Final output files
+    {retailer}_stores.csv
+    {retailer}_stores.json
+  logs/                   # NEW: Per-run log files
+    {run_id}.log          # Individual run logs
+
+logs/                     # EXISTING: Global application logs
+  scraper.log             # Main scraper log (global)
+```
+
+**Note**: The distinction between `logs/` (global app logs) and `data/{retailer}/logs/` (per-run logs) is intentional for better organization.
 
 ### Modified Files
 ```
@@ -262,50 +314,93 @@ Response:
 ### Configuration API
 ```http
 GET /api/config
-Response: {retailers.yaml content}
+Response: 
+{
+  "proxy": {...},
+  "defaults": {...},
+  "retailers": {...}
+}
 
 POST /api/config
 Content-Type: application/json
-Body: {updated retailers.yaml}
+Body: {updated retailers.yaml structure}
+
+Response (success):
+{
+  "status": "updated",
+  "message": "Configuration saved successfully",
+  "backup_file": "config/retailers.yaml.backup.20260117_044500"
+}
+
+Response (validation error):
+{
+  "status": "error",
+  "message": "Invalid YAML structure",
+  "errors": ["retailers.verizon.min_delay must be numeric", ...]
+}
 ```
+
+**Validation & Rollback Strategy:**
+1. Create backup: `config/retailers.yaml.backup.{timestamp}`
+2. Write to temp file: `config/retailers.yaml.tmp`
+3. Validate YAML syntax with `yaml.safe_load()`
+4. Validate required fields (mode, enabled, base_url, etc.)
+5. Validate types (min_delay is float, enabled is bool, etc.)
+6. If validation passes: atomic move temp → `retailers.yaml`
+7. If validation fails: delete temp, return error response
+8. Keep last 5 backups, delete older ones
 
 ## 6. Verification Approach
 
 ### Testing Strategy
-1. **Unit Tests** (`pytest`)
-   - `test_multi_retailer_status.py` - Status calculation for all retailers
-   - `test_run_tracker.py` - Run metadata tracking
-   - `test_scraper_manager.py` - Lifecycle management
 
-2. **Integration Tests**
-   - API endpoint functionality
-   - Concurrent scraper execution
-   - Progress updates during active runs
+**Smoke Tests Only** (minimal automated testing for critical paths):
 
-3. **Manual Verification**
-   - Start Verizon scraper, verify real-time progress
-   - Start multiple scrapers concurrently
-   - Test pause/resume functionality
-   - Verify configuration changes persist
-   - Check historical run data accuracy
+1. **`tests/test_status.py`** - Status calculation smoke tests
+   - Test `get_retailer_status('verizon')` with mock checkpoints
+   - Test `get_all_retailers_status()` returns all 6 retailers
+   - Test phase detection for sitemap vs HTML crawl methods
+
+2. **`tests/test_api.py`** - API endpoint smoke tests
+   - Test `GET /api/status` returns valid JSON
+   - Test `POST /api/scraper/start` with invalid retailer returns 400
+   - Test `POST /api/config` with invalid YAML returns error
+
+**Test Infrastructure:**
+- Create `tests/` directory (doesn't currently exist)
+- Use `pytest` and `pytest-flask` for testing
+- Mock file I/O and subprocess calls
+- No integration tests or full scraper runs
+
+**Manual Verification:**
+- Start Verizon scraper, verify real-time progress
+- Start multiple scrapers concurrently
+- Test stop functionality
+- Test restart with resume (--resume flag)
+- Verify configuration changes persist with rollback
+- Check historical run data accuracy
 
 ### Lint & Type Checking
 ```bash
-# No specific commands found in codebase
-# Will ask user for project standards
+# No linting commands found in codebase
+# Manual code review only
 ```
 
 ### Manual Testing Checklist
-- [ ] Dashboard loads with all retailers
-- [ ] Status updates every 5 seconds
-- [ ] Start button initiates scraping
-- [ ] Stop button terminates gracefully
-- [ ] Progress bars update accurately
-- [ ] Configuration modal saves changes
-- [ ] Historical runs display correctly
-- [ ] Logs viewer shows real-time logs
+- [ ] Dashboard loads with all 6 retailers displayed
+- [ ] Status updates every 5 seconds via auto-refresh
+- [ ] Start button initiates scraping (verify process spawned)
+- [ ] Stop button terminates gracefully (verify SIGTERM sent)
+- [ ] Restart with resume uses existing checkpoints
+- [ ] Progress bars update accurately (match checkpoint data)
+- [ ] Phase indicators show correct status (Phase 1-4 for Verizon, different for sitemap scrapers)
+- [ ] Configuration modal opens and displays current YAML
+- [ ] Configuration saves create backup file
+- [ ] Invalid configuration shows error and rolls back
+- [ ] Historical runs display correctly per retailer
+- [ ] Logs viewer shows run logs with proper formatting
 - [ ] Error handling displays user-friendly messages
-- [ ] Responsive design works on mobile
+- [ ] No console errors in browser developer tools
 
 ## 7. UI Design Guidelines
 
@@ -340,22 +435,40 @@ Following the mockup.html aesthetic:
 
 ## 10. Deployment Notes
 
+**Target Environment**: Internal tool only (development server is sufficient)
+
 ### Running the Dashboard
 ```bash
-# Start dashboard server
+# Start dashboard server (Flask development server)
 python dashboard/app.py
 
 # Access at http://localhost:5000
+# Note: Only accessible from localhost by default (host='0.0.0.0' already configured)
 ```
 
 ### File Permissions
-- `data/` directory must be writable
-- Log files in `logs/` directory
-- Configuration in `config/` must be readable/writable
+- `data/` directory must be writable (for checkpoints, runs, logs)
+- `logs/` directory must be writable (for global logs)
+- `config/` directory must be readable/writable (for YAML updates and backups)
 
 ### Environment Variables
 - Proxy credentials loaded from env (existing pattern)
 - No new environment variables required
+
+### Production Considerations (NOT REQUIRED)
+Since this is an internal tool, the following are NOT needed:
+- WSGI server (gunicorn/uwsgi)
+- CORS configuration
+- SSL/HTTPS
+- Authentication/authorization
+- Rate limiting (beyond basic spam prevention)
+- Load balancing or horizontal scaling
+
+### Static File Serving
+Flask is configured to serve static files from `dashboard/static/` directory (will be added to app.py):
+```python
+app = Flask(__name__, static_folder='static', static_url_path='/static')
+```
 
 ---
 
