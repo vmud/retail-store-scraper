@@ -470,7 +470,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
     # Extract slug from URL (last path component)
     slug = url.rstrip('/').split('/')[-1]
     parts = slug.split('-')
-    
+
     # Dealer patterns: (prefix_parts, display_name, sub_channel)
     # Order matters - check multi-word prefixes first
     dealer_patterns = [
@@ -488,13 +488,13 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
         (['tcc'], 'TCC', 'Dealer'),
         (['gowireless'], 'GoWireless', 'Dealer'),
     ]
-    
+
     # Check each dealer pattern
     for prefix_parts, dealer_name, sub_channel in dealer_patterns:
         if parts[:len(prefix_parts)] == prefix_parts:
             # Dealer pattern matched
             remaining = parts[len(prefix_parts):]
-            
+
             # Special handling for Best Buy (has store number as first element after prefix)
             if dealer_name == 'Best Buy' and len(remaining) >= 3:
                 store_number = remaining[0]
@@ -507,7 +507,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
                     'retailer_store_number': store_number,
                     'verizon_uid': verizon_uid
                 }
-            
+
             # Other dealers: no store number, format is {dealer}-{location}-{uid}
             if len(remaining) >= 2:
                 verizon_uid = remaining[-1]
@@ -519,7 +519,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
                     'retailer_store_number': None,
                     'verizon_uid': verizon_uid
                 }
-    
+
     # No dealer prefix found - COR store
     # Format: {location}-{uid}
     if len(parts) >= 2:
@@ -532,7 +532,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
             'retailer_store_number': None,
             'verizon_uid': verizon_uid
         }
-    
+
     # Fallback for unexpected format (shouldn't happen with real data)
     logging.warning(f"Unexpected URL format, cannot parse components: {url}")
     return {
@@ -628,7 +628,7 @@ def extract_store_details(session: requests.Session, store_url: str) -> Optional
                     'url': store_url,
                     'scraped_at': datetime.now().isoformat()
                 }
-                
+
                 # Parse URL components (sub-channel, dealer name, location, store number, UID)
                 url_components = parse_url_components(store_url)
                 result.update(url_components)
