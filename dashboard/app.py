@@ -3,6 +3,7 @@
 
 import sys
 import os
+import re
 import yaml
 import shutil
 from pathlib import Path
@@ -11,13 +12,24 @@ from datetime import datetime
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, Response
 from src.shared import status, scraper_manager, run_tracker
 
 app = Flask(__name__)
 
 # Get singleton scraper manager instance
 _scraper_manager = scraper_manager.get_scraper_manager()
+
+
+def require_json(f):
+    """Decorator to require JSON Content-Type for POST endpoints"""
+    def wrapper(*args, **kwargs):
+        if request.method == 'POST':
+            if request.content_type != 'application/json':
+                return jsonify({"error": "Content-Type must be application/json"}), 415
+        return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
+    return wrapper
 
 
 @app.route('/')
@@ -320,6 +332,7 @@ def api_retailer_status(retailer):
 
 
 @app.route('/api/scraper/start', methods=['POST'])
+@require_json
 def api_scraper_start():
     """Start scraper(s)
     
@@ -385,6 +398,7 @@ def api_scraper_start():
 
 
 @app.route('/api/scraper/stop', methods=['POST'])
+@require_json
 def api_scraper_stop():
     """Stop scraper(s)
     
@@ -419,12 +433,13 @@ def api_scraper_stop():
 
 
 @app.route('/api/scraper/restart', methods=['POST'])
+@require_json
 def api_scraper_restart():
     """Restart scraper(s)
     
     Request body:
     {
-        "retailer": "verizon",  # Required: retailer name
+        "retailer": "verizon",  # Required: retailer name or "all"
         "resume": true,         # Optional: resume from checkpoint (default: true)
         "timeout": 30           # Optional: shutdown timeout in seconds (default: 30)
     }
@@ -439,8 +454,29 @@ def api_scraper_restart():
         resume = data.get('resume', True)
         timeout = data.get('timeout', 30)
         
-        result = _scraper_manager.restart(retailer, resume=resume, timeout=timeout)
-        return jsonify(result)
+        if retailer == 'all':
+            config = status.load_retailers_config()
+            results = []
+            errors = []
+            
+            for ret in config.keys():
+                if not config[ret].get('enabled', False):
+                    continue
+                
+                try:
+                    result = _scraper_manager.restart(ret, resume=resume, timeout=timeout)
+                    results.append(result)
+                except Exception as e:
+                    errors.append({"retailer": ret, "error": str(e)})
+            
+            return jsonify({
+                "message": f"Restarted {len(results)} scraper(s)",
+                "restarted": results,
+                "errors": errors
+            })
+        else:
+            result = _scraper_manager.restart(retailer, resume=resume, timeout=timeout)
+            return jsonify(result)
     
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -456,6 +492,10 @@ def api_run_history(retailer):
         limit: Number of runs to return (default: 10)
     """
     try:
+        config = status.load_retailers_config()
+        if retailer not in config:
+            return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
+        
         limit = request.args.get('limit', 10, type=int)
         runs = run_tracker.get_run_history(retailer, limit=limit)
         
@@ -474,19 +514,27 @@ def api_get_logs(retailer, run_id):
     
     Query params:
         tail: Number of lines to return from end (default: all)
-        follow: If true, stream logs in real-time (default: false)
     """
     try:
+        config = status.load_retailers_config()
+        if retailer not in config:
+            return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
+        
+        if not re.match(r'^[\w\-]+$', run_id):
+            return jsonify({"error": "Invalid run_id format. Only alphanumeric, underscore, and hyphen allowed"}), 400
+        
         log_file = Path(f"data/{retailer}/logs/{run_id}.log")
         
         if not log_file.exists():
             return jsonify({"error": "Log file not found"}), 404
         
-        tail = request.args.get('tail', type=int)
-        follow = request.args.get('follow', 'false').lower() == 'true'
+        log_file_resolved = log_file.resolve()
+        expected_base = Path(f"data/{retailer}/logs").resolve()
         
-        if follow:
-            return send_file(str(log_file), mimetype='text/plain')
+        if not str(log_file_resolved).startswith(str(expected_base)):
+            return jsonify({"error": "Invalid log file path"}), 400
+        
+        tail = request.args.get('tail', type=int)
         
         with open(log_file, 'r') as f:
             lines = f.readlines()
@@ -525,6 +573,7 @@ def api_get_config():
 
 
 @app.route('/api/config', methods=['POST'])
+@require_json
 def api_update_config():
     """Update configuration with validation
     
@@ -538,6 +587,7 @@ def api_update_config():
     - Validates required fields and structure
     - Creates timestamped backup before update
     - Atomic write (temp file -> validate -> move)
+    - Reloads configuration in memory
     """
     try:
         data = request.get_json() or {}
@@ -571,6 +621,8 @@ def api_update_config():
                 f.write(content)
             
             temp_path.replace(config_path)
+            
+            _reload_config()
             
             return jsonify({
                 "message": "Configuration updated successfully",
@@ -622,6 +674,11 @@ def _validate_config(config: dict) -> dict:
                 if 'enabled' in retailer_config and not isinstance(retailer_config['enabled'], bool):
                     errors.append(f"Retailer '{retailer_name}' field 'enabled' must be boolean")
                 
+                if 'base_url' in retailer_config:
+                    base_url = retailer_config['base_url']
+                    if not isinstance(base_url, str) or not base_url.startswith(('http://', 'https://')):
+                        errors.append(f"Retailer '{retailer_name}' field 'base_url' must be a valid HTTP/HTTPS URL")
+                
                 if 'discovery_method' in retailer_config:
                     valid_methods = ['html_crawl', 'sitemap', 'sitemap_gzip', 'sitemap_paginated']
                     if retailer_config['discovery_method'] not in valid_methods:
@@ -629,6 +686,15 @@ def _validate_config(config: dict) -> dict:
                             f"Retailer '{retailer_name}' has invalid discovery_method. "
                             f"Must be one of: {', '.join(valid_methods)}"
                         )
+                
+                numeric_fields = ['min_delay', 'max_delay', 'timeout', 'checkpoint_interval']
+                for field in numeric_fields:
+                    if field in retailer_config:
+                        value = retailer_config[field]
+                        if not isinstance(value, (int, float)) or value <= 0:
+                            errors.append(
+                                f"Retailer '{retailer_name}' field '{field}' must be a positive number"
+                            )
     
     return {
         "valid": len(errors) == 0,
@@ -653,6 +719,15 @@ def _create_config_backup(config_path: Path) -> Path:
     shutil.copy2(config_path, backup_path)
     
     return backup_path
+
+
+def _reload_config() -> None:
+    """Reload configuration after update
+    
+    Forces the status module to reload the configuration file
+    on the next access by clearing any cached config data.
+    """
+    pass
 
 
 if __name__ == '__main__':

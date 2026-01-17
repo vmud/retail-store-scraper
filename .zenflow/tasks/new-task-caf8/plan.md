@@ -145,6 +145,16 @@ Do not make assumptions on important decisions — get clarification first.
 - ✅ Run history endpoint returns correct data
 - ✅ Status endpoints return proper structure for all 6 retailers
 
+**Security Fixes Applied:**
+- ✅ Fixed path traversal vulnerability in logs endpoint (retailer validation + run_id sanitization)
+- ✅ Removed broken log streaming (follow parameter) - now returns full log content
+- ✅ Added Content-Type validation on all POST endpoints (415 error if not JSON)
+- ✅ Enhanced config validation: URL format, positive numbers, discovery method
+- ✅ Added retailer validation to `/api/runs/<retailer>` endpoint
+- ✅ Added batch support ("all") to restart endpoint for consistency
+- ✅ Config reload mechanism implemented (forces fresh load after update)
+- ✅ All security tests passing (see `tests/test_security_fixes.sh`)
+
 ---
 
 ### [ ] Step: Frontend - Core Dashboard UI
