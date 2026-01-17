@@ -568,8 +568,25 @@ def run(session, config: dict, **kwargs) -> dict:
             - checkpoints_used: bool - Whether resume was used
     """
     limit = kwargs.get('limit')
+    resume = kwargs.get('resume', False)
     
     reset_request_counter()
+    
+    retailer_name = config.get('name', 'verizon').lower()
+    checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
+    checkpoint_interval = config.get('checkpoint_interval', 10)
+    
+    stores = []
+    completed_urls = set()
+    checkpoints_used = False
+    
+    if resume:
+        checkpoint = utils.load_checkpoint(checkpoint_path)
+        if checkpoint:
+            stores = checkpoint.get('stores', [])
+            completed_urls = set(checkpoint.get('completed_urls', []))
+            logging.info(f"Resuming from checkpoint: {len(stores)} stores already collected")
+            checkpoints_used = True
     
     all_states = get_all_states(session)
     
@@ -587,14 +604,32 @@ def run(session, config: dict, **kwargs) -> dict:
     if limit:
         all_store_urls = all_store_urls[:limit]
     
-    stores = []
-    for url in all_store_urls:
+    remaining_urls = [url for url in all_store_urls if url not in completed_urls]
+    
+    if limit:
+        total_needed = limit - len(stores)
+        if total_needed > 0:
+            remaining_urls = remaining_urls[:total_needed]
+        else:
+            remaining_urls = []
+    
+    for i, url in enumerate(remaining_urls):
         store_data = extract_store_details(session, url)
         if store_data:
             stores.append(store_data)
+            completed_urls.add(url)
+        
+        if (i + 1) % checkpoint_interval == 0:
+            utils.save_checkpoint({
+                'completed_count': len(stores),
+                'completed_urls': list(completed_urls),
+                'stores': stores,
+                'last_updated': datetime.now().isoformat()
+            }, checkpoint_path)
+            logging.info(f"Checkpoint saved: {len(stores)} stores processed")
     
     return {
         'stores': stores,
         'count': len(stores),
-        'checkpoints_used': False
+        'checkpoints_used': checkpoints_used
     }
