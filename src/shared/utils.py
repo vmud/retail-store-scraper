@@ -154,10 +154,17 @@ def get_with_retry(
         headers = get_headers()
     session.headers.update(headers)
 
+    response = None  # Initialize response to prevent AttributeError
+    
     for attempt in range(max_retries):
         try:
             random_delay(min_delay, max_delay)
             response = session.get(url, timeout=timeout)
+
+            # Check if response is valid before accessing attributes
+            if response is None:
+                logging.warning(f"Received None response for {url}")
+                continue
 
             if response.status_code == 200:
                 logging.debug(f"Successfully fetched {url}")
@@ -194,6 +201,7 @@ def get_with_retry(
                 return None
 
         except requests.exceptions.RequestException as e:
+            response = None  # Ensure response is None after exception
             wait_time = 10
             logging.warning(f"Request error for {url}: {e}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
             time.sleep(wait_time)
