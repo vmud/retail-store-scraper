@@ -343,6 +343,10 @@ def api_get_logs(retailer, run_id):
         tail: Number of lines to return from end (default: all)
     """
     try:
+        # Validate retailer name format to prevent path traversal
+        if not re.match(r'^[a-z][a-z0-9_]*$', retailer):
+            return jsonify({"error": "Invalid retailer name format. Must start with lowercase letter and contain only lowercase, digits, and underscores"}), 400
+        
         config = status.load_retailers_config()
         if retailer not in config:
             return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
@@ -355,8 +359,9 @@ def api_get_logs(retailer, run_id):
         if not log_file.exists():
             return jsonify({"error": "Log file not found"}), 404
         
+        # Use static base path for security - prevents path traversal even with malicious retailer names
         log_file_resolved = log_file.resolve()
-        expected_base = Path(f"data/{retailer}/logs").resolve()
+        expected_base = Path("data").resolve()
         
         if not str(log_file_resolved).startswith(str(expected_base)):
             return jsonify({"error": "Invalid log file path"}), 400
@@ -489,6 +494,14 @@ def _validate_config(config: dict) -> dict:
             errors.append("'retailers' must be a dictionary")
         else:
             for retailer_name, retailer_config in retailers.items():
+                # Validate retailer name format to prevent path traversal
+                if not re.match(r'^[a-z][a-z0-9_]*$', retailer_name):
+                    errors.append(
+                        f"Invalid retailer name '{retailer_name}'. "
+                        f"Must start with lowercase letter and contain only lowercase, digits, and underscores"
+                    )
+                    continue
+                
                 if not isinstance(retailer_config, dict):
                     errors.append(f"Retailer '{retailer_name}' config must be a dictionary")
                     continue
