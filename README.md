@@ -11,7 +11,7 @@ A scalable Python web scraper that collects retail store locations from multiple
 - **Anti-Blocking Measures**: User-agent rotation, random delays, rate limit handling
 - **Docker Support**: Containerized deployment with docker-compose
 - **Systemd Integration**: Persistent service for Linux servers
-- **Web Dashboard**: Real-time progress monitoring
+- **Web Dashboard**: Real-time monitoring with soft dark theme UI
 
 ## Quick Start
 
@@ -90,7 +90,15 @@ retail-store-scraper/
 │       ├── walmart.py
 │       └── bestbuy.py
 ├── dashboard/
-│   └── app.py                  # Flask monitoring dashboard
+│   ├── app.py                  # Flask backend API
+│   ├── index.html              # Dashboard entry point
+│   ├── vite.config.js          # Vite build configuration
+│   └── src/
+│       ├── main.js             # App initialization
+│       ├── api.js              # API client
+│       ├── state.js            # Reactive state store
+│       ├── components/         # UI components
+│       └── styles/             # CSS design system
 ├── deploy/
 │   ├── scraper.service         # Systemd unit file
 │   └── install.sh              # Linux deployment script
@@ -100,6 +108,48 @@ retail-store-scraper/
         ├── output/
         └── history/
 ```
+
+## Web Dashboard
+
+The dashboard provides real-time monitoring of scraper operations with a modern soft dark theme.
+
+### Features
+
+- **Real-time Updates**: Auto-refreshes every 5 seconds with no visual flash
+- **Retailer Cards**: Progress bars, store counts, duration, and phase tracking
+- **Brand Identity**: Each retailer has its logo and accent color
+- **Config Editor**: Edit `retailers.yaml` directly from the UI
+- **Log Viewer**: Filter logs by level (INFO, WARNING, ERROR, DEBUG)
+- **Change Detection**: Delta report showing new, closed, and modified stores
+
+### Running the Dashboard
+
+```bash
+# Start the Flask server
+cd dashboard
+python app.py
+
+# Access at http://localhost:5001
+```
+
+### Development
+
+```bash
+cd dashboard
+
+# Install dependencies
+npm install
+
+# Development mode with hot reload
+npm run dev
+
+# Production build
+npm run build
+```
+
+### Screenshot
+
+![Dashboard](https://github.com/vmud/retail-store-scraper/assets/dashboard-preview.png)
 
 ## Docker Deployment
 
