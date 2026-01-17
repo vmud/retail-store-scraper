@@ -21,7 +21,18 @@
       "mcp__kapture__keypress",
       "mcp__kapture__click",
       "mcp__kapture__reload",
-      "Bash(gh pr create:*)"
+      "Bash(gh pr create:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(ls:*)",
+      "Bash(tar:*)",
+      "Bash(python3:*)",
+      "mcp__plugin_playwright_playwright__browser_install",
+      "Bash(npx playwright install:*)",
+      "mcp__kapture__new_tab",
+      "mcp__kapture__elements",
+      "mcp__kapture__console_logs"
     ]
   }
 }
