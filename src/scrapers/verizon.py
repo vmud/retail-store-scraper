@@ -486,7 +486,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
         (['a', 'wireless'], 'A Wireless', 'Dealer'),
         (['victra'], 'Victra', 'Dealer'),
         (['tcc'], 'TCC', 'Dealer'),
-        (['goireless'], 'GoWireless', 'Dealer'),
+        (['gowireless'], 'GoWireless', 'Dealer'),
     ]
     
     # Check each dealer pattern
