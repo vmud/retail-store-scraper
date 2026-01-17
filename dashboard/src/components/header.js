@@ -19,7 +19,8 @@ function renderStatusIndicators(container, summary) {
     ? `${activeScrapers} ACTIVE`
     : 'ALL IDLE';
 
-  const idleCount = totalRetailers - activeRetailers;
+  // Calculate enabled-but-not-running retailers (truly idle)
+  const idleCount = activeRetailers - activeScrapers;
 
   container.innerHTML = `
     <div class="status-indicator ${activeScrapers > 0 ? 'status-indicator--active' : 'status-indicator--idle'}">
