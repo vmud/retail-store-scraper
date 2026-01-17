@@ -25,6 +25,7 @@ const RETRY_DELAY = 10000;  // 10 seconds on error
 
 // State
 let pollInterval = null;
+let timestampInterval = null;
 let isPolling = false;
 
 /**
@@ -131,7 +132,7 @@ function init() {
   window.addEventListener('manual-refresh', handleManualRefresh);
 
   // Update footer timestamp periodically
-  setInterval(updateFooterTimestamp, 1000);
+  timestampInterval = setInterval(updateFooterTimestamp, 1000);
 
   // Start polling
   startPolling();
@@ -152,6 +153,11 @@ function init() {
  */
 function destroy() {
   stopPolling();
+
+  if (timestampInterval) {
+    clearInterval(timestampInterval);
+    timestampInterval = null;
+  }
 
   document.removeEventListener('visibilitychange', handleVisibilityChange);
   window.removeEventListener('manual-refresh', handleManualRefresh);
