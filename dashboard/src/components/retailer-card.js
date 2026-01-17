@@ -293,8 +293,10 @@ function updateCard(retailerId, data) {
   // Update action buttons - re-render if needed for RESTART button
   const actionsEl = card.querySelector('[data-field="actions"]');
   if (actionsEl) {
+    const isDisabled = status === 'disabled';
     const hasRestartBtn = actionsEl.querySelector('[data-action="restart"]');
-    const shouldShowRestart = !isRunning && progress >= 100;
+    // Only show restart button if not disabled, not running, and progress is 100%
+    const shouldShowRestart = !isDisabled && !isRunning && progress >= 100;
 
     // Re-render actions if RESTART button state changed
     if ((hasRestartBtn && !shouldShowRestart) || (!hasRestartBtn && shouldShowRestart)) {
