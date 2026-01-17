@@ -554,13 +554,13 @@ def get_with_proxy(
 
 def create_proxied_session(
     retailer_config: Optional[Dict[str, Any]] = None
-) -> Union[requests.Session, ProxyClient]:
+) -> Union[requests.Session, ProxiedSession]:
     """
     Create a session-like object that can be used as a drop-in replacement
     for requests.Session in existing scrapers.
 
     For direct mode, returns a standard requests.Session.
-    For proxy modes, returns a ProxyClient with compatible interface.
+    For proxy modes, returns a ProxiedSession with compatible interface.
 
     Args:
         retailer_config: Optional retailer-specific config with proxy overrides
@@ -589,10 +589,11 @@ def create_proxied_session(
             session.headers.update(get_headers())
             return session
         
-        client = get_proxy_client(proxy_config_dict, retailer=retailer_name)
+        # Return ProxiedSession instead of ProxyClient to provide headers attribute
+        proxied_session = ProxiedSession(proxy_config_dict)
         
-        logging.info(f"[{retailer_name}] Created ProxyClient for mode: {client.config.mode.value}")
-        return client
+        logging.info(f"[{retailer_name}] Created ProxiedSession for mode: {mode}")
+        return proxied_session
         
     except Exception as e:
         logging.error(f"[{retailer_name}] Error creating proxy client: {e}, falling back to direct")

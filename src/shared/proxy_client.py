@@ -303,25 +303,40 @@ class ProxyClient:
             logging.debug(f"Configured residential proxy: {self.config.residential_endpoint}")
 
     def _build_residential_proxy_url(self) -> str:
-        """Build residential proxy URL with authentication and targeting"""
-        # Build username with targeting options
-        username_parts = [self.config.username]
+        """Build residential proxy URL with authentication and targeting
+        
+        Format according to Oxylabs documentation:
+        - Basic: customer-{username}
+        - Country: customer-{username}-cc-{country}
+        - City: customer-{username}-cc-{country}-city-{city}
+        - State: customer-{username}-st-{state}
+        - Session: customer-{username}-sessid-{session_id}
+        """
+        # Start with customer- prefix if not already present
+        username = self.config.username
+        if not username.startswith('customer-'):
+            username = f'customer-{username}'
+        
+        username_parts = [username]
 
-        # Add country targeting
+        # Add country targeting (cc-COUNTRY_CODE format)
         if self.config.country_code:
-            username_parts.append(f"country-{self.config.country_code}")
+            username_parts.append(f"cc-{self.config.country_code.upper()}")
 
         # Add city targeting
         if self.config.city:
-            username_parts.append(f"city-{self.config.city}")
+            # Replace spaces with underscores as per Oxylabs docs
+            city = self.config.city.lower().replace(' ', '_')
+            username_parts.append(f"city-{city}")
 
-        # Add state targeting
+        # Add state targeting (st-STATE format for US)
         if self.config.state:
-            username_parts.append(f"state-{self.config.state}")
+            state = self.config.state.lower().replace(' ', '_')
+            username_parts.append(f"st-{state}")
 
-        # Add session type
+        # Add session ID for sticky sessions (sessid-SESSION_ID format)
         if self.config.session_type == "sticky" and self.config.session_id:
-            username_parts.append(f"session-{self.config.session_id}")
+            username_parts.append(f"sessid-{self.config.session_id}")
 
         username = "-".join(username_parts)
 
