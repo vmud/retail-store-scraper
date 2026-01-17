@@ -496,17 +496,28 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
             remaining = parts[len(prefix_parts):]
 
             # Special handling for Best Buy (has store number as first element after prefix)
-            if dealer_name == 'Best Buy' and len(remaining) >= 3:
-                store_number = remaining[0]
-                verizon_uid = remaining[-1]
-                location = '-'.join(remaining[1:-1])
-                return {
-                    'sub_channel': sub_channel,
-                    'dealer_name': dealer_name,
-                    'store_location': location,
-                    'retailer_store_number': store_number,
-                    'verizon_uid': verizon_uid
-                }
+            if dealer_name == 'Best Buy':
+                if len(remaining) >= 3:
+                    store_number = remaining[0]
+                    verizon_uid = remaining[-1]
+                    location = '-'.join(remaining[1:-1])
+                    return {
+                        'sub_channel': sub_channel,
+                        'dealer_name': dealer_name,
+                        'store_location': location,
+                        'retailer_store_number': store_number,
+                        'verizon_uid': verizon_uid
+                    }
+                else:
+                    # Best Buy URL with insufficient parts - malformed
+                    logging.warning(f"Best Buy URL has insufficient parts: {url}")
+                    return {
+                        'sub_channel': sub_channel,
+                        'dealer_name': dealer_name,
+                        'store_location': '-'.join(remaining) if remaining else slug,
+                        'retailer_store_number': None,
+                        'verizon_uid': remaining[-1] if remaining else ''
+                    }
 
             # Other dealers: no store number, format is {dealer}-{location}-{uid}
             if len(remaining) >= 2:
@@ -518,6 +529,16 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
                     'store_location': location,
                     'retailer_store_number': None,
                     'verizon_uid': verizon_uid
+                }
+            else:
+                # Dealer URL with insufficient parts - malformed
+                logging.warning(f"Dealer URL has insufficient parts: {url}")
+                return {
+                    'sub_channel': sub_channel,
+                    'dealer_name': dealer_name,
+                    'store_location': '-'.join(remaining) if remaining else slug,
+                    'retailer_store_number': None,
+                    'verizon_uid': remaining[0] if len(remaining) == 1 else ''
                 }
 
     # No dealer prefix found - COR store
