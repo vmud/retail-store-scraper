@@ -644,6 +644,10 @@ body {
     background: #0d1b2a;
 }
 
+#config-modal .modal-body {
+    background: white;
+}
+
 .log-container {
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.85em;

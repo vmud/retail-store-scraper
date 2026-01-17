@@ -1,4 +1,5 @@
 let refreshInterval = null;
+let refreshTimeInterval = null;
 let lastUpdateTime = null;
 
 const RETAILER_CONFIG = {
@@ -247,18 +248,24 @@ function startAutoRefresh(intervalSeconds = 5) {
     if (refreshInterval) {
         clearInterval(refreshInterval);
     }
+    if (refreshTimeInterval) {
+        clearInterval(refreshTimeInterval);
+    }
     
     updateDashboard();
     
     refreshInterval = setInterval(updateDashboard, intervalSeconds * 1000);
-    
-    setInterval(updateLastRefreshTime, 1000);
+    refreshTimeInterval = setInterval(updateLastRefreshTime, 1000);
 }
 
 function stopAutoRefresh() {
     if (refreshInterval) {
         clearInterval(refreshInterval);
         refreshInterval = null;
+    }
+    if (refreshTimeInterval) {
+        clearInterval(refreshTimeInterval);
+        refreshTimeInterval = null;
     }
 }
 
@@ -586,8 +593,11 @@ async function restartScraper(retailer) {
 }
 
 function showNotification(message, type = 'info') {
+    const validTypes = ['success', 'error', 'info'];
+    const notificationType = validTypes.includes(type) ? type : 'info';
+    
     const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
+    notification.className = `notification ${notificationType}`;
     notification.textContent = message;
     
     document.body.appendChild(notification);
@@ -708,8 +718,11 @@ function validateConfigSyntax(content) {
 }
 
 function showModalAlert(message, type = 'info') {
+    const validTypes = ['success', 'error', 'info'];
+    const alertType = validTypes.includes(type) ? type : 'info';
+    
     const alertDiv = document.getElementById('modal-alert');
-    alertDiv.className = `alert ${type}`;
+    alertDiv.className = `alert ${alertType}`;
     alertDiv.textContent = message;
     alertDiv.style.display = 'block';
 }
