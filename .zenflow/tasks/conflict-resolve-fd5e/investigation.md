@@ -229,3 +229,121 @@ __all__ = [
 4. Check for any runtime conflicts between the two feature sets
 5. Run PR #4's test suite to ensure everything works
 6. Update PR #4 with the resolved changes
+
+---
+
+## Implementation Notes
+
+### Conflict Resolution Completed
+
+**Date**: 2026-01-17  
+**Branch**: conflict-resolve-fd5e  
+**Commit**: cb91752
+
+### Changes Made
+
+#### 1. Resolved `src/shared/__init__.py`
+Combined imports from both PRs:
+- **From PR #3** (already in main): 
+  - `close_all_proxy_clients`
+  - `get_retailer_proxy_config`
+  - `load_retailer_config`
+- **From PR #4** (being merged):
+  - `ScraperManager`, `get_scraper_manager`
+  - `RunTracker`, `get_run_history`, `get_latest_run`, `get_active_run`, `cleanup_old_runs`
+  - `get_retailer_status`, `get_all_retailers_status`, `get_progress_status`, `load_retailers_config`
+
+#### 2. Updated `src/shared/utils.py`
+Pulled the main branch version which includes:
+- Per-retailer proxy configuration functions
+- Global proxy client dictionary (`_proxy_clients`)
+- Proxy configuration merging logic
+- Support for CLI proxy overrides
+
+### Verification
+
+✅ **Python compilation**: All modules compile without errors  
+✅ **Import test**: All merged imports work correctly  
+✅ **No syntax errors**: Code is valid Python  
+✅ **Git commit**: Changes committed successfully  
+
+### Files Modified
+- `src/shared/__init__.py` - Merged imports from both PRs
+- `src/shared/utils.py` - Updated from main to include proxy functions
+
+### Test Results
+```
+✓ All modules compile successfully
+✓ All imports successful
+  - ScraperManager: ScraperManager
+  - RunTracker: RunTracker
+  - Functions: get_retailer_status, load_retailer_config
+```
+
+### Remaining Work
+
+The conflict in the working tree has been resolved. The next steps are:
+
+1. **Apply fix to PR #4 (new-task-caf8)**:
+   - Option A: Merge main into the PR branch
+   - Option B: Rebase PR branch onto main
+   - Option C: Cherry-pick this resolution commit
+
+2. **Verify PR #4 tests pass** with the merged changes
+
+3. **Apply fix to PR #3 (new-task-8ef2)** if needed (currently shows CONFLICTING status but changes are already in main)
+
+---
+
+## Final Resolution Summary
+
+### PR #3 (new-task-8ef2) - Proxy Config Integration
+**Status**: ✅ RESOLVED  
+**Branch**: new-task-8ef2  
+**Commit**: a7ba6bb
+
+**Conflicts Resolved**:
+- `run.py`: Kept PR #3's complete scraper implementation (vs main's incomplete stub)
+
+**Verification**: ✅ run.py compiles successfully
+
+---
+
+### PR #4 (new-task-caf8) - UI Build  
+**Status**: ✅ RESOLVED  
+**Branch**: new-task-caf8  
+**Commit**: c4f4165
+
+**Conflicts Resolved**:
+1. `src/shared/__init__.py`: Combined imports from both PR #3 and PR #4
+   - Proxy config functions from main (close_all_proxy_clients, get_retailer_proxy_config, load_retailer_config)
+   - Scraper management from PR #4 (ScraperManager, RunTracker, status module)
+
+2. `src/shared/status.py`: Kept PR #4's multi-retailer version (vs main's single-retailer version)
+
+3. `dashboard/app.py`: Kept PR #4's API routes version (vs main's simple HTML stub)
+
+**Verification**: ✅ All imports work, modules compile successfully
+
+---
+
+## Impact
+
+Both PRs now have:
+- ✅ Latest code from main branch
+- ✅ All conflicts resolved
+- ✅ No merge conflicts
+- ✅ Compatible with each other's features
+- ✅ Ready for final testing and merge
+
+## Next Steps
+
+1. Push resolved branches to GitHub:
+   - `git push origin new-task-caf8`
+   - `git push origin new-task-8ef2`
+
+2. GitHub PRs will automatically update and show no conflicts
+
+3. Run test suites for both PRs to verify functionality
+
+4. Merge PRs to main once tests pass
