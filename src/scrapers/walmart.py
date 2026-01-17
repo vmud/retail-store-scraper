@@ -171,6 +171,7 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[Walma
 
         if not match:
             logging.warning(f"No __NEXT_DATA__ script tag found for {url}")
+            logging.warning("Walmart requires JavaScript rendering. Enable proxy with render_js=true in config/retailers.yaml")
             return None
 
         # Parse JSON from script tag
