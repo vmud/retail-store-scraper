@@ -1,12 +1,13 @@
-/* Grid System - Brutalist Blueprint Layout */
+/* Grid System - Soft Dark Layout */
 
-/* Grid Background Pattern */
+/* Subtle Grid Background Pattern */
 .grid-bg {
   background-image:
     linear-gradient(var(--grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: var(--grid-size) var(--grid-size);
   background-position: -1px -1px;
+  background-attachment: fixed;
 }
 
 /* Main App Container */
