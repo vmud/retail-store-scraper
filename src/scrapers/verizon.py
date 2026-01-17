@@ -436,6 +436,114 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
     return result
 
 
+def parse_url_components(url: str) -> Dict[str, Optional[str]]:
+    """
+    Parse all components from Verizon store URL slug into discrete fields.
+    
+    Args:
+        url: Store URL (e.g., 'https://www.verizon.com/stores/alabama/victra-arab-1402922/')
+    
+    Returns:
+        Dictionary with keys:
+            - sub_channel: "COR", "Dealer", or "Retail"
+            - dealer_name: Dealer name or None
+            - store_location: Location name from slug
+            - retailer_store_number: Store number (Best Buy) or None
+            - verizon_uid: Verizon unique identifier
+    
+    Examples:
+        'cellular-sales-albertville-1407222' →
+            {'sub_channel': 'Dealer', 'dealer_name': 'Cellular Sales',
+             'store_location': 'albertville', 'retailer_store_number': None,
+             'verizon_uid': '1407222'}
+        
+        'best-buy-0793-dothan-n00000360018' →
+            {'sub_channel': 'Retail', 'dealer_name': 'Best Buy',
+             'store_location': 'dothan', 'retailer_store_number': '0793',
+             'verizon_uid': 'n00000360018'}
+        
+        'alabaster-1135614' →
+            {'sub_channel': 'COR', 'dealer_name': None,
+             'store_location': 'alabaster', 'retailer_store_number': None,
+             'verizon_uid': '1135614'}
+    """
+    # Extract slug from URL (last path component)
+    slug = url.rstrip('/').split('/')[-1]
+    parts = slug.split('-')
+    
+    # Dealer patterns: (prefix_parts, display_name, sub_channel)
+    # Order matters - check multi-word prefixes first
+    dealer_patterns = [
+        (['best', 'buy'], 'Best Buy', 'Retail'),
+        (['cellular', 'sales'], 'Cellular Sales', 'Dealer'),
+        (['russell', 'cellular'], 'Russell Cellular', 'Dealer'),
+        (['wireless', 'zone'], 'Wireless Zone', 'Dealer'),
+        (['wireless', 'world'], 'Wireless World', 'Dealer'),
+        (['wireless', 'vision'], 'Wireless Vision', 'Dealer'),
+        (['diamond', 'wireless'], 'Diamond Wireless', 'Dealer'),
+        (['cellular', 'connection'], 'Cellular Connection', 'Dealer'),
+        (['arch', 'telecom'], 'Arch Telecom', 'Dealer'),
+        (['a', 'wireless'], 'A Wireless', 'Dealer'),
+        (['victra'], 'Victra', 'Dealer'),
+        (['tcc'], 'TCC', 'Dealer'),
+        (['goireless'], 'GoWireless', 'Dealer'),
+    ]
+    
+    # Check each dealer pattern
+    for prefix_parts, dealer_name, sub_channel in dealer_patterns:
+        if parts[:len(prefix_parts)] == prefix_parts:
+            # Dealer pattern matched
+            remaining = parts[len(prefix_parts):]
+            
+            # Special handling for Best Buy (has store number as first element after prefix)
+            if dealer_name == 'Best Buy' and len(remaining) >= 3:
+                store_number = remaining[0]
+                verizon_uid = remaining[-1]
+                location = '-'.join(remaining[1:-1])
+                return {
+                    'sub_channel': sub_channel,
+                    'dealer_name': dealer_name,
+                    'store_location': location,
+                    'retailer_store_number': store_number,
+                    'verizon_uid': verizon_uid
+                }
+            
+            # Other dealers: no store number, format is {dealer}-{location}-{uid}
+            if len(remaining) >= 2:
+                verizon_uid = remaining[-1]
+                location = '-'.join(remaining[:-1])
+                return {
+                    'sub_channel': sub_channel,
+                    'dealer_name': dealer_name,
+                    'store_location': location,
+                    'retailer_store_number': None,
+                    'verizon_uid': verizon_uid
+                }
+    
+    # No dealer prefix found - COR store
+    # Format: {location}-{uid}
+    if len(parts) >= 2:
+        verizon_uid = parts[-1]
+        location = '-'.join(parts[:-1])
+        return {
+            'sub_channel': 'COR',
+            'dealer_name': None,
+            'store_location': location,
+            'retailer_store_number': None,
+            'verizon_uid': verizon_uid
+        }
+    
+    # Fallback for unexpected format (shouldn't happen with real data)
+    logging.warning(f"Unexpected URL format, cannot parse components: {url}")
+    return {
+        'sub_channel': 'COR',
+        'dealer_name': None,
+        'store_location': slug,
+        'retailer_store_number': None,
+        'verizon_uid': ''
+    }
+
+
 def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
     """Validate that store data has required fields and valid format"""
     issues = []
@@ -520,6 +628,10 @@ def extract_store_details(session: requests.Session, store_url: str) -> Optional
                     'url': store_url,
                     'scraped_at': datetime.now().isoformat()
                 }
+                
+                # Parse URL components (sub-channel, dealer name, location, store number, UID)
+                url_components = parse_url_components(store_url)
+                result.update(url_components)
 
                 # Validate the extracted data
                 if _validate_store_data(result, store_url):

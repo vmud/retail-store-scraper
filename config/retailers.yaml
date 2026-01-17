@@ -81,6 +81,11 @@ retailers:
       - longitude
       - phone
       - url
+      - sub_channel
+      - dealer_name
+      - store_location
+      - retailer_store_number
+      - verizon_uid
       - scraped_at
 
   att:
