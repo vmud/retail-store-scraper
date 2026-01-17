@@ -1,5 +1,6 @@
 /**
  * Modal Component - Config editor and log viewer modals
+ * Manages modal state and interactions
  */
 
 import { store, actions, RETAILERS } from '../state.js';
@@ -151,6 +152,9 @@ async function openLogModal(retailer, runId) {
 
   // Show modal
   modal.classList.add('modal-overlay--open');
+  
+  // Update state
+  actions.openLogModal(retailer, runId);
 
   // Show loading
   content.innerHTML = `

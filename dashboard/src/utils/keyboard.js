@@ -3,6 +3,8 @@
  * Manages global keyboard shortcuts for the dashboard
  */
 
+import { closeConfigModal, closeLogModal } from '../components/modal.js';
+
 const shortcuts = new Map();
 let isEnabled = true;
 
@@ -138,10 +140,17 @@ export function init() {
 
   // Register default shortcuts
   registerShortcut('escape', () => {
-    // Close any open modals
-    document.querySelectorAll('.modal-overlay--open').forEach(modal => {
-      modal.classList.remove('modal-overlay--open');
-    });
+    // Close log viewer modal if open (uses proper state update)
+    const logModal = document.getElementById('log-modal');
+    if (logModal && logModal.classList.contains('modal-overlay--open')) {
+      closeLogModal();
+    }
+    
+    // Close config modal if open (uses proper state update)
+    const configModal = document.getElementById('config-modal');
+    if (configModal && configModal.classList.contains('modal-overlay--open')) {
+      closeConfigModal();
+    }
   }, { description: 'Close modal' });
 
   registerShortcut('?', () => {

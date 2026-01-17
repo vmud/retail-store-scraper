@@ -290,17 +290,28 @@ function updateCard(retailerId, data) {
     phaseTextEl.textContent = currentPhase;
   }
 
-  // Update action buttons (only if status changed significantly)
+  // Update action buttons - re-render if needed for RESTART button
   const actionsEl = card.querySelector('[data-field="actions"]');
   if (actionsEl) {
-    const startBtn = actionsEl.querySelector('[data-action="start"]');
-    const stopBtn = actionsEl.querySelector('[data-action="stop"]');
+    const isDisabled = status === 'disabled';
+    const hasRestartBtn = actionsEl.querySelector('[data-action="restart"]');
+    // Only show restart button if not disabled, not running, and progress is 100%
+    const shouldShowRestart = !isDisabled && !isRunning && progress >= 100;
 
-    if (startBtn) {
-      startBtn.disabled = isRunning;
-    }
-    if (stopBtn) {
-      stopBtn.disabled = !isRunning;
+    // Re-render actions if RESTART button state changed
+    if ((hasRestartBtn && !shouldShowRestart) || (!hasRestartBtn && shouldShowRestart)) {
+      actionsEl.innerHTML = renderActions(retailerId, status, progress);
+    } else {
+      // Just toggle disabled state for existing buttons
+      const startBtn = actionsEl.querySelector('[data-action="start"]');
+      const stopBtn = actionsEl.querySelector('[data-action="stop"]');
+
+      if (startBtn) {
+        startBtn.disabled = isRunning;
+      }
+      if (stopBtn) {
+        stopBtn.disabled = !isRunning;
+      }
     }
   }
 }
