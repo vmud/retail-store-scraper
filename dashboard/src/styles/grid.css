@@ -1,0 +1,218 @@
+/* Grid System - Soft Dark Layout */
+
+/* Subtle Grid Background Pattern */
+.grid-bg {
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  background-position: -1px -1px;
+  background-attachment: fixed;
+}
+
+/* Main App Container */
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Container */
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+/* Header Layout */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  height: var(--header-height);
+  background: var(--surface);
+  border-bottom: var(--border-width) solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-6);
+}
+
+.header__brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.header__nav {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+}
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Metrics Strip Layout */
+.metrics-strip {
+  height: var(--metrics-height);
+  background: var(--surface);
+  border-bottom: var(--border-width) solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-6);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* Main Content Area */
+.main {
+  flex: 1;
+  padding: var(--space-6);
+}
+
+/* Operations Grid - 2x3 Retailer Matrix */
+.operations-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+/* Responsive Grid Adjustments */
+@media (max-width: 1400px) {
+  .operations-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .operations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .header {
+    padding: 0 var(--space-4);
+    flex-wrap: wrap;
+    height: auto;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
+  }
+
+  .header__nav {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    margin-top: var(--space-2);
+  }
+
+  .main {
+    padding: var(--space-4);
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+  }
+}
+
+/* Utility Grid Classes */
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.gap-1 { gap: var(--space-1); }
+.gap-2 { gap: var(--space-2); }
+.gap-3 { gap: var(--space-3); }
+.gap-4 { gap: var(--space-4); }
+.gap-6 { gap: var(--space-6); }
+
+/* Section Containers */
+.section {
+  margin-bottom: var(--space-8);
+}
+
+.section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.section__title {
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Panel Containers */
+.panel {
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.panel--collapsible {
+  overflow: hidden;
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  cursor: pointer;
+  user-select: none;
+}
+
+.panel__header:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.panel__content {
+  padding: var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.panel--collapsed .panel__content {
+  display: none;
+}

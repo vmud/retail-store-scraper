@@ -35,7 +35,19 @@ def require_json(f):
 
 @app.route('/')
 def index():
-    """Main dashboard page"""
+    """Main dashboard page
+
+    Serves the Vite-built frontend from static/dist/index.html if it exists,
+    otherwise falls back to templates/index.html for development.
+    """
+    # Check if Vite-built index.html exists (production mode)
+    vite_index = Path(__file__).parent / 'static' / 'dist' / 'index.html'
+    if vite_index.exists():
+        return send_from_directory(
+            str(vite_index.parent),
+            'index.html'
+        )
+    # Fallback to legacy template
     return render_template('index.html')
 
 
@@ -43,6 +55,17 @@ def index():
 def serve_static(filename):
     """Serve static files"""
     return send_from_directory(app.static_folder, filename)
+
+
+@app.route('/src/<path:filename>')
+def serve_src(filename):
+    """Serve source files for Vite dev mode
+
+    In development, Vite serves files directly. This route allows
+    Flask to serve source files when running without Vite dev server.
+    """
+    src_folder = Path(__file__).parent / 'src'
+    return send_from_directory(str(src_folder), filename)
 
 
 def _transform_status_for_frontend(backend_data: dict) -> dict:

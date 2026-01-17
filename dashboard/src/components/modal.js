@@ -1,185 +1,259 @@
 /**
- * Modal Component - Log viewer modal
- * Manages log modal state and interactions
+ * Modal Component - Config editor and log viewer modals
+ * Manages modal state and interactions
  */
 
-import { store, actions } from '../state.js';
+import { store, actions, RETAILERS } from '../state.js';
 import api from '../api.js';
 import { escapeHtml } from '../utils/format.js';
+import { showToast } from './toast.js';
 
+// Log filter state
 let activeLogFilters = new Set(['ALL']);
 
 /**
- * Initialize modal component
+ * Open the config modal
  */
-export function init() {
-  const overlay = document.getElementById('log-modal');
-  if (!overlay) return;
+async function openConfigModal() {
+  const modal = document.getElementById('config-modal');
+  const editor = document.getElementById('config-editor');
+  const alert = document.getElementById('config-alert');
 
-  // Close modal when clicking overlay background
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      actions.closeLogModal();
-    }
-  });
+  if (!modal || !editor) return;
 
-  // Subscribe to state changes to keep modal in sync
-  store.subscribe((state) => {
-    const isOpen = state.ui?.logModalOpen || false;
-    const hasClass = overlay.classList.contains('open');
+  // Show modal
+  modal.classList.add('modal-overlay--open');
+  actions.toggleConfigModal(true);
 
-    // Sync DOM state with store state
-    if (isOpen && !hasClass) {
-      // State says open but class missing - add it
-      overlay.classList.add('open');
-    } else if (!isOpen && hasClass) {
-      // State says closed but class present - remove it
-      overlay.classList.remove('open');
-    }
-  });
+  // Clear alert
+  if (alert) {
+    alert.style.display = 'none';
+  }
 
-  // Set up filter buttons
-  const filterButtons = overlay.querySelectorAll('.log-filter-btn');
-  filterButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const level = btn.dataset.level;
-      toggleLogFilter(level);
-    });
-  });
+  // Load config
+  editor.value = 'Loading configuration...';
+  editor.disabled = true;
 
-  // Set up close button
-  const closeBtn = overlay.querySelector('.modal-close');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      actions.closeLogModal();
-    });
+  try {
+    const data = await api.getConfig();
+    editor.value = data.content || '';
+    editor.disabled = false;
+  } catch (error) {
+    editor.value = '';
+    editor.disabled = false;
+    showConfigAlert(`Failed to load configuration: ${error.message}`, 'error');
   }
 }
 
 /**
- * Open modal with retailer logs
+ * Close the config modal
  */
-export async function open(retailerId, runId) {
-  const overlay = document.getElementById('log-modal');
-  const titleEl = document.getElementById('log-modal-title');
-  const contentEl = document.getElementById('log-content');
-  
-  if (!overlay || !titleEl || !contentEl) return;
+function closeConfigModal() {
+  const modal = document.getElementById('config-modal');
+  if (modal) {
+    modal.classList.remove('modal-overlay--open');
+  }
+  actions.toggleConfigModal(false);
+}
+
+/**
+ * Save the config
+ */
+async function saveConfig() {
+  const editor = document.getElementById('config-editor');
+  const saveBtn = document.getElementById('config-save');
+
+  if (!editor) return;
+
+  const content = editor.value;
+
+  // Basic validation
+  if (!content || content.trim().length === 0) {
+    showConfigAlert('Configuration cannot be empty', 'error');
+    return;
+  }
+
+  if (!content.includes('retailers:')) {
+    showConfigAlert('Configuration must contain "retailers:" key', 'error');
+    return;
+  }
+
+  // Disable save button
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+  }
+
+  try {
+    const result = await api.updateConfig(content);
+
+    showConfigAlert(
+      `Configuration saved successfully!\nBackup created at: ${result.backup || 'unknown'}`,
+      'success'
+    );
+    showToast('Configuration updated successfully', 'success');
+
+    // Close modal after delay
+    setTimeout(() => {
+      closeConfigModal();
+    }, 2000);
+  } catch (error) {
+    let errorMessage = error.message || 'Unknown error';
+
+    if (error.data?.details && Array.isArray(error.data.details)) {
+      errorMessage += '\n\nDetails:\n' + error.data.details.map(d => `• ${d}`).join('\n');
+    }
+
+    showConfigAlert(`Failed to save configuration:\n${errorMessage}`, 'error');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Configuration';
+    }
+  }
+}
+
+/**
+ * Show config modal alert
+ * @param {string} message - Alert message
+ * @param {string} type - Alert type (success, error, warning, info)
+ */
+function showConfigAlert(message, type = 'info') {
+  const alert = document.getElementById('config-alert');
+  if (!alert) return;
+
+  alert.className = `alert alert--${type}`;
+  alert.textContent = message;
+  alert.style.display = 'block';
+}
+
+/**
+ * Open the log viewer modal
+ * @param {string} retailer - Retailer ID
+ * @param {string} runId - Run ID
+ */
+async function openLogModal(retailer, runId) {
+  const modal = document.getElementById('log-modal');
+  const title = document.getElementById('log-modal-title');
+  const content = document.getElementById('log-content');
+  const stats = document.getElementById('log-stats');
+
+  if (!modal || !content) return;
 
   // Reset filters
   activeLogFilters = new Set(['ALL']);
-  updateFilterButtons();
+  updateLogFilterButtons();
 
   // Update title
-  titleEl.textContent = `Logs - ${retailerId} - ${runId}`;
-  
-  // Show loading state
-  contentEl.innerHTML = '<div class="log-loading">Loading logs...</div>';
-  
-  // Open modal (updates state)
-  actions.openLogModal(retailerId, runId);
+  const retailerName = RETAILERS[retailer]?.name || retailer;
+  if (title) {
+    title.textContent = `Logs — ${retailerName} — ${runId}`;
+  }
 
-  // Load logs
+  // Show modal
+  modal.classList.add('modal-overlay--open');
+  
+  // Update state
+  actions.openLogModal(retailer, runId);
+
+  // Show loading
+  content.innerHTML = `
+    <div style="text-align: center; padding: var(--space-8); color: var(--text-muted);">
+      Loading logs...
+    </div>
+  `;
+
   try {
-    const data = await api.getRunLogs(retailerId, runId);
-    
-    if (data.error) {
-      contentEl.innerHTML = `<div class="log-error">Error: ${escapeHtml(data.error)}</div>`;
-      return;
-    }
-
+    const data = await api.getLogs(retailer, runId);
     const logContent = data.content || '';
-    const lines = logContent.split('\n');
-    
-    const parsedLines = lines
-      .filter(line => line.trim())
-      .map(line => parseLogLine(line));
-    
-    displayLogs(parsedLines);
-    updateLogStats(parsedLines);
+    const lines = logContent.split('\n').filter(line => line.trim());
+
+    // Parse log lines
+    const parsedLines = lines.map(line => parseLogLine(line));
+
+    // Render logs
+    renderLogs(parsedLines);
+
+    // Update stats
+    if (stats) {
+      stats.textContent = `${parsedLines.length} lines`;
+    }
   } catch (error) {
-    contentEl.innerHTML = `<div class="log-error">Failed to load logs: ${escapeHtml(error.message)}</div>`;
+    content.innerHTML = `
+      <div class="alert alert--error">
+        Error loading logs: ${escapeHtml(error.message)}
+      </div>
+    `;
   }
 }
 
 /**
- * Close modal
+ * Close the log modal
  */
-export function close() {
+function closeLogModal() {
+  const modal = document.getElementById('log-modal');
+  if (modal) {
+    modal.classList.remove('modal-overlay--open');
+  }
   actions.closeLogModal();
 }
 
 /**
- * Parse a log line
+ * Parse a log line to extract level and timestamp
+ * @param {string} line - Raw log line
+ * @returns {object} Parsed log data
  */
 function parseLogLine(line) {
   const levelMatch = line.match(/\b(DEBUG|INFO|WARNING|ERROR)\b/);
   const level = levelMatch ? levelMatch[1] : 'INFO';
-  
+
   const timestampMatch = line.match(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
   const timestamp = timestampMatch ? timestampMatch[1] : null;
-  
-  return {
-    raw: line,
-    level: level,
-    timestamp: timestamp
-  };
+
+  return { raw: line, level, timestamp };
 }
 
 /**
- * Display parsed log lines
+ * Render parsed log lines
+ * @param {Array} parsedLines - Array of parsed log objects
  */
-function displayLogs(parsedLines) {
-  const contentEl = document.getElementById('log-content');
-  if (!contentEl) return;
-  
+function renderLogs(parsedLines) {
+  const content = document.getElementById('log-content');
+  if (!content) return;
+
   const html = parsedLines.map(logLine => {
     const shouldShow = activeLogFilters.has('ALL') || activeLogFilters.has(logLine.level);
     const hiddenClass = shouldShow ? '' : 'hidden';
-    
-    // Escape HTML to prevent XSS
+    const levelClass = logLine.level.toLowerCase();
+
+    // Escape and format the line
     let formattedLine = escapeHtml(logLine.raw);
-    
-    // Add formatting after escaping
-    if (logLine.level) {
-      const escapedLevel = logLine.level.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      formattedLine = formattedLine.replace(
-        new RegExp(`\\b${escapedLevel}\\b`),
-        `<span class="log-level ${escapeHtml(logLine.level)}">${escapeHtml(logLine.level)}</span>`
-      );
-    }
-    
+
+    // Highlight timestamp
     if (logLine.timestamp) {
       formattedLine = formattedLine.replace(
         escapeHtml(logLine.timestamp),
         `<span class="log-timestamp">${escapeHtml(logLine.timestamp)}</span>`
       );
     }
-    
-    const safeLevel = logLine.level ? escapeHtml(logLine.level) : 'unknown';
-    return `<div class="log-line level-${safeLevel} ${hiddenClass}">${formattedLine}</div>`;
-  }).join('');
-  
-  contentEl.innerHTML = `<div class="log-container">${html}</div>`;
-}
 
-/**
- * Update log stats display
- */
-function updateLogStats(parsedLines) {
-  const statsEl = document.getElementById('log-stats');
-  if (!statsEl) return;
-  
-  const total = parsedLines.length;
-  const visible = parsedLines.filter(line => 
-    activeLogFilters.has('ALL') || activeLogFilters.has(line.level)
-  ).length;
-  
-  statsEl.textContent = `Showing ${visible} of ${total} lines`;
+    // Highlight level
+    if (logLine.level) {
+      formattedLine = formattedLine.replace(
+        new RegExp(`\\b${logLine.level}\\b`),
+        `<span class="log-level">${logLine.level}</span>`
+      );
+    }
+
+    return `<div class="log-line log-line--${levelClass} ${hiddenClass}" data-level="${logLine.level}">${formattedLine}</div>`;
+  }).join('');
+
+  content.innerHTML = html || '<div style="text-align: center; padding: var(--space-4); color: var(--text-muted);">No logs found</div>';
 }
 
 /**
  * Toggle log filter
+ * @param {string} level - Log level to toggle
  */
 function toggleLogFilter(level) {
   if (level === 'ALL') {
@@ -187,47 +261,27 @@ function toggleLogFilter(level) {
     activeLogFilters.add('ALL');
   } else {
     activeLogFilters.delete('ALL');
-    
+
     if (activeLogFilters.has(level)) {
       activeLogFilters.delete(level);
     } else {
       activeLogFilters.add(level);
     }
-    
+
+    // Reset to ALL if nothing selected
     if (activeLogFilters.size === 0) {
       activeLogFilters.add('ALL');
     }
   }
-  
-  updateFilterButtons();
-  
-  // Update visible lines
-  const logLines = document.querySelectorAll('.log-line');
-  logLines.forEach(line => {
-    const lineLevel = Array.from(line.classList)
-      .find(cls => cls.startsWith('level-'))
-      ?.replace('level-', '');
-    
-    if (activeLogFilters.has('ALL') || activeLogFilters.has(lineLevel)) {
-      line.classList.remove('hidden');
-    } else {
-      line.classList.add('hidden');
-    }
-  });
-  
-  // Update stats
-  const total = logLines.length;
-  const visible = document.querySelectorAll('.log-line:not(.hidden)').length;
-  const statsEl = document.getElementById('log-stats');
-  if (statsEl) {
-    statsEl.textContent = `Showing ${visible} of ${total} lines`;
-  }
+
+  updateLogFilterButtons();
+  applyLogFilters();
 }
 
 /**
- * Update filter button active states
+ * Update filter button states
  */
-function updateFilterButtons() {
+function updateLogFilterButtons() {
   const buttons = document.querySelectorAll('.log-filter-btn');
   buttons.forEach(btn => {
     const level = btn.dataset.level;
@@ -240,15 +294,101 @@ function updateFilterButtons() {
 }
 
 /**
+ * Apply log filters to displayed lines
+ */
+function applyLogFilters() {
+  const lines = document.querySelectorAll('.log-line');
+  let visibleCount = 0;
+
+  lines.forEach(line => {
+    const level = line.dataset.level;
+    const shouldShow = activeLogFilters.has('ALL') || activeLogFilters.has(level);
+
+    if (shouldShow) {
+      line.classList.remove('hidden');
+      visibleCount++;
+    } else {
+      line.classList.add('hidden');
+    }
+  });
+
+  // Update stats
+  const stats = document.getElementById('log-stats');
+  if (stats) {
+    stats.textContent = `Showing ${visibleCount} of ${lines.length} lines`;
+  }
+}
+
+/**
+ * Initialize the modal components
+ */
+export function init() {
+  // Config modal handlers
+  const configBtn = document.getElementById('config-btn');
+  const configCloseBtn = document.getElementById('config-modal-close');
+  const configCancelBtn = document.getElementById('config-cancel');
+  const configSaveBtn = document.getElementById('config-save');
+  const configModal = document.getElementById('config-modal');
+
+  if (configBtn) configBtn.addEventListener('click', openConfigModal);
+  if (configCloseBtn) configCloseBtn.addEventListener('click', closeConfigModal);
+  if (configCancelBtn) configCancelBtn.addEventListener('click', closeConfigModal);
+  if (configSaveBtn) configSaveBtn.addEventListener('click', saveConfig);
+
+  // Close on overlay click
+  if (configModal) {
+    configModal.addEventListener('click', (e) => {
+      if (e.target === configModal) closeConfigModal();
+    });
+  }
+
+  // Log modal handlers
+  const logCloseBtn = document.getElementById('log-modal-close');
+  const logModal = document.getElementById('log-modal');
+
+  if (logCloseBtn) logCloseBtn.addEventListener('click', closeLogModal);
+
+  // Close on overlay click
+  if (logModal) {
+    logModal.addEventListener('click', (e) => {
+      if (e.target === logModal) closeLogModal();
+    });
+  }
+
+  // Log filter buttons
+  const filterBtns = document.querySelectorAll('.log-filter-btn');
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      toggleLogFilter(btn.dataset.level);
+    });
+  });
+
+  // Subscribe to state changes for log modal
+  store.subscribe((state) => {
+    if (state.ui.logModalOpen && state.ui.currentLogRetailer && state.ui.currentLogRunId) {
+      // Modal is already open, check if retailer/run changed
+      const modal = document.getElementById('log-modal');
+      if (modal && !modal.classList.contains('modal-overlay--open')) {
+        openLogModal(state.ui.currentLogRetailer, state.ui.currentLogRunId);
+      }
+    }
+  });
+}
+
+/**
  * Cleanup
  */
 export function destroy() {
   // Remove event listeners if needed
 }
 
+export { openConfigModal, closeConfigModal, openLogModal, closeLogModal };
+
 export default {
   init,
-  open,
-  close,
-  destroy
+  destroy,
+  openConfigModal,
+  closeConfigModal,
+  openLogModal,
+  closeLogModal
 };
