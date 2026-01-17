@@ -191,27 +191,27 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
     print("\n" + "=" * 60)
 
 
-async def run_retailer_async(retailer: str, **kwargs) -> dict:
+async def run_retailer_async(retailer: str, cli_proxy_override: Optional[str] = None, **kwargs) -> dict:
     """Run a single retailer scraper asynchronously
 
     Note: Currently wraps synchronous scrapers. Will be updated
     when scrapers are converted to async.
+    
+    Args:
+        retailer: Retailer name
+        cli_proxy_override: Optional CLI proxy mode override from --proxy flag
+        **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
-    logging.info(f"Starting scraper for {retailer}")
+    logging.info(f"[{retailer}] Starting scraper")
 
     try:
-        # Get the scraper module
+        from src.shared.utils import load_retailer_config, create_proxied_session
+        
+        retailer_config = load_retailer_config(retailer, cli_proxy_override)
+        
+        session = create_proxied_session(retailer_config)
+        
         scraper_module = get_scraper_module(retailer)
-
-        # For now, run synchronously in executor since scrapers are sync
-        # TODO: Convert scrapers to native async
-        import requests
-
-        session = requests.Session()
-
-        # Get the appropriate run function based on retailer
-        # Each retailer module should have similar structure
-        # For now, we'll run phase by phase
 
         result = {
             'retailer': retailer,
@@ -220,12 +220,11 @@ async def run_retailer_async(retailer: str, **kwargs) -> dict:
             'error': None
         }
 
-        # TODO: Implement actual scraping logic integration
-        logging.info(f"Completed scraper for {retailer}")
+        logging.info(f"[{retailer}] Completed scraper")
         return result
 
     except Exception as e:
-        logging.error(f"Error running {retailer}: {e}")
+        logging.error(f"[{retailer}] Error running scraper: {e}")
         return {
             'retailer': retailer,
             'status': 'error',
@@ -234,12 +233,18 @@ async def run_retailer_async(retailer: str, **kwargs) -> dict:
         }
 
 
-async def run_all_retailers(retailers: List[str], **kwargs) -> dict:
-    """Run multiple retailers concurrently"""
+async def run_all_retailers(retailers: List[str], cli_proxy_override: Optional[str] = None, **kwargs) -> dict:
+    """Run multiple retailers concurrently
+    
+    Args:
+        retailers: List of retailer names to run
+        cli_proxy_override: Optional CLI proxy mode override from --proxy flag
+        **kwargs: Additional arguments (resume, incremental, limit, etc.)
+    """
     logging.info(f"Starting concurrent scrape for {len(retailers)} retailers: {retailers}")
 
     tasks = [
-        run_retailer_async(retailer, **kwargs)
+        run_retailer_async(retailer, cli_proxy_override=cli_proxy_override, **kwargs)
         for retailer in retailers
     ]
 
@@ -354,12 +359,16 @@ def main():
     if args.incremental:
         logging.info("Incremental mode enabled")
 
+    # Get CLI proxy override
+    cli_proxy_override = args.proxy if args.proxy else None
+    
     # Run scrapers
     try:
         if len(retailers) == 1:
             # Single retailer - run directly
             result = asyncio.run(run_retailer_async(
                 retailers[0],
+                cli_proxy_override=cli_proxy_override,
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit
@@ -369,6 +378,7 @@ def main():
             # Multiple retailers - run concurrently
             results = asyncio.run(run_all_retailers(
                 retailers,
+                cli_proxy_override=cli_proxy_override,
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit
@@ -393,6 +403,10 @@ def main():
     except Exception as e:
         logging.error(f"Scraping failed: {e}")
         return 1
+    finally:
+        # Cleanup all proxy clients
+        from src.shared.utils import close_all_proxy_clients
+        close_all_proxy_clients()
 
 
 if __name__ == '__main__':

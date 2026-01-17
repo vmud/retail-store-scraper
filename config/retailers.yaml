@@ -67,9 +67,9 @@ retailers:
     max_delay: 5.0
     checkpoint_interval: 10
     # Proxy override: Verizon works well with residential proxies
-    # proxy:
-    #   mode: "residential"
-    #   render_js: false
+    proxy:
+      mode: "residential"
+      render_js: false
     output_fields:
       - name
       - street_address
@@ -93,6 +93,9 @@ retailers:
     min_delay: 0.5
     max_delay: 1.0
     checkpoint_interval: 100
+    # Sitemap-based scraping with low anti-bot measures
+    proxy:
+      mode: "direct"
     output_fields:
       - store_id
       - name
@@ -118,6 +121,9 @@ retailers:
     min_delay: 0.1
     max_delay: 0.5
     checkpoint_interval: 100
+    # API-based scraping, no proxy needed
+    proxy:
+      mode: "direct"
     output_fields:
       - store_id
       - name
@@ -147,6 +153,9 @@ retailers:
     min_delay: 0.5
     max_delay: 1.0
     checkpoint_interval: 100
+    # Sitemap-based scraping, straightforward
+    proxy:
+      mode: "direct"
     output_fields:
       - store_id
       - branch_code
@@ -178,9 +187,9 @@ retailers:
     max_delay: 2.0
     checkpoint_interval: 100
     # Proxy override: Walmart uses __NEXT_DATA__ which benefits from JS rendering
-    # proxy:
-    #   mode: "web_scraper_api"
-    #   render_js: true
+    proxy:
+      mode: "web_scraper_api"
+      render_js: true
     output_fields:
       - store_id
       - name
@@ -210,9 +219,9 @@ retailers:
     max_delay: 1.0
     checkpoint_interval: 100
     # Proxy override: Best Buy has stronger anti-bot, recommend Web Scraper API
-    # proxy:
-    #   mode: "web_scraper_api"
-    #   render_js: true
+    proxy:
+      mode: "web_scraper_api"
+      render_js: true
     output_fields:
       - store_id
       - name
