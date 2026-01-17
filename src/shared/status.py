@@ -16,7 +16,7 @@ OUTPUT_JSON = "data/output/verizon_stores.json"
 
 def get_progress_status() -> Dict[str, Any]:
     """Read all checkpoint files and calculate progress status"""
-    
+
     status = {
         "phase1": {"total": 0, "completed": 0, "status": "pending", "last_updated": None},
         "phase2": {"total": 0, "completed": 0, "status": "pending", "last_updated": None},
@@ -26,7 +26,7 @@ def get_progress_status() -> Dict[str, Any]:
         "estimated_time_remaining": None,
         "scraper_active": False,
     }
-    
+
     # Phase 1: States
     states_path = Path(STATES_FILE)
     if states_path.exists():
@@ -42,7 +42,7 @@ def get_progress_status() -> Dict[str, Any]:
                 ).isoformat()
         except Exception:
             pass
-    
+
     # Phase 2: Cities
     cities_path = Path(CITIES_FILE)
     if cities_path.exists():
@@ -58,7 +58,7 @@ def get_progress_status() -> Dict[str, Any]:
                 status["phase2"]["last_updated"] = datetime.fromtimestamp(
                     cities_path.stat().st_mtime
                 ).isoformat()
-                
+
                 # If we have states, calculate percentage
                 if status["phase1"]["total"] > 0:
                     status["phase2"]["total"] = status["phase1"]["total"]
@@ -66,7 +66,7 @@ def get_progress_status() -> Dict[str, Any]:
                         status["phase2"]["status"] = "complete"
         except Exception:
             pass
-    
+
     # Phase 3: Store URLs
     stores_path = Path(STORES_FILE)
     if stores_path.exists():
@@ -82,7 +82,7 @@ def get_progress_status() -> Dict[str, Any]:
                 status["phase3"]["last_updated"] = datetime.fromtimestamp(
                     stores_path.stat().st_mtime
                 ).isoformat()
-                
+
                 # If we have cities, calculate percentage
                 if status["phase2"]["total"] > 0:
                     status["phase3"]["total"] = status["phase2"]["total"]
@@ -90,7 +90,7 @@ def get_progress_status() -> Dict[str, Any]:
                         status["phase3"]["status"] = "complete"
         except Exception:
             pass
-    
+
     # Phase 4: Store extraction
     output_path = Path(OUTPUT_CSV)
     if output_path.exists():
@@ -103,7 +103,7 @@ def get_progress_status() -> Dict[str, Any]:
             status["phase4"]["last_updated"] = datetime.fromtimestamp(
                 output_path.stat().st_mtime
             ).isoformat()
-            
+
             # If we have store URLs, calculate percentage
             if status["phase3"]["total"] > 0:
                 status["phase4"]["total"] = status["phase3"]["total"]
@@ -111,7 +111,7 @@ def get_progress_status() -> Dict[str, Any]:
                     status["phase4"]["status"] = "complete"
         except Exception:
             pass
-    
+
     # Calculate overall progress (weighted average)
     phases = [
         status["phase1"],
@@ -119,24 +119,24 @@ def get_progress_status() -> Dict[str, Any]:
         status["phase3"],
         status["phase4"]
     ]
-    
+
     total_weight = 0
     weighted_sum = 0
-    
+
     for i, phase in enumerate(phases, 1):
         if phase["total"] > 0:
             weight = 1.0 / (2 ** (i - 1))  # Phase 1 = 1.0, Phase 2 = 0.5, Phase 3 = 0.25, Phase 4 = 0.125
             total_weight += weight
             weighted_sum += (phase["completed"] / phase["total"]) * weight
-    
+
     if total_weight > 0:
         status["overall_progress"] = round((weighted_sum / total_weight) * 100, 1)
-    
+
     # Check if scraper is active (any checkpoint file updated in last 5 minutes)
     import time
     current_time = time.time()
     active_threshold = 300  # 5 minutes
-    
+
     checkpoint_files = [states_path, cities_path, stores_path, output_path]
     for checkpoint_file in checkpoint_files:
         if checkpoint_file.exists():
@@ -144,5 +144,5 @@ def get_progress_status() -> Dict[str, Any]:
             if (current_time - mtime) < active_threshold:
                 status["scraper_active"] = True
                 break
-    
+
     return status

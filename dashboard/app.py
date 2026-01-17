@@ -168,16 +168,16 @@ def index():
     <div class="container">
         <h1>📊 Verizon Store Scraper</h1>
         <p class="subtitle">Real-time progress monitoring</p>
-        
+
         <div id="status-badge" class="status-badge status-inactive">Checking status...</div>
-        
+
         <div class="overall-progress">
             <h2>Overall Progress</h2>
             <div class="progress-bar-container">
                 <div id="overall-progress-bar" class="progress-bar" style="width: 0%">0%</div>
             </div>
         </div>
-        
+
         <div class="phases" id="phases-container">
             <div class="phase-card">
                 <h3>Phase 1: States</h3>
@@ -196,12 +196,12 @@ def index():
                 <div class="phase-info">Loading...</div>
             </div>
         </div>
-        
+
         <div class="refresh-info">
             Auto-refreshing every 30 seconds...
         </div>
     </div>
-    
+
     <script>
         function updateDashboard() {
             fetch('/api/status')
@@ -216,13 +216,13 @@ def index():
                         badge.textContent = '🔴 Scraper Inactive';
                         badge.className = 'status-badge status-inactive';
                     }
-                    
+
                     // Update overall progress
                     const overallProgress = data.overall_progress || 0;
                     const progressBar = document.getElementById('overall-progress-bar');
                     progressBar.style.width = overallProgress + '%';
                     progressBar.textContent = overallProgress.toFixed(1) + '%';
-                    
+
                     // Update phase cards
                     const phases = [
                         { key: 'phase1', name: 'Phase 1: States', container: document.getElementById('phases-container') },
@@ -230,16 +230,16 @@ def index():
                         { key: 'phase3', name: 'Phase 3: Store URLs', container: document.getElementById('phases-container') },
                         { key: 'phase4', name: 'Phase 4: Extract Details', container: document.getElementById('phases-container') }
                     ];
-                    
+
                     phases.forEach((phase, index) => {
                         const phaseData = data[phase.key];
                         const card = phase.container.children[index];
-                        
+
                         const completed = phaseData.completed || 0;
                         const total = phaseData.total || 0;
                         const status = phaseData.status || 'pending';
                         const lastUpdated = phaseData.last_updated || null;
-                        
+
                         let statusText = '';
                         let statusClass = 'status-pending';
                         if (status === 'complete') {
@@ -252,9 +252,9 @@ def index():
                             statusText = '○ Pending';
                             statusClass = 'status-pending';
                         }
-                        
+
                         const percentage = total > 0 ? ((completed / total) * 100).toFixed(1) : '0.0';
-                        
+
                         card.innerHTML = `
                             <h3>${phase.name}</h3>
                             <div class="phase-info">
@@ -276,10 +276,10 @@ def index():
                     `;
                 });
         }
-        
+
         // Initial load
         updateDashboard();
-        
+
         // Auto-refresh every 30 seconds
         setInterval(updateDashboard, 30000);
     </script>

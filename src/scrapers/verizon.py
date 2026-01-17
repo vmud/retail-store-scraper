@@ -18,12 +18,12 @@ class RequestCounter:
     """Track request count for pause logic"""
     def __init__(self):
         self.count = 0
-    
+
     def increment(self) -> int:
         """Increment counter and return current count"""
         self.count += 1
         return self.count
-    
+
     def reset(self) -> None:
         """Reset counter"""
         self.count = 0
@@ -113,7 +113,7 @@ STATE_URL_PATTERNS = {
 def _check_pause_logic() -> None:
     """Check if we need to pause based on request count"""
     count = _request_counter.count
-    
+
     if count % config.PAUSE_200_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(config.PAUSE_200_MIN, config.PAUSE_200_MAX)
         logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
@@ -129,19 +129,19 @@ def _scrape_states_from_html(session: requests.Session) -> List[Dict[str, str]]:
     Returns empty list if scraping fails."""
     url = f"{config.BASE_URL}/stores/"
     logging.info(f"Fetching states from {url}")
-    
+
     response = utils.get_with_retry(session, url)
     if not response:
         logging.warning("Failed to fetch stores page for state scraping")
         return []
-    
+
     _request_counter.increment()
     _check_pause_logic()
-    
+
     soup = BeautifulSoup(response.text, 'html.parser')
     states = []
     seen_slugs = set()
-    
+
     # Try to extract states from JavaScript/JSON data first (similar to cities extraction)
     scripts = soup.find_all('script')
     for script in scripts:
@@ -172,7 +172,7 @@ def _scrape_states_from_html(session: requests.Session) -> List[Dict[str, str]]:
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
                 logging.debug(f"Failed to parse statesJSON: {e}")
                 continue
-    
+
     # Fallback: Parse HTML links if JSON extraction didn't work
     if not states:
         for link in soup.find_all('a', href=True):
@@ -190,7 +190,7 @@ def _scrape_states_from_html(session: requests.Session) -> List[Dict[str, str]]:
                         state_slug = parts[-1].lower()
                     else:
                         continue
-                    
+
                     # Validate against whitelist
                     if state_slug in VALID_STATE_SLUGS and state_slug not in seen_slugs:
                         state_name = STATE_SLUG_TO_NAME.get(state_slug, state_slug.title())
@@ -201,14 +201,14 @@ def _scrape_states_from_html(session: requests.Session) -> List[Dict[str, str]]:
                             'url': f"{config.BASE_URL}{url_path}"
                         })
                         seen_slugs.add(state_slug)
-    
+
     # Deduplicate by slug
     unique_states = {}
     for state in states:
         slug = state['url'].rstrip('/').split('/')[-1].lower()
         if slug not in unique_states:
             unique_states[slug] = state
-    
+
     result = list(unique_states.values())
     if result:
         logging.info(f"Scraped {len(result)} states from HTML")
@@ -231,11 +231,11 @@ def _generate_states_programmatically() -> List[Dict[str, str]]:
         'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington',
         'West Virginia', 'Wisconsin', 'Wyoming'
     ]
-    
+
     def state_name_to_slug(state_name: str) -> str:
         """Convert state name to URL slug format (lowercase with hyphens)"""
         return state_name.lower().replace(' ', '-')
-    
+
     states = []
     for state_name in US_STATES:
         # Handle special case: District Of Columbia uses "washington-dc" slug
@@ -243,14 +243,14 @@ def _generate_states_programmatically() -> List[Dict[str, str]]:
             state_slug = 'washington-dc'
         else:
             state_slug = state_name_to_slug(state_name)
-        
+
         # Use special URL pattern if available, otherwise standard pattern
         url_path = STATE_URL_PATTERNS.get(state_slug, f'/stores/state/{state_slug}/')
         states.append({
             'name': state_name,
             'url': f"{config.BASE_URL}{url_path}"
         })
-    
+
     logging.info(f"Generated {len(states)} states programmatically")
     return states
 
@@ -258,10 +258,10 @@ def _generate_states_programmatically() -> List[Dict[str, str]]:
 def get_all_states(session: requests.Session) -> List[Dict[str, str]]:
     """Get all US state URLs by scraping from the main stores page.
     Falls back to programmatic generation if scraping fails."""
-    
+
     # Try HTML scraping first
     states = _scrape_states_from_html(session)
-    
+
     # Fallback to programmatic generation if scraping failed or found insufficient states
     if not states or len(states) < 50:
         if states:
@@ -269,29 +269,29 @@ def get_all_states(session: requests.Session) -> List[Dict[str, str]]:
         else:
             logging.warning("HTML scraping found no states, using programmatic generation")
         states = _generate_states_programmatically()
-    
+
     return states
 
 
 def get_cities_for_state(session: requests.Session, state_url: str, state_name: str) -> List[Dict[str, str]]:
     """Get all city URLs for a given state"""
     logging.info(f"Fetching cities for state: {state_name}")
-    
+
     response = utils.get_with_retry(session, state_url)
     if not response:
         logging.warning(f"Failed to fetch cities for state: {state_name}")
         return []
-    
+
     _request_counter.increment()
     _check_pause_logic()
-    
+
     # Extract state slug from URL (e.g., "new-jersey" from "/stores/state/new-jersey/")
     state_slug = state_url.rstrip('/').split('/')[-1].lower()
-    
+
     soup = BeautifulSoup(response.text, 'html.parser')
     cities = []
     seen_cities = set()
-    
+
     # Try to extract cities from stateJSON JavaScript variable first
     # The page embeds city data in: var stateJSON = {"state":{...},"cities":[...]}
     scripts = soup.find_all('script')
@@ -323,12 +323,12 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
                 logging.debug(f"Failed to parse stateJSON: {e}")
                 continue
-    
+
     # Fallback: if no cities found from stateJSON, try parsing HTML links
     if not cities:
         all_links = soup.find_all('a', href=True)
         state_slug = state_url.rstrip('/').split('/')[-1].lower()
-        
+
         for link in all_links:
             href = link.get('href', '')
             # City URLs can be in format: /stores/{state-slug}/{city}/ or /stores/city/{city}/
@@ -336,12 +336,12 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
                 # Skip if it's a state page or detail page
                 if '/stores/state/' in href.lower() or '/stores/details/' in href.lower():
                     continue
-                
+
                 city_name = href.rstrip('/').split('/')[-1]
                 # Skip if empty or looks like a state slug
                 if not city_name or city_name in ['stores', 'city', 'state', 'details', state_slug]:
                     continue
-                    
+
                 if city_name not in seen_cities:
                     city_url = f"{config.BASE_URL}{href}" if href.startswith('/') else href
                     cities.append({
@@ -350,14 +350,14 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
                         'url': city_url
                     })
                     seen_cities.add(city_name)
-    
+
     # Deduplicate by city
     unique_cities = {}
     for city in cities:
         city_key = (city['city'], city['state'])
         if city_key not in unique_cities:
             unique_cities[city_key] = city
-    
+
     result = list(unique_cities.values())
     logging.info(f"Found {len(result)} cities for {state_name}")
     return result
@@ -366,19 +366,19 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
 def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str) -> List[Dict[str, str]]:
     """Get all store URLs for a given city"""
     logging.info(f"Fetching stores for {city_name}, {state_name}")
-    
+
     response = utils.get_with_retry(session, city_url)
     if not response:
         logging.warning(f"Failed to fetch stores for {city_name}, {state_name}")
         return []
-    
+
     _request_counter.increment()
     _check_pause_logic()
-    
+
     soup = BeautifulSoup(response.text, 'html.parser')
     stores = []
     seen_urls = set()
-    
+
     # Try to extract stores from cityJSON JavaScript variable first
     # The page embeds store data in: var cityJSON = {"city":{...},"stores":[...]}
     scripts = soup.find_all('script')
@@ -409,7 +409,7 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
                 logging.debug(f"Failed to parse cityJSON: {e}")
                 continue
-    
+
     # Fallback: if no stores found from cityJSON, try parsing HTML links
     if not stores:
         for link in soup.find_all('a', href=True):
@@ -424,13 +424,13 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
                         'url': store_url
                     })
                     seen_urls.add(store_url)
-    
+
     # Deduplicate by URL
     unique_stores = {}
     for store in stores:
         if store['url'] not in unique_stores:
             unique_stores[store['url']] = store
-    
+
     result = list(unique_stores.values())
     logging.info(f"Found {len(result)} stores for {city_name}, {state_name}")
     return result
@@ -439,28 +439,28 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
 def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
     """Validate that store data has required fields and valid format"""
     issues = []
-    
+
     # Required fields: name, city, state, and at least one of street_address or coordinates
     if not store_data.get('name') or not store_data.get('name').strip():
         issues.append("missing or empty name")
-    
+
     if not store_data.get('city') or not store_data.get('city').strip():
         issues.append("missing or empty city")
-    
+
     if not store_data.get('state') or not store_data.get('state').strip():
         issues.append("missing or empty state")
-    
+
     # At least address or coordinates should be present
     has_address = store_data.get('street_address') and store_data.get('street_address').strip()
     has_coords = (store_data.get('latitude') and store_data.get('longitude'))
-    
+
     if not has_address and not has_coords:
         issues.append("missing both street address and coordinates")
-    
+
     # Validate coordinates if present
     lat = store_data.get('latitude')
     lon = store_data.get('longitude')
-    
+
     if lat:
         try:
             lat_float = float(lat) if isinstance(lat, str) else lat
@@ -468,7 +468,7 @@ def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
                 issues.append(f"latitude out of range: {lat_float}")
         except (ValueError, TypeError):
             issues.append(f"invalid latitude format: {lat}")
-    
+
     if lon:
         try:
             lon_float = float(lon) if isinstance(lon, str) else lon
@@ -476,28 +476,28 @@ def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
                 issues.append(f"longitude out of range: {lon_float}")
         except (ValueError, TypeError):
             issues.append(f"invalid longitude format: {lon}")
-    
+
     if issues:
         logging.warning(f"Store data validation failed for {store_url}: {', '.join(issues)}")
         return False
-    
+
     return True
 
 
 def extract_store_details(session: requests.Session, store_url: str) -> Optional[Dict[str, Any]]:
     """Extract structured store data from JSON-LD on store detail page"""
     logging.debug(f"Extracting details from {store_url}")
-    
+
     response = utils.get_with_retry(session, store_url)
     if not response:
         logging.warning(f"Failed to fetch store details: {store_url}")
         return None
-    
+
     _request_counter.increment()
     _check_pause_logic()
-    
+
     soup = BeautifulSoup(response.text, 'html.parser')
-    
+
     # Find JSON-LD script tag
     for script in soup.find_all('script', type='application/ld+json'):
         try:
@@ -506,7 +506,7 @@ def extract_store_details(session: requests.Session, store_url: str) -> Optional
                 # Extract address components
                 address = data.get('address', {})
                 geo = data.get('geo', {})
-                
+
                 result = {
                     'name': data.get('name', ''),
                     'street_address': address.get('streetAddress', ''),
@@ -520,7 +520,7 @@ def extract_store_details(session: requests.Session, store_url: str) -> Optional
                     'url': store_url,
                     'scraped_at': datetime.now().isoformat()
                 }
-                
+
                 # Validate the extracted data
                 if _validate_store_data(result, store_url):
                     logging.debug(f"Extracted store: {result.get('name', 'Unknown')}")
@@ -528,14 +528,14 @@ def extract_store_details(session: requests.Session, store_url: str) -> Optional
                 else:
                     logging.warning(f"Skipping store due to validation failure: {store_url}")
                     return None
-                
+
         except json.JSONDecodeError as e:
             logging.warning(f"JSON decode error for {store_url}: {e}")
             continue
         except Exception as e:
             logging.warning(f"Error parsing JSON-LD for {store_url}: {e}")
             continue
-    
+
     logging.warning(f"No JSON-LD Store data found for {store_url}")
     return None
 

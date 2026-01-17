@@ -1,0 +1,55 @@
+[MASTER]
+# Use multiple processes to speed up Pylint.
+jobs=1
+
+# Pickle collected data for later comparisons.
+persistent=yes
+
+[MESSAGES CONTROL]
+# Disable specific warnings that are either not relevant or too strict for this project
+disable=
+    duplicate-code,  # Config files naturally have similar code
+    too-few-public-methods,  # Dataclasses often have few methods
+    logging-fstring-interpolation,  # f-strings in logging are acceptable for readability
+    fixme,  # TODO comments are fine during development
+
+[BASIC]
+# Good variable names which should always be accepted
+good-names=i,j,k,ex,Run,_,id,fd,f,e,db,df
+
+# Allow longer variable names
+variable-rgx=[a-z_][a-z0-9_]{1,30}$
+
+[FORMAT]
+# Maximum number of characters on a single line.
+max-line-length=100
+
+# Maximum number of lines in a module
+max-module-lines=1000
+
+[DESIGN]
+# Maximum number of arguments for function / method
+max-args=7
+
+# Maximum number of locals for function / method body
+max-locals=20
+
+# Maximum number of return / yield for function / method body
+max-returns=8
+
+# Maximum number of branch for function / method body
+max-branches=15
+
+# Maximum number of statements in function / method body
+max-statements=60
+
+# Maximum number of attributes for a class
+max-attributes=12
+
+[IMPORTS]
+# Allow wildcard imports for specific modules
+allow-wildcard-with-all=no
+
+[EXCEPTIONS]
+# Exceptions that will emit a warning when being caught
+overgeneral-exceptions=builtins.BaseException,builtins.Exception

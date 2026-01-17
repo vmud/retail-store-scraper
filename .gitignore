@@ -80,6 +80,10 @@ data/*/history/
 *.tar.gz
 *.checksums
 
+# Linting outputs and temporary files
+pylint_output*.txt
+fix_pylint*.py
+
 # OS files
 .DS_Store
 Thumbs.db
