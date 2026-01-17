@@ -196,7 +196,7 @@ def get_store_details(session: requests.Session, store_id: int) -> Optional[Targ
             geo_specs = store.get("geographic_specifications", {})
 
             # Extract physical specifications
-            _physical_specs = store.get("physical_specifications", {})
+            physical_specs = store.get("physical_specifications", {})
 
             # Extract capabilities
             capabilities = [c.get("capability_name", "") for c in store.get("capabilities", [])]

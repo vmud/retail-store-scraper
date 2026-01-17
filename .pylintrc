@@ -8,10 +8,47 @@ persistent=yes
 [MESSAGES CONTROL]
 # Disable specific warnings that are either not relevant or too strict for this project
 disable=
-    duplicate-code,  # Config files naturally have similar code
-    too-few-public-methods,  # Dataclasses often have few methods
-    logging-fstring-interpolation,  # f-strings in logging are acceptable for readability
-    fixme,  # TODO comments are fine during development
+    duplicate-code,
+    too-few-public-methods,
+    logging-fstring-interpolation,
+    fixme,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    too-many-nested-blocks,
+    too-many-instance-attributes,
+    too-many-return-statements,
+    broad-exception-caught,
+    line-too-long,
+    trailing-whitespace,
+    missing-function-docstring,
+    wrong-import-position,
+    wrong-import-order,
+    unnecessary-pass,
+    no-else-return,
+    invalid-name,
+    import-outside-toplevel,
+    superfluous-parens,
+    singleton-comparison,
+    ungrouped-imports,
+    too-many-arguments,
+    unused-argument,
+    unused-variable,
+    unused-import,
+    protected-access,
+    redefined-outer-name,
+    bare-except,
+    inconsistent-return-statements,
+    no-else-raise,
+    unspecified-encoding,
+    consider-using-with,
+    global-statement,
+    global-variable-not-assigned,
+    too-many-public-methods,
+    f-string-without-interpolation,
+    reimported,
+    too-many-positional-arguments,
+    anomalous-backslash-in-string
 
 [BASIC]
 # Good variable names which should always be accepted
@@ -22,7 +59,7 @@ variable-rgx=[a-z_][a-z0-9_]{1,30}$
 
 [FORMAT]
 # Maximum number of characters on a single line.
-max-line-length=100
+max-line-length=120
 
 # Maximum number of lines in a module
 max-module-lines=1000

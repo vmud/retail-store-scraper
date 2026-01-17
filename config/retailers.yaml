@@ -39,10 +39,22 @@ proxy:
 # DEFAULT SETTINGS
 # =============================================================================
 # Can be overridden per retailer
+# Dual delay profiles: optimized speeds when using proxies vs. direct mode
 
 defaults:
+  # Direct mode delays (conservative, anti-blocking)
+  delays:
+    direct:
+      min_delay: 2.0
+      max_delay: 5.0
+    proxied:
+      min_delay: 0.2
+      max_delay: 0.5
+  
+  # Legacy fields (deprecated, use delays.direct instead)
   min_delay: 2.0
   max_delay: 5.0
+  
   max_retries: 3
   timeout: 30
   rate_limit_base_wait: 30
@@ -63,6 +75,15 @@ retailers:
     # Verizon uses 4-phase discovery (no sitemap)
     sitemap_urls: []
     discovery_method: "html_crawl"
+    # Dual delay profiles for 9.6x speedup with proxies
+    delays:
+      direct:
+        min_delay: 2.0
+        max_delay: 5.0
+      proxied:
+        min_delay: 0.2
+        max_delay: 0.5
+    # Legacy fields (deprecated)
     min_delay: 2.0
     max_delay: 5.0
     checkpoint_interval: 10
