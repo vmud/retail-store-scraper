@@ -195,6 +195,19 @@ function updateRetailers(data) {
     const container = document.getElementById('retailer-grid');
     const retailers = data.retailers || {};
     
+    // Preserve UI state before update
+    const uiState = {};
+    for (const [retailerId] of Object.entries(RETAILER_CONFIG)) {
+        const panel = document.getElementById(`history-${retailerId}`);
+        if (panel) {
+            uiState[retailerId] = {
+                isOpen: panel.classList.contains('open'),
+                content: panel.querySelector('.run-history-list')?.innerHTML || ''
+            };
+        }
+    }
+    
+    // Render new HTML
     let html = '';
     for (const [retailerId, retailerData] of Object.entries(RETAILER_CONFIG)) {
         const data = retailers[retailerId] || { status: 'pending' };
@@ -202,6 +215,26 @@ function updateRetailers(data) {
     }
     
     container.innerHTML = html;
+    
+    // Restore UI state after update
+    for (const [retailerId, state] of Object.entries(uiState)) {
+        if (state.isOpen) {
+            const panel = document.getElementById(`history-${retailerId}`);
+            const button = panel?.previousElementSibling;
+            const listContainer = document.getElementById(`history-list-${retailerId}`);
+            
+            if (panel && button && listContainer) {
+                panel.classList.add('open');
+                button.classList.add('active');
+                button.textContent = '📜 Hide Run History';
+                
+                // Restore the loaded content
+                if (state.content && !state.content.includes('Loading...')) {
+                    listContainer.innerHTML = state.content;
+                }
+            }
+        }
+    }
 }
 
 async function updateDashboard() {
