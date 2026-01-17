@@ -713,64 +713,85 @@ def run(session, config: dict, **kwargs) -> dict:
             - count: int - Number of stores processed
             - checkpoints_used: bool - Whether resume was used
     """
-    limit = kwargs.get('limit')
-    resume = kwargs.get('resume', False)
-    
-    reset_request_counter()
-    
     retailer_name = kwargs.get('retailer', 'bestbuy')
-    checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
-    checkpoint_interval = config.get('checkpoint_interval', 100)
+    logging.info(f"[{retailer_name}] Starting scrape run")
     
-    stores = []
-    completed_urls = set()
-    checkpoints_used = False
-    
-    if resume:
-        checkpoint = utils.load_checkpoint(checkpoint_path)
-        if checkpoint:
-            stores = checkpoint.get('stores', [])
-            completed_urls = set(checkpoint.get('completed_urls', []))
-            logging.info(f"Resuming from checkpoint: {len(stores)} stores already collected")
-            checkpoints_used = True
-    
-    store_list = get_all_store_ids(session)
-    remaining_stores = [s for s in store_list if s.get('url') not in completed_urls]
-    
-    if limit:
-        total_needed = limit - len(stores)
-        if total_needed > 0:
-            remaining_stores = remaining_stores[:total_needed]
-        else:
-            remaining_stores = []
-    
-    for i, store_info in enumerate(remaining_stores):
-        store_url = store_info.get('url')
-        store_obj = extract_store_details(session, store_url)
-        if store_obj:
-            stores.append(store_obj.to_dict())
-            completed_urls.add(store_url)
+    try:
+        limit = kwargs.get('limit')
+        resume = kwargs.get('resume', False)
         
-        if (i + 1) % checkpoint_interval == 0:
+        reset_request_counter()
+        
+        checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
+        checkpoint_interval = config.get('checkpoint_interval', 100)
+        
+        stores = []
+        completed_urls = set()
+        checkpoints_used = False
+        
+        if resume:
+            checkpoint = utils.load_checkpoint(checkpoint_path)
+            if checkpoint:
+                stores = checkpoint.get('stores', [])
+                completed_urls = set(checkpoint.get('completed_urls', []))
+                logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
+                checkpoints_used = True
+        
+        store_list = get_all_store_ids(session)
+        logging.info(f"[{retailer_name}] Found {len(store_list)} store URLs")
+        
+        if not store_list:
+            logging.warning(f"[{retailer_name}] No store URLs found in sitemap")
+            return {'stores': [], 'count': 0, 'checkpoints_used': False}
+        
+        remaining_stores = [s for s in store_list if s.get('url') not in completed_urls]
+        
+        if limit:
+            logging.info(f"[{retailer_name}] Limited to {limit} stores")
+            total_needed = limit - len(stores)
+            if total_needed > 0:
+                remaining_stores = remaining_stores[:total_needed]
+            else:
+                remaining_stores = []
+        
+        total_to_process = len(remaining_stores)
+        for i, store_info in enumerate(remaining_stores, 1):
+            store_url = store_info.get('url')
+            store_obj = extract_store_details(session, store_url)
+            if store_obj:
+                stores.append(store_obj.to_dict())
+                completed_urls.add(store_url)
+            
+            # Progress logging every 100 stores
+            if i % 100 == 0:
+                logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
+            
+            if i % checkpoint_interval == 0:
+                utils.save_checkpoint({
+                    'completed_count': len(stores),
+                    'completed_urls': list(completed_urls),
+                    'stores': stores,
+                    'last_updated': datetime.now().isoformat()
+                }, checkpoint_path)
+                logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
+        
+        if stores:
             utils.save_checkpoint({
                 'completed_count': len(stores),
                 'completed_urls': list(completed_urls),
                 'stores': stores,
                 'last_updated': datetime.now().isoformat()
             }, checkpoint_path)
-            logging.info(f"Checkpoint saved: {len(stores)} stores processed")
-    
-    if stores:
-        utils.save_checkpoint({
-            'completed_count': len(stores),
-            'completed_urls': list(completed_urls),
+            logging.info(f"[{retailer_name}] Final checkpoint saved: {len(stores)} stores total")
+        
+        logging.info(f"[{retailer_name}] Completed: {len(stores)} stores successfully scraped")
+        
+        return {
             'stores': stores,
-            'last_updated': datetime.now().isoformat()
-        }, checkpoint_path)
-        logging.info(f"Final checkpoint saved: {len(stores)} stores total")
-    
-    return {
-        'stores': stores,
-        'count': len(stores),
-        'checkpoints_used': checkpoints_used
-    }
+            'count': len(stores),
+            'checkpoints_used': checkpoints_used
+        }
+        
+    except Exception as e:
+        logging.error(f"[{retailer_name}] Fatal error: {e}", exc_info=True)
+        raise
