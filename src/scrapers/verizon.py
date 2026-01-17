@@ -573,6 +573,12 @@ def run(session, config: dict, **kwargs) -> dict:
     reset_request_counter()
     
     retailer_name = kwargs.get('retailer', 'verizon')
+    
+    # Auto-select delays based on proxy mode for optimal performance
+    proxy_mode = config.get('proxy', {}).get('mode', 'direct')
+    min_delay, max_delay = utils.select_delays(config, proxy_mode)
+    logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
+    
     checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
     # Verizon uses smaller interval (10) due to slower multi-phase crawl
     checkpoint_interval = config.get('checkpoint_interval', 10)
