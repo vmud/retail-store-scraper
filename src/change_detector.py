@@ -72,11 +72,19 @@ class ChangeDetector:
 
     def _get_store_key(self, store: Dict[str, Any]) -> str:
         """Generate a unique key for a store based on identity fields"""
-        # Try different identity fields in order of preference
-        if store.get('store_id'):
-            return f"id:{store['store_id']}"
-        if store.get('url'):
-            return f"url:{store['url']}"
+        # For Best Buy, prioritize URL over store_id (multi-service locations share IDs)
+        if self.retailer == 'bestbuy':
+            if store.get('url'):
+                return f"url:{store['url']}"
+            if store.get('store_id'):
+                return f"id:{store['store_id']}"
+        else:
+            # For other retailers, try store_id first
+            if store.get('store_id'):
+                return f"id:{store['store_id']}"
+            if store.get('url'):
+                return f"url:{store['url']}"
+        
         # Fall back to address-based key
         addr_parts = [
             store.get('name', ''),
