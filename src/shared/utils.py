@@ -353,6 +353,9 @@ def get_retailer_proxy_config(
         logging.warning(f"[{retailer}] Error loading config: {e}")
         config = {}
     
+    # Handle empty YAML files (safe_load returns None)
+    config = config or {}
+    
     retailer_config = config.get('retailers', {}).get(retailer, {})
     if 'proxy' in retailer_config:
         proxy_settings = retailer_config['proxy']
@@ -413,6 +416,9 @@ def load_retailer_config(
         logging.error(f"[{retailer}] Error loading config: {e}")
         return {'proxy': {'mode': 'direct'}}
     
+    # Handle empty YAML files (safe_load returns None)
+    config = config or {}
+    
     retailer_config = config.get('retailers', {}).get(retailer, {})
     
     proxy_config = get_retailer_proxy_config(retailer, cli_override=cli_proxy_override)
@@ -446,6 +452,13 @@ def get_proxy_client(config: Optional[Dict[str, Any]] = None, retailer: Optional
     
     if cache_key in _proxy_clients and config is None:
         return _proxy_clients[cache_key]
+    
+    # Close existing client before overwriting to prevent resource leak
+    if cache_key in _proxy_clients:
+        try:
+            _proxy_clients[cache_key].close()
+        except Exception:
+            pass
     
     if config:
         proxy_config = ProxyConfig.from_dict(config)
@@ -570,15 +583,19 @@ def create_proxied_session(
         return session
     
     try:
-        client = get_proxy_client(proxy_config_dict, retailer=retailer_name)
-        
-        if not client.config.validate():
+        # Check credentials before creating client to properly detect missing credentials
+        # ProxyClient.__init__ silently falls back to DIRECT mode if credentials are missing,
+        # so we need to validate beforehand to provide the correct fallback behavior
+        test_config = ProxyConfig.from_dict(proxy_config_dict)
+        if not test_config.validate():
             logging.error(f"[{retailer_name}] Missing credentials for {mode} mode, falling back to direct")
             session = requests.Session()
             session.headers.update(get_headers())
             return session
         
-        logging.info(f"[{retailer_name}] Created ProxyClient for mode: {mode}")
+        client = get_proxy_client(proxy_config_dict, retailer=retailer_name)
+        
+        logging.info(f"[{retailer_name}] Created ProxyClient for mode: {client.config.mode.value}")
         return client
         
     except Exception as e:
