@@ -6,7 +6,7 @@ export default defineConfig({
   base: '/static/dist/',
   build: {
     outDir: 'static/dist',
-    emptyDirOnBuild: true,
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html')
