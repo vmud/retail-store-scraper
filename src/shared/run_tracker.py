@@ -18,15 +18,35 @@ class RunTracker:
         Args:
             retailer: Retailer name (verizon, att, etc.)
             run_id: Optional run ID, will be auto-generated if not provided
+                   If run_id is provided and file exists, will load existing data
         """
         self.retailer = retailer
         self.run_id = run_id or self._generate_run_id()
         self.run_dir = Path(f"data/{retailer}/runs")
         self.run_file = self.run_dir / f"{self.run_id}.json"
         
-        self.metadata = {
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        
+        if run_id and self.run_file.exists():
+            existing_data = load_checkpoint(str(self.run_file))
+            if existing_data:
+                self.metadata = existing_data
+            else:
+                self.metadata = self._create_fresh_metadata()
+                self._save()
+        else:
+            self.metadata = self._create_fresh_metadata()
+            self._save()
+    
+    def _create_fresh_metadata(self) -> Dict[str, Any]:
+        """Create fresh metadata dictionary for new run
+        
+        Returns:
+            Fresh metadata dict
+        """
+        return {
             "run_id": self.run_id,
-            "retailer": retailer,
+            "retailer": self.retailer,
             "status": "running",
             "started_at": datetime.utcnow().isoformat() + "Z",
             "completed_at": None,
@@ -40,9 +60,6 @@ class RunTracker:
             "phases": {},
             "errors": []
         }
-        
-        self.run_dir.mkdir(parents=True, exist_ok=True)
-        self._save()
     
     def _generate_run_id(self) -> str:
         """Generate unique run ID based on timestamp"""

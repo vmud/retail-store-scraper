@@ -6,26 +6,35 @@ import subprocess
 import signal
 import logging
 import time
+import atexit
+import platform
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from .run_tracker import RunTracker, get_active_run
+from .run_tracker import RunTracker, get_active_run, get_run_history
 from .status import load_retailers_config
 
 logger = logging.getLogger(__name__)
 
 
 class ScraperManager:
-    """Manage scraper process lifecycle (start, stop, restart)"""
+    """Manage scraper process lifecycle (start, stop, restart)
+    
+    Thread-safe process manager with automatic cleanup and state recovery.
+    """
     
     def __init__(self):
         """Initialize scraper manager"""
         self._processes: Dict[str, Dict[str, Any]] = {}
-        self._log_dir = Path("logs/scrapers")
-        self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         
         self._run_py_path = self._find_run_py()
+        
+        self._recover_running_processes()
+        
+        atexit.register(self._cleanup_on_exit)
     
     def _find_run_py(self) -> str:
         """Find run.py script path"""
@@ -39,21 +48,69 @@ class ScraperManager:
         
         raise FileNotFoundError("Could not find run.py script")
     
-    def _get_log_file(self, retailer: str) -> str:
+    def _get_log_file(self, retailer: str, run_id: str) -> str:
         """Get log file path for retailer
         
         Args:
             retailer: Retailer name
+            run_id: Run ID for this scraper run
         
         Returns:
-            Path to log file
+            Path to log file (data/{retailer}/logs/{run_id}.log)
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return str(self._log_dir / f"{retailer}_{timestamp}.log")
+        log_dir = Path(f"data/{retailer}/logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return str(log_dir / f"{run_id}.log")
+    
+    def _recover_running_processes(self) -> None:
+        """Recover running processes from RunTracker metadata on startup
+        
+        This allows the manager to track scrapers that were started before
+        a restart/crash of the dashboard application.
+        """
+        config = load_retailers_config()
+        
+        for retailer in config.keys():
+            active_run = get_active_run(retailer)
+            if not active_run:
+                continue
+            
+            pid = active_run.get('config', {}).get('pid')
+            if not pid:
+                continue
+            
+            try:
+                os.kill(pid, 0)
+                
+                logger.info(f"Recovered running scraper for {retailer} (PID: {pid})")
+                
+                self._processes[retailer] = {
+                    "pid": pid,
+                    "process": None,
+                    "start_time": active_run.get('started_at'),
+                    "log_file": self._get_log_file(retailer, active_run['run_id']),
+                    "run_id": active_run['run_id'],
+                    "command": f"Recovered from PID {pid}",
+                    "recovered": True
+                }
+            except (OSError, ProcessLookupError):
+                logger.info(f"Stale run metadata for {retailer} (PID {pid} not running)")
+                
+                tracker = RunTracker(retailer, run_id=active_run['run_id'])
+                tracker.fail("Process not found on recovery (likely crashed)")
+    
+    def _cleanup_on_exit(self) -> None:
+        """Cleanup handler called on exit"""
+        logger.info("ScraperManager shutting down, stopping all scrapers...")
+        try:
+            self.stop_all(timeout=10)
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
     
     def _build_command(
         self,
         retailer: str,
+        log_file: str,
         resume: bool = False,
         incremental: bool = False,
         limit: Optional[int] = None,
@@ -67,6 +124,7 @@ class ScraperManager:
         
         Args:
             retailer: Retailer name
+            log_file: Path to log file
             resume: Resume from checkpoint
             incremental: Incremental mode
             limit: Limit number of stores
@@ -102,7 +160,6 @@ class ScraperManager:
         if verbose:
             cmd.append("--verbose")
         
-        log_file = self._get_log_file(retailer)
         cmd.extend(["--log-file", log_file])
         
         return cmd
@@ -138,38 +195,16 @@ class ScraperManager:
         Raises:
             ValueError: If retailer not found or already running
         """
-        config = load_retailers_config()
-        if retailer not in config:
-            raise ValueError(f"Unknown retailer: {retailer}")
-        
-        if retailer in self._processes:
-            raise ValueError(f"Scraper for {retailer} is already running")
-        
-        if not config[retailer].get('enabled', False):
-            raise ValueError(f"Retailer {retailer} is disabled in config")
-        
-        cmd = self._build_command(
-            retailer=retailer,
-            resume=resume,
-            incremental=incremental,
-            limit=limit,
-            test=test,
-            proxy=proxy,
-            render_js=render_js,
-            proxy_country=proxy_country,
-            verbose=verbose
-        )
-        
-        log_file = self._get_log_file(retailer)
-        
-        try:
-            with open(log_file, 'w') as log_f:
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=log_f,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True
-                )
+        with self._lock:
+            config = load_retailers_config()
+            if retailer not in config:
+                raise ValueError(f"Unknown retailer: {retailer}")
+            
+            if retailer in self._processes:
+                raise ValueError(f"Scraper for {retailer} is already running")
+            
+            if not config[retailer].get('enabled', False):
+                raise ValueError(f"Retailer {retailer} is disabled in config")
             
             run_tracker = RunTracker(retailer)
             run_tracker.update_config({
@@ -180,34 +215,61 @@ class ScraperManager:
                 "proxy": proxy,
                 "render_js": render_js,
                 "proxy_country": proxy_country,
-                "pid": process.pid
             })
             
-            process_info = {
-                "pid": process.pid,
-                "process": process,
-                "start_time": datetime.now().isoformat(),
-                "log_file": log_file,
-                "run_id": run_tracker.run_id,
-                "command": " ".join(cmd)
-            }
+            log_file = self._get_log_file(retailer, run_tracker.run_id)
             
-            self._processes[retailer] = process_info
+            cmd = self._build_command(
+                retailer=retailer,
+                log_file=log_file,
+                resume=resume,
+                incremental=incremental,
+                limit=limit,
+                test=test,
+                proxy=proxy,
+                render_js=render_js,
+                proxy_country=proxy_country,
+                verbose=verbose
+            )
             
-            logger.info(f"Started scraper for {retailer} (PID: {process.pid})")
+            try:
+                with open(log_file, 'w') as log_f:
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=log_f,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=True
+                    )
+                
+                run_tracker.update_config({"pid": process.pid})
+                
+                process_info = {
+                    "pid": process.pid,
+                    "process": process,
+                    "start_time": datetime.now().isoformat(),
+                    "log_file": log_file,
+                    "run_id": run_tracker.run_id,
+                    "command": " ".join(cmd),
+                    "recovered": False
+                }
+                
+                self._processes[retailer] = process_info
+                
+                logger.info(f"Started scraper for {retailer} (PID: {process.pid})")
+                
+                return {
+                    "retailer": retailer,
+                    "pid": process.pid,
+                    "start_time": process_info["start_time"],
+                    "log_file": log_file,
+                    "run_id": run_tracker.run_id,
+                    "status": "started"
+                }
             
-            return {
-                "retailer": retailer,
-                "pid": process.pid,
-                "start_time": process_info["start_time"],
-                "log_file": log_file,
-                "run_id": run_tracker.run_id,
-                "status": "started"
-            }
-        
-        except Exception as e:
-            logger.error(f"Failed to start scraper for {retailer}: {e}")
-            raise
+            except Exception as e:
+                logger.error(f"Failed to start scraper for {retailer}: {e}")
+                run_tracker.fail(f"Failed to start: {e}")
+                raise
     
     def stop(self, retailer: str, timeout: int = 30) -> Dict[str, Any]:
         """Stop a scraper process gracefully
@@ -222,46 +284,70 @@ class ScraperManager:
         Raises:
             ValueError: If scraper not running
         """
-        if retailer not in self._processes:
-            raise ValueError(f"No running scraper for {retailer}")
-        
-        process_info = self._processes[retailer]
-        process = process_info["process"]
-        pid = process.pid
-        
-        logger.info(f"Stopping scraper for {retailer} (PID: {pid})")
-        
-        try:
-            process.send_signal(signal.SIGTERM)
+        with self._lock:
+            if retailer not in self._processes:
+                raise ValueError(f"No running scraper for {retailer}")
+            
+            process_info = self._processes[retailer]
+            process = process_info.get("process")
+            pid = process_info["pid"]
+            run_id = process_info["run_id"]
+            
+            logger.info(f"Stopping scraper for {retailer} (PID: {pid})")
             
             try:
-                exit_code = process.wait(timeout=timeout)
-                logger.info(f"Scraper for {retailer} stopped gracefully (exit code: {exit_code})")
-                status = "stopped"
-            except subprocess.TimeoutExpired:
-                logger.warning(f"Scraper for {retailer} did not stop gracefully, sending SIGKILL")
-                process.kill()
-                exit_code = process.wait()
-                status = "killed"
+                if process:
+                    if platform.system() == 'Windows':
+                        process.terminate()
+                    else:
+                        process.send_signal(signal.SIGTERM)
+                    
+                    try:
+                        exit_code = process.wait(timeout=timeout)
+                        logger.info(f"Scraper for {retailer} stopped gracefully (exit code: {exit_code})")
+                        status = "stopped"
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"Scraper for {retailer} did not stop gracefully, sending SIGKILL")
+                        process.kill()
+                        exit_code = process.wait()
+                        status = "killed"
+                else:
+                    try:
+                        if platform.system() == 'Windows':
+                            os.kill(pid, signal.SIGTERM)
+                        else:
+                            os.kill(pid, signal.SIGTERM)
+                        exit_code = 0
+                        status = "stopped"
+                    except (OSError, ProcessLookupError):
+                        exit_code = -1
+                        status = "already_stopped"
+                
+                tracker = RunTracker(retailer, run_id=run_id)
+                if exit_code == 0:
+                    tracker.complete()
+                else:
+                    tracker.fail(f"Process exited with code {exit_code}")
+                
+                del self._processes[retailer]
+                
+                return {
+                    "retailer": retailer,
+                    "pid": pid,
+                    "exit_code": exit_code,
+                    "status": status
+                }
             
-            del self._processes[retailer]
-            
-            return {
-                "retailer": retailer,
-                "pid": pid,
-                "exit_code": exit_code,
-                "status": status
-            }
-        
-        except Exception as e:
-            logger.error(f"Error stopping scraper for {retailer}: {e}")
-            raise
+            except Exception as e:
+                logger.error(f"Error stopping scraper for {retailer}: {e}")
+                raise
     
     def restart(
         self,
         retailer: str,
         resume: bool = True,
         timeout: int = 30,
+        restart_delay: float = 0.5,
         **kwargs
     ) -> Dict[str, Any]:
         """Restart a scraper (stop then start)
@@ -270,6 +356,7 @@ class ScraperManager:
             retailer: Retailer name
             resume: Resume from checkpoint (default: True)
             timeout: Seconds to wait for stop
+            restart_delay: Seconds to wait between stop and start (default: 0.5)
             **kwargs: Additional arguments for start()
         
         Returns:
@@ -278,7 +365,8 @@ class ScraperManager:
         if retailer in self._processes:
             logger.info(f"Restarting scraper for {retailer}")
             self.stop(retailer, timeout=timeout)
-            time.sleep(1)
+            if restart_delay > 0:
+                time.sleep(restart_delay)
         else:
             logger.info(f"Starting scraper for {retailer} (not currently running)")
         
@@ -293,17 +381,42 @@ class ScraperManager:
         Returns:
             True if running, False otherwise
         """
-        if retailer not in self._processes:
-            return False
-        
-        process = self._processes[retailer]["process"]
-        
-        if process.poll() is None:
-            return True
-        
-        logger.info(f"Scraper for {retailer} has exited (exit code: {process.returncode})")
-        del self._processes[retailer]
-        return False
+        with self._lock:
+            if retailer not in self._processes:
+                return False
+            
+            process_info = self._processes[retailer]
+            process = process_info.get("process")
+            pid = process_info["pid"]
+            run_id = process_info["run_id"]
+            
+            if process:
+                if process.poll() is None:
+                    return True
+                
+                exit_code = process.returncode
+                logger.info(f"Scraper for {retailer} has exited (exit code: {exit_code})")
+                
+                tracker = RunTracker(retailer, run_id=run_id)
+                if exit_code == 0:
+                    tracker.complete()
+                else:
+                    tracker.fail(f"Process exited with code {exit_code}")
+                
+                del self._processes[retailer]
+                return False
+            else:
+                try:
+                    os.kill(pid, 0)
+                    return True
+                except (OSError, ProcessLookupError):
+                    logger.info(f"Recovered process for {retailer} (PID {pid}) has exited")
+                    
+                    tracker = RunTracker(retailer, run_id=run_id)
+                    tracker.fail("Process exited (recovered process, exit code unknown)")
+                    
+                    del self._processes[retailer]
+                    return False
     
     def get_status(self, retailer: str) -> Optional[Dict[str, Any]]:
         """Get status of running scraper
@@ -317,16 +430,21 @@ class ScraperManager:
         if not self.is_running(retailer):
             return None
         
-        process_info = self._processes[retailer]
-        
-        return {
-            "retailer": retailer,
-            "pid": process_info["pid"],
-            "start_time": process_info["start_time"],
-            "log_file": process_info["log_file"],
-            "run_id": process_info["run_id"],
-            "status": "running"
-        }
+        with self._lock:
+            if retailer not in self._processes:
+                return None
+            
+            process_info = self._processes[retailer]
+            
+            return {
+                "retailer": retailer,
+                "pid": process_info["pid"],
+                "start_time": process_info["start_time"],
+                "log_file": process_info["log_file"],
+                "run_id": process_info["run_id"],
+                "status": "running",
+                "recovered": process_info.get("recovered", False)
+            }
     
     def get_all_status(self) -> Dict[str, Dict[str, Any]]:
         """Get status of all running scrapers
@@ -365,17 +483,45 @@ class ScraperManager:
     def cleanup_exited(self) -> List[str]:
         """Clean up exited processes from tracking
         
+        Updates RunTracker status for exited processes.
+        
         Returns:
             List of retailers that were cleaned up
         """
         cleaned = []
         
-        for retailer in list(self._processes.keys()):
-            process = self._processes[retailer]["process"]
-            if process.poll() is not None:
-                logger.info(f"Cleaning up exited scraper for {retailer} (exit code: {process.returncode})")
-                del self._processes[retailer]
-                cleaned.append(retailer)
+        with self._lock:
+            for retailer in list(self._processes.keys()):
+                process_info = self._processes[retailer]
+                process = process_info.get("process")
+                pid = process_info["pid"]
+                run_id = process_info["run_id"]
+                
+                exited = False
+                exit_code = None
+                
+                if process:
+                    if process.poll() is not None:
+                        exited = True
+                        exit_code = process.returncode
+                else:
+                    try:
+                        os.kill(pid, 0)
+                    except (OSError, ProcessLookupError):
+                        exited = True
+                        exit_code = -1
+                
+                if exited:
+                    logger.info(f"Cleaning up exited scraper for {retailer} (exit code: {exit_code})")
+                    
+                    tracker = RunTracker(retailer, run_id=run_id)
+                    if exit_code == 0:
+                        tracker.complete()
+                    else:
+                        tracker.fail(f"Process exited with code {exit_code}")
+                    
+                    del self._processes[retailer]
+                    cleaned.append(retailer)
         
         return cleaned
 

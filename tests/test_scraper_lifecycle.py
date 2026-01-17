@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Comprehensive test for scraper lifecycle management"""
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import time
 import os
 import signal
-from pathlib import Path
 from src.shared import get_scraper_manager, get_run_history, get_retailer_status
 
 def test_lifecycle():
@@ -137,16 +140,20 @@ def test_lifecycle():
     
     # Test 9: Check log files were created
     print("\n[9] Verifying log files...")
-    log_dir = Path("logs/scrapers")
-    if log_dir.exists():
-        log_files = list(log_dir.glob("*.log"))
-        print(f"    ✓ Found {len(log_files)} log files in {log_dir}")
+    log_files = []
+    for retailer_dir in Path("data").glob("*/logs"):
+        log_files.extend(list(retailer_dir.glob("*.log")))
+    
+    if log_files:
+        print(f"    ✓ Found {len(log_files)} log files across all retailers")
         
         # Check latest log file has content
-        if log_files:
-            latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
-            if latest_log.stat().st_size > 0:
-                print(f"    ✓ Latest log file has content: {latest_log.name}")
+        latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
+        if latest_log.stat().st_size > 0:
+            print(f"    ✓ Latest log file has content: {latest_log.name}")
+            print(f"      Location: {latest_log.parent}")
+    else:
+        print("    ℹ No log files found")
     
     print("\n" + "=" * 70)
     print("LIFECYCLE VERIFICATION COMPLETE")

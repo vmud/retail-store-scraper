@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Test script for scraper manager"""
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import time
 import logging
 from src.shared.scraper_manager import get_scraper_manager

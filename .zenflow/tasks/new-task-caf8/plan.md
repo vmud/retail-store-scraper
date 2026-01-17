@@ -82,8 +82,17 @@ Do not make assumptions on important decisions — get clarification first.
 - Uses existing `run.py` CLI via subprocess
 - Integrates with `RunTracker` to track PIDs and metadata
 - Leverages existing checkpoint system for resume functionality
-- Creates timestamped log files in `logs/scrapers/`
+- Creates per-run log files in `data/{retailer}/logs/{run_id}.log`
 - Validates retailer config before starting
+
+**Production-Ready Features:**
+- ✅ Thread-safe with `threading.Lock` for Flask integration
+- ✅ Process state persistence - recovers running processes after restart
+- ✅ Updates RunTracker status when processes exit (complete/failed)
+- ✅ Windows compatibility - handles SIGTERM vs terminate()
+- ✅ Automatic cleanup on exit - atexit handler stops all scrapers
+- ✅ Handles both live and recovered processes
+- ✅ Error tracking on startup failures
 
 **Verification Completed:**
 - ✅ Start a scraper via manager (process spawned and verified with os.kill)
@@ -91,8 +100,10 @@ Do not make assumptions on important decisions — get clarification first.
 - ✅ Restart with resume flag (checkpoint loaded, resume=True in config)
 - ✅ Handle errors during scraper execution (ValueError for invalid/disabled retailers)
 - ✅ Multiple concurrent scrapers (started 3 retailers simultaneously)
-- ✅ Log file creation and content verification
-- ✅ Run tracking integration (PIDs, configs, run IDs tracked correctly)
+- ✅ Log file creation in correct location (data/{retailer}/logs/)
+- ✅ Run tracking integration (PIDs, configs, run IDs preserved correctly)
+- ✅ RunTracker status updated on process exit (status=complete, config preserved)
+- ✅ Process recovery on manager restart (finds running processes via PID check)
 
 ---
 
