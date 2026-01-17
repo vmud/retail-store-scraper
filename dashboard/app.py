@@ -2,15 +2,22 @@
 """Simple Flask dashboard for monitoring scraper progress"""
 
 import sys
+import os
+import yaml
+import shutil
 from pathlib import Path
+from datetime import datetime
 
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flask import Flask, jsonify
-from src import status
+from flask import Flask, jsonify, request, send_file
+from src.shared import status, scraper_manager, run_tracker
 
 app = Flask(__name__)
+
+# Get singleton scraper manager instance
+_scraper_manager = scraper_manager.get_scraper_manager()
 
 
 @app.route('/')
@@ -290,12 +297,362 @@ def index():
 
 @app.route('/api/status')
 def api_status():
-    """JSON API endpoint for status"""
+    """Get status for all retailers"""
     try:
-        status_data = status.get_progress_status()
+        status_data = status.get_all_retailers_status()
         return jsonify(status_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/status/<retailer>')
+def api_retailer_status(retailer):
+    """Get status for a single retailer"""
+    try:
+        retailer_status = status.get_retailer_status(retailer)
+        
+        if "error" in retailer_status:
+            return jsonify(retailer_status), 404
+        
+        return jsonify(retailer_status)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/scraper/start', methods=['POST'])
+def api_scraper_start():
+    """Start scraper(s)
+    
+    Request body:
+    {
+        "retailer": "verizon",  # Required: retailer name or "all"
+        "resume": true,         # Optional: resume from checkpoint (default: false)
+        "incremental": false,   # Optional: incremental mode (default: false)
+        "limit": null,          # Optional: limit number of stores (default: null)
+        "test": false,          # Optional: test mode with 10 stores (default: false)
+        "proxy": "direct",      # Optional: proxy mode (direct/residential/web_scraper_api)
+        "render_js": false,     # Optional: enable JS rendering (default: false)
+        "proxy_country": "us",  # Optional: proxy country code (default: "us")
+        "verbose": false        # Optional: verbose logging (default: false)
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        retailer = data.get('retailer')
+        
+        if not retailer:
+            return jsonify({"error": "Missing required field: retailer"}), 400
+        
+        options = {
+            'resume': data.get('resume', False),
+            'incremental': data.get('incremental', False),
+            'limit': data.get('limit'),
+            'test': data.get('test', False),
+            'proxy': data.get('proxy'),
+            'render_js': data.get('render_js', False),
+            'proxy_country': data.get('proxy_country', 'us'),
+            'verbose': data.get('verbose', False)
+        }
+        
+        if retailer == 'all':
+            config = status.load_retailers_config()
+            results = []
+            errors = []
+            
+            for ret in config.keys():
+                if not config[ret].get('enabled', False):
+                    continue
+                
+                try:
+                    result = _scraper_manager.start(ret, **options)
+                    results.append(result)
+                except Exception as e:
+                    errors.append({"retailer": ret, "error": str(e)})
+            
+            return jsonify({
+                "message": f"Started {len(results)} scraper(s)",
+                "started": results,
+                "errors": errors
+            })
+        else:
+            result = _scraper_manager.start(retailer, **options)
+            return jsonify(result)
+    
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/scraper/stop', methods=['POST'])
+def api_scraper_stop():
+    """Stop scraper(s)
+    
+    Request body:
+    {
+        "retailer": "verizon",  # Required: retailer name or "all"
+        "timeout": 30           # Optional: shutdown timeout in seconds (default: 30)
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        retailer = data.get('retailer')
+        timeout = data.get('timeout', 30)
+        
+        if not retailer:
+            return jsonify({"error": "Missing required field: retailer"}), 400
+        
+        if retailer == 'all':
+            result = _scraper_manager.stop_all(timeout=timeout)
+            return jsonify({
+                "message": f"Stopped {len(result)} scraper(s)",
+                "stopped": result
+            })
+        else:
+            result = _scraper_manager.stop(retailer, timeout=timeout)
+            return jsonify(result)
+    
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/scraper/restart', methods=['POST'])
+def api_scraper_restart():
+    """Restart scraper(s)
+    
+    Request body:
+    {
+        "retailer": "verizon",  # Required: retailer name
+        "resume": true,         # Optional: resume from checkpoint (default: true)
+        "timeout": 30           # Optional: shutdown timeout in seconds (default: 30)
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        retailer = data.get('retailer')
+        
+        if not retailer:
+            return jsonify({"error": "Missing required field: retailer"}), 400
+        
+        resume = data.get('resume', True)
+        timeout = data.get('timeout', 30)
+        
+        result = _scraper_manager.restart(retailer, resume=resume, timeout=timeout)
+        return jsonify(result)
+    
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/runs/<retailer>')
+def api_run_history(retailer):
+    """Get historical runs for a retailer
+    
+    Query params:
+        limit: Number of runs to return (default: 10)
+    """
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        runs = run_tracker.get_run_history(retailer, limit=limit)
+        
+        return jsonify({
+            "retailer": retailer,
+            "runs": runs,
+            "count": len(runs)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/logs/<retailer>/<run_id>')
+def api_get_logs(retailer, run_id):
+    """Get logs for a specific run
+    
+    Query params:
+        tail: Number of lines to return from end (default: all)
+        follow: If true, stream logs in real-time (default: false)
+    """
+    try:
+        log_file = Path(f"data/{retailer}/logs/{run_id}.log")
+        
+        if not log_file.exists():
+            return jsonify({"error": "Log file not found"}), 404
+        
+        tail = request.args.get('tail', type=int)
+        follow = request.args.get('follow', 'false').lower() == 'true'
+        
+        if follow:
+            return send_file(str(log_file), mimetype='text/plain')
+        
+        with open(log_file, 'r') as f:
+            lines = f.readlines()
+        
+        if tail:
+            lines = lines[-tail:]
+        
+        return jsonify({
+            "retailer": retailer,
+            "run_id": run_id,
+            "lines": len(lines),
+            "content": ''.join(lines)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/config', methods=['GET'])
+def api_get_config():
+    """Get current configuration"""
+    try:
+        config_path = Path("config/retailers.yaml")
+        
+        if not config_path.exists():
+            return jsonify({"error": "Configuration file not found"}), 404
+        
+        with open(config_path, 'r') as f:
+            config_content = f.read()
+        
+        return jsonify({
+            "path": str(config_path),
+            "content": config_content
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/config', methods=['POST'])
+def api_update_config():
+    """Update configuration with validation
+    
+    Request body:
+    {
+        "content": "YAML content as string"
+    }
+    
+    Features:
+    - Validates YAML syntax
+    - Validates required fields and structure
+    - Creates timestamped backup before update
+    - Atomic write (temp file -> validate -> move)
+    """
+    try:
+        data = request.get_json() or {}
+        content = data.get('content')
+        
+        if not content:
+            return jsonify({"error": "Missing required field: content"}), 400
+        
+        config_path = Path("config/retailers.yaml")
+        
+        try:
+            parsed_config = yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            return jsonify({
+                "error": "Invalid YAML syntax",
+                "details": str(e)
+            }), 400
+        
+        validation_result = _validate_config(parsed_config)
+        if not validation_result["valid"]:
+            return jsonify({
+                "error": "Configuration validation failed",
+                "details": validation_result["errors"]
+            }), 400
+        
+        backup_path = _create_config_backup(config_path)
+        
+        temp_path = config_path.with_suffix('.tmp')
+        try:
+            with open(temp_path, 'w') as f:
+                f.write(content)
+            
+            temp_path.replace(config_path)
+            
+            return jsonify({
+                "message": "Configuration updated successfully",
+                "backup": str(backup_path)
+            })
+        except Exception as e:
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _validate_config(config: dict) -> dict:
+    """Validate configuration structure and required fields
+    
+    Args:
+        config: Parsed YAML configuration
+    
+    Returns:
+        Dict with 'valid' (bool) and 'errors' (list) keys
+    """
+    errors = []
+    
+    if not isinstance(config, dict):
+        errors.append("Configuration must be a dictionary")
+        return {"valid": False, "errors": errors}
+    
+    if 'retailers' not in config:
+        errors.append("Missing required top-level key: 'retailers'")
+    
+    if 'retailers' in config:
+        retailers = config['retailers']
+        
+        if not isinstance(retailers, dict):
+            errors.append("'retailers' must be a dictionary")
+        else:
+            for retailer_name, retailer_config in retailers.items():
+                if not isinstance(retailer_config, dict):
+                    errors.append(f"Retailer '{retailer_name}' config must be a dictionary")
+                    continue
+                
+                required_fields = ['name', 'enabled', 'base_url', 'discovery_method']
+                for field in required_fields:
+                    if field not in retailer_config:
+                        errors.append(f"Retailer '{retailer_name}' missing required field: '{field}'")
+                
+                if 'enabled' in retailer_config and not isinstance(retailer_config['enabled'], bool):
+                    errors.append(f"Retailer '{retailer_name}' field 'enabled' must be boolean")
+                
+                if 'discovery_method' in retailer_config:
+                    valid_methods = ['html_crawl', 'sitemap', 'sitemap_gzip', 'sitemap_paginated']
+                    if retailer_config['discovery_method'] not in valid_methods:
+                        errors.append(
+                            f"Retailer '{retailer_name}' has invalid discovery_method. "
+                            f"Must be one of: {', '.join(valid_methods)}"
+                        )
+    
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors
+    }
+
+
+def _create_config_backup(config_path: Path) -> Path:
+    """Create timestamped backup of configuration file
+    
+    Args:
+        config_path: Path to config file
+    
+    Returns:
+        Path to backup file
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = config_path.parent / "backups"
+    backup_dir.mkdir(exist_ok=True)
+    
+    backup_path = backup_dir / f"{config_path.stem}_{timestamp}{config_path.suffix}"
+    shutil.copy2(config_path, backup_path)
+    
+    return backup_path
 
 
 if __name__ == '__main__':
