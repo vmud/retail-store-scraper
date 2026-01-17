@@ -75,17 +75,16 @@ class ChangeDetector:
         # Try different identity fields in order of preference
         if store.get('store_id'):
             return f"id:{store['store_id']}"
-        elif store.get('url'):
+        if store.get('url'):
             return f"url:{store['url']}"
-        else:
-            # Fall back to address-based key
-            addr_parts = [
-                store.get('name', ''),
-                store.get('street_address', ''),
-                store.get('city', ''),
-                store.get('state', '')
-            ]
-            return f"addr:{'-'.join(p.lower().strip() for p in addr_parts if p)}"
+        # Fall back to address-based key
+        addr_parts = [
+            store.get('name', ''),
+            store.get('street_address', ''),
+            store.get('city', ''),
+            store.get('state', '')
+        ]
+        return f"addr:{'-'.join(p.lower().strip() for p in addr_parts if p)}"
 
     def compute_fingerprint(self, store: Dict[str, Any]) -> str:
         """Compute a fingerprint hash of a store's key attributes"""
@@ -104,7 +103,7 @@ class ChangeDetector:
             return None
 
         try:
-            with open(previous_path, 'r') as f:
+            with open(previous_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
             logging.error(f"Error loading previous data: {e}")
@@ -117,7 +116,7 @@ class ChangeDetector:
             return None
 
         try:
-            with open(current_path, 'r') as f:
+            with open(current_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
             logging.error(f"Error loading current data: {e}")
@@ -240,7 +239,7 @@ class ChangeDetector:
             logging.info(f"Rotated previous version for {self.retailer}")
 
         # Write new latest
-        with open(latest_path, 'w') as f:
+        with open(latest_path, 'w', encoding='utf-8') as f:
             json.dump(stores, f, indent=2, ensure_ascii=False)
         logging.info(f"Saved {len(stores)} stores to {latest_path}")
 
@@ -250,7 +249,7 @@ class ChangeDetector:
         filename = f"changes_{timestamp}.json"
         filepath = self.history_dir / filename
 
-        with open(filepath, 'w') as f:
+        with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(report.to_dict(), f, indent=2, ensure_ascii=False)
 
         logging.info(f"Saved change report to {filepath}")
@@ -263,7 +262,7 @@ class ChangeDetector:
             for s in stores
         }
 
-        with open(self.fingerprints_path, 'w') as f:
+        with open(self.fingerprints_path, 'w', encoding='utf-8') as f:
             json.dump({
                 'timestamp': datetime.now().isoformat(),
                 'count': len(fingerprints),

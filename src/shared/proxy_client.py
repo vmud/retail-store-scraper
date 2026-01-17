@@ -21,9 +21,10 @@ import logging
 import os
 import random
 import time
-from dataclasses import dataclass, field
+import urllib.parse
+from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import requests
 
 
@@ -76,7 +77,7 @@ class ProxyConfig:
         """Get the appropriate username for the current mode"""
         if self.mode == ProxyMode.RESIDENTIAL:
             return self.residential_username
-        elif self.mode == ProxyMode.WEB_SCRAPER_API:
+        if self.mode == ProxyMode.WEB_SCRAPER_API:
             return self.scraper_api_username
         return ""
 
@@ -85,7 +86,7 @@ class ProxyConfig:
         """Get the appropriate password for the current mode"""
         if self.mode == ProxyMode.RESIDENTIAL:
             return self.residential_password
-        elif self.mode == ProxyMode.WEB_SCRAPER_API:
+        if self.mode == ProxyMode.WEB_SCRAPER_API:
             return self.scraper_api_password
         return ""
 
@@ -461,12 +462,11 @@ class ProxyClient:
 
         # Build full URL with params
         if params:
-            from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
-            parsed = urlparse(url)
-            existing_params = parse_qs(parsed.query)
+            parsed = urllib.parse.urlparse(url)
+            existing_params = urllib.parse.parse_qs(parsed.query)
             existing_params.update(params)
-            new_query = urlencode(existing_params, doseq=True)
-            url = urlunparse(parsed._replace(query=new_query))
+            new_query = urllib.parse.urlencode(existing_params, doseq=True)
+            url = urllib.parse.urlunparse(parsed._replace(query=new_query))
 
         # Build API payload
         payload = {

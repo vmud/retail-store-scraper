@@ -2,7 +2,6 @@
 """Simple Flask dashboard for monitoring scraper progress"""
 
 import sys
-import os
 import re
 import yaml
 import shutil
@@ -12,7 +11,7 @@ from datetime import datetime
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flask import Flask, jsonify, request, Response, render_template, send_from_directory
+from flask import Flask, jsonify, request, render_template, send_from_directory
 from src.shared import status, scraper_manager, run_tracker
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -77,7 +76,7 @@ def _transform_status_for_frontend(backend_data: dict) -> dict:
         
         phases_dict = retailer_data.get("phases", {})
         phases_list = []
-        for phase_key, phase_data in phases_dict.items():
+        for _phase_key, phase_data in phases_dict.items():
             phases_list.append({
                 "name": phase_data.get("name", "Unknown"),
                 "status": phase_data.get("status", "pending"),
@@ -214,9 +213,9 @@ def api_scraper_start():
                 "started": results,
                 "errors": errors
             })
-        else:
-            result = _scraper_manager.start(retailer, **options)
-            return jsonify(result)
+        
+        result = _scraper_manager.start(retailer, **options)
+        return jsonify(result)
     
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -249,9 +248,9 @@ def api_scraper_stop():
                 "message": f"Stopped {len(result)} scraper(s)",
                 "stopped": result
             })
-        else:
-            result = _scraper_manager.stop(retailer, timeout=timeout)
-            return jsonify(result)
+        
+        result = _scraper_manager.stop(retailer, timeout=timeout)
+        return jsonify(result)
     
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -301,9 +300,9 @@ def api_scraper_restart():
                 "restarted": results,
                 "errors": errors
             })
-        else:
-            result = _scraper_manager.restart(retailer, resume=resume, timeout=timeout)
-            return jsonify(result)
+        
+        result = _scraper_manager.restart(retailer, resume=resume, timeout=timeout)
+        return jsonify(result)
     
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -368,7 +367,7 @@ def api_get_logs(retailer, run_id):
         
         tail = request.args.get('tail', type=int)
         
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
         if tail:
@@ -393,7 +392,7 @@ def api_get_config():
         if not config_path.exists():
             return jsonify({"error": "Configuration file not found"}), 404
         
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf-8') as f:
             config_content = f.read()
         
         return jsonify({
@@ -449,7 +448,7 @@ def api_update_config():
         
         temp_path = config_path.with_suffix('.tmp')
         try:
-            with open(temp_path, 'w') as f:
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
             temp_path.replace(config_path)
@@ -460,7 +459,7 @@ def api_update_config():
                 "message": "Configuration updated successfully",
                 "backup": str(backup_path)
             })
-        except Exception as e:
+        except Exception:
             if temp_path.exists():
                 temp_path.unlink()
             raise

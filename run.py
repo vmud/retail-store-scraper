@@ -15,9 +15,19 @@ import argparse
 import asyncio
 import logging
 import sys
+import os
+import json
 from typing import List, Optional
 
-from src.shared.utils import setup_logging
+from src.shared.utils import (
+    setup_logging,
+    load_retailer_config,
+    create_proxied_session,
+    save_to_json,
+    save_to_csv,
+    close_all_proxy_clients
+)
+from src.shared import init_proxy_from_yaml, get_proxy_client
 from src.scrapers import get_available_retailers, get_scraper_module
 
 
@@ -126,11 +136,10 @@ def get_retailers_to_run(args) -> List[str]:
     """Determine which retailers to run based on arguments"""
     if args.retailer:
         return [args.retailer]
-    elif args.all:
+    if args.all:
         all_retailers = get_available_retailers()
         return [r for r in all_retailers if r not in args.exclude]
-    else:
-        return []
+    return []
 
 
 def show_status(retailers: Optional[List[str]] = None) -> None:
@@ -146,9 +155,6 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
         print(f"\n--- {retailer.upper()} ---")
         try:
             # Try to load checkpoint data for status
-            from src.shared.utils import load_checkpoint
-            import os
-
             checkpoint_dir = f"data/{retailer}/checkpoints"
             output_dir = f"data/{retailer}/output"
 
@@ -171,10 +177,9 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
                     # Try to count stores in latest output
                     for out_file in outputs:
                         if out_file.endswith('.json'):
-                            import json
                             filepath = os.path.join(output_dir, out_file)
                             try:
-                                with open(filepath, 'r') as f:
+                                with open(filepath, 'r', encoding='utf-8') as f:
                                     data = json.load(f)
                                     if isinstance(data, list):
                                         print(f"    {out_file}: {len(data)} stores")
@@ -205,13 +210,6 @@ async def run_retailer_async(retailer: str, cli_proxy_override: Optional[str] = 
     logging.info(f"[{retailer}] Starting scraper")
 
     try:
-        from src.shared.utils import (
-            load_retailer_config, 
-            create_proxied_session,
-            save_to_json,
-            save_to_csv
-        )
-        
         retailer_config = load_retailer_config(retailer, cli_proxy_override)
         
         session = create_proxied_session(retailer_config)
@@ -313,9 +311,6 @@ def main():
 
     # Initialize proxy client if specified via CLI
     if args.proxy:
-        from src.shared import init_proxy_from_yaml, get_proxy_client, ProxyConfig, ProxyMode
-        import os
-
         # Check for mode-specific credentials
         if args.proxy == 'residential':
             # Check for residential credentials (with fallback to legacy)
@@ -345,26 +340,19 @@ def main():
                 return 1
 
         # Build proxy config from CLI args
-        mode_map = {
-            'direct': ProxyMode.DIRECT,
-            'residential': ProxyMode.RESIDENTIAL,
-            'web_scraper_api': ProxyMode.WEB_SCRAPER_API,
-        }
-
         proxy_config = {
             'mode': args.proxy,
             'country_code': args.proxy_country,
             'render_js': args.render_js,
         }
 
-        client = get_proxy_client(proxy_config)
+        get_proxy_client(proxy_config)
         logging.info(f"Proxy mode: {args.proxy} (country: {args.proxy_country})")
         if args.render_js:
             logging.info("JavaScript rendering enabled")
     else:
         # Try to load from YAML config
         try:
-            from src.shared import init_proxy_from_yaml
             init_proxy_from_yaml()
         except Exception as e:
             logging.debug(f"Using default proxy config: {e}")
@@ -436,7 +424,6 @@ def main():
         return 1
     finally:
         # Cleanup all proxy clients
-        from src.shared.utils import close_all_proxy_clients
         close_all_proxy_clients()
 
 

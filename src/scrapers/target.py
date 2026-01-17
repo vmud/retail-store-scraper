@@ -6,6 +6,7 @@ import logging
 import random
 import re
 import time
+import urllib.parse
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
@@ -169,10 +170,7 @@ def get_store_details(session: requests.Session, store_id: int) -> Optional[Targ
         "channel": target_config.API_CHANNEL
     }
 
-    headers = target_config.get_headers()
-
     # Build URL with params for get_with_retry
-    import urllib.parse
     url_with_params = f"{target_config.REDSKY_API_URL}?{urllib.parse.urlencode(params)}"
     response = utils.get_with_retry(session, url_with_params, max_retries=target_config.MAX_RETRIES)
     if not response:
@@ -198,7 +196,7 @@ def get_store_details(session: requests.Session, store_id: int) -> Optional[Targ
             geo_specs = store.get("geographic_specifications", {})
 
             # Extract physical specifications
-            physical_specs = store.get("physical_specifications", {})
+            _physical_specs = store.get("physical_specifications", {})
 
             # Extract capabilities
             capabilities = [c.get("capability_name", "") for c in store.get("capabilities", [])]

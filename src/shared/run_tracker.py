@@ -1,7 +1,5 @@
 """Run metadata tracking for multi-retailer scraper"""
 
-import os
-import json
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime

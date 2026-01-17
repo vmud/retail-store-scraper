@@ -5,7 +5,7 @@ import json
 import yaml
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 CONFIG_PATH = "config/retailers.yaml"
@@ -14,10 +14,10 @@ CONFIG_PATH = "config/retailers.yaml"
 def load_retailers_config() -> Dict[str, Any]:
     """Load retailers configuration from YAML"""
     try:
-        with open(CONFIG_PATH, 'r') as f:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         return config.get('retailers', {})
-    except Exception as e:
+    except Exception:
         return {}
 
 
@@ -35,10 +35,9 @@ def get_checkpoint_path(retailer: str, checkpoint_type: str) -> Path:
     
     if checkpoint_type == "output_csv":
         return base_path / "output" / f"{retailer}_stores.csv"
-    elif checkpoint_type == "output_json":
+    if checkpoint_type == "output_json":
         return base_path / "output" / f"{retailer}_stores.json"
-    else:
-        return base_path / "checkpoints" / f"{checkpoint_type}.json"
+    return base_path / "checkpoints" / f"{checkpoint_type}.json"
 
 
 def get_retailer_status(retailer: str) -> Dict[str, Any]:
@@ -114,7 +113,7 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
     states_path = get_checkpoint_path(retailer, "states")
     if states_path.exists():
         try:
-            with open(states_path, 'r') as f:
+            with open(states_path, 'r', encoding='utf-8') as f:
                 states = json.load(f)
             if isinstance(states, list) and len(states) > 0:
                 phases["phase1_states"]["total"] = len(states)
@@ -130,7 +129,7 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
     cities_path = get_checkpoint_path(retailer, "cities")
     if cities_path.exists():
         try:
-            with open(cities_path, 'r') as f:
+            with open(cities_path, 'r', encoding='utf-8') as f:
                 cities_data = json.load(f)
             if isinstance(cities_data, dict):
                 completed_states = cities_data.get('completed_states', [])
@@ -151,7 +150,7 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
     stores_path = get_checkpoint_path(retailer, "store_urls")
     if stores_path.exists():
         try:
-            with open(stores_path, 'r') as f:
+            with open(stores_path, 'r', encoding='utf-8') as f:
                 stores_data = json.load(f)
             if isinstance(stores_data, dict):
                 stores = stores_data.get('stores', [])
@@ -207,7 +206,7 @@ def _get_sitemap_status(retailer: str) -> Dict[str, Any]:
     sitemap_path = get_checkpoint_path(retailer, "sitemap_urls")
     if sitemap_path.exists():
         try:
-            with open(sitemap_path, 'r') as f:
+            with open(sitemap_path, 'r', encoding='utf-8') as f:
                 sitemap_data = json.load(f)
             
             if isinstance(sitemap_data, dict):
@@ -256,7 +255,7 @@ def _calculate_overall_progress(phases: Dict[str, Any]) -> float:
     total_weight = 0
     weighted_sum = 0
     
-    for phase_key, phase_data in phases.items():
+    for _phase_key, phase_data in phases.items():
         if phase_data["total"] > 0:
             weight = 1.0
             total_weight += weight

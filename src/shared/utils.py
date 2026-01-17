@@ -8,8 +8,8 @@ import logging
 import tempfile
 import shutil
 import os
+import yaml
 from pathlib import Path
-from datetime import datetime
 from typing import Optional, Dict, Any, List, Union
 
 import requests
@@ -121,7 +121,7 @@ def get_with_retry(
                 logging.debug(f"Successfully fetched {url}")
                 return response
 
-            elif response.status_code == 429:  # Rate limited
+            if response.status_code == 429:  # Rate limited
                 wait_time = (2 ** attempt) * rate_limit_base_wait
                 logging.warning(f"Rate limited (429) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
@@ -177,7 +177,7 @@ def save_checkpoint(data: Any, filepath: str) -> None:
 
         try:
             # Write JSON to temp file
-            with open(temp_fd, 'w') as f:
+            with open(temp_fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
 
             # Atomic rename: either succeeds completely or fails (no partial file)
@@ -204,7 +204,7 @@ def load_checkpoint(filepath: str) -> Optional[Any]:
         return None
 
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         logging.info(f"Checkpoint loaded: {filepath}")
         return data
@@ -343,8 +343,7 @@ def get_retailer_proxy_config(
         return _build_proxy_config_dict(mode=cli_override)
     
     try:
-        import yaml
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
     except FileNotFoundError:
         logging.warning(f"[{retailer}] Config file {yaml_path} not found")
@@ -404,10 +403,8 @@ def load_retailer_config(
     Returns:
         Dict with retailer config including 'proxy' key
     """
-    import yaml
-    
     try:
-        with open('config/retailers.yaml', 'r') as f:
+        with open('config/retailers.yaml', 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
     except FileNotFoundError:
         logging.error(f"[{retailer}] Config file config/retailers.yaml not found")
@@ -485,8 +482,7 @@ def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClien
         Configured ProxyClient instance
     """
     try:
-        import yaml
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
 
         proxy_config = config.get('proxy', {})

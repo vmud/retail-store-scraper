@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from .run_tracker import RunTracker, get_active_run, get_run_history
+from .run_tracker import RunTracker, get_active_run
 from .status import load_retailers_config
 
 logger = logging.getLogger(__name__)

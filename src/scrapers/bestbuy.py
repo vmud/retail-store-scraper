@@ -156,7 +156,7 @@ def _extract_services_from_html(soup: BeautifulSoup) -> Optional[List[str]]:
                                      class_=re.compile(r'service|feature|offer', re.I))
 
     for section in service_sections:
-        section_text = section.get_text().lower()
+        _section_text = section.get_text().lower()
         # Look for service names in structured sections
         # Try to extract service names from list items or links
         list_items = section.find_all(['li', 'a', 'span', 'div'])
@@ -364,7 +364,6 @@ def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
 
         # Extract actual store URLs from sitemap XML
         # Pattern: <loc>https://stores.bestbuy.com/...</loc>
-        import re
         url_pattern = r'<loc>(https://stores\.bestbuy\.com/[^<]+)</loc>'
         urls = re.findall(url_pattern, content)
 
@@ -385,7 +384,6 @@ def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
             # URLs are like: https://stores.bestbuy.com/ut/farmington/360-n-station-pkwy-1887.html
             # Store ID is typically in the URL path or can be extracted from page content
             # For now, use the full URL and extract store ID from page later
-            url_parts = url.rstrip('/').split('/')
             store_id = None
 
             # Try to extract numeric ID from URL if present
@@ -431,7 +429,6 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
     _check_pause_logic()
 
     try:
-        from bs4 import BeautifulSoup
         soup = BeautifulSoup(response.text, 'html.parser')
 
         # Find JSON-LD structured data (similar to T-Mobile scraper)
@@ -486,7 +483,6 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
 
         # Extract store ID from URL or data
         store_id = None
-        url_parts = url.rstrip('/').split('/')
         store_id_match = re.search(r'/(\d+)', url)
         if store_id_match:
             store_id = store_id_match.group(1)
