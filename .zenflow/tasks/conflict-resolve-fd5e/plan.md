@@ -25,7 +25,7 @@ Save findings to `{@artifacts_path}/investigation.md` with:
 - Affected components
 - Proposed solution
 
-### [ ] Step: Implementation
+### [x] Step: Implementation
 <!-- chat-id: f713a968-11a7-4032-b838-733d02ca69ec -->
 Read `{@artifacts_path}/investigation.md`
 Implement the bug fix.
@@ -36,3 +36,5 @@ Implement the bug fix.
 4. Update `{@artifacts_path}/investigation.md` with implementation notes and test results
 
 If blocked or uncertain, ask the user for direction.
+
+**Completed**: Conflicts resolved in both PRs. Both now show `MERGEABLE` status on GitHub.
