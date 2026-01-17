@@ -268,6 +268,13 @@ class ScraperManager:
             
             except Exception as e:
                 logger.error(f"Failed to start scraper for {retailer}: {e}")
+                # Kill the process if it was started to avoid orphaned processes
+                if 'process' in locals() and process is not None:
+                    try:
+                        process.kill()
+                        process.wait(timeout=5)
+                    except Exception:
+                        pass
                 run_tracker.fail(f"Failed to start: {e}")
                 raise
     

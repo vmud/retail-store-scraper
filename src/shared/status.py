@@ -156,14 +156,16 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
             if isinstance(stores_data, dict):
                 stores = stores_data.get('stores', [])
                 completed_cities = stores_data.get('completed_cities', [])
-                phases["phase3_urls"]["total"] = len(stores) if stores else 0
+                total_cities = stores_data.get('total_cities', len(completed_cities))
+                
+                phases["phase3_urls"]["total"] = total_cities
                 phases["phase3_urls"]["completed"] = len(completed_cities)
                 phases["phase3_urls"]["status"] = "in_progress" if completed_cities else "pending"
                 phases["phase3_urls"]["last_updated"] = datetime.fromtimestamp(
                     stores_path.stat().st_mtime
                 ).isoformat()
                 
-                if len(stores) > 0 and len(completed_cities) >= len(stores):
+                if total_cities > 0 and len(completed_cities) >= total_cities:
                     phases["phase3_urls"]["status"] = "complete"
         except Exception:
             pass
