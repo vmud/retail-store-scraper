@@ -3,6 +3,7 @@
 import json
 import logging
 import random
+import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -87,8 +88,6 @@ def _extract_store_type_and_dealer(html_content: str) -> tuple:
         - sub_channel: "COR" or "Dealer"
         - dealer_name: Dealer name string or None for COR stores
     """
-    import re
-    
     # Extract topDisplayType JavaScript variable
     display_type_match = re.search(
         r"let\s+topDisplayType\s*=\s*['\"]([^'\"]+)['\"]",
@@ -282,8 +281,8 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[ATTSt
             scraped_at=datetime.now().isoformat()
         )
 
-        logging.debug(f"Extracted store: {store.name} ({sub_channel}" +
-                     (f" - {dealer_name})" if dealer_name else ")"))
+        dealer_info = f" - {dealer_name}" if dealer_name else ""
+        logging.debug("Extracted store: %s (%s%s)", store.name, sub_channel, dealer_info)
         return store
 
     except Exception as e:
