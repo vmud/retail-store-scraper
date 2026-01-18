@@ -245,6 +245,17 @@ function startLivePolling(retailer, runId) {
       // Fetch only new lines using offset
       const data = await api.getLogs(retailer, runId, { offset: lastLineCount });
 
+      // CRITICAL: Re-check state after async request completes
+      // User may have closed modal and opened a different log view while request was in-flight
+      const currentState = store.getState();
+      if (!currentState.ui.logModalOpen ||
+          currentState.ui.currentLogRetailer !== retailer ||
+          currentState.ui.currentLogRunId !== runId) {
+        // Stale request - wrong retailer/run is now displayed, discard this response
+        stopLivePolling();
+        return;
+      }
+
       // Check if scraper has stopped
       if (!data.is_active) {
         stopLivePolling();
