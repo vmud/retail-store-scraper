@@ -360,46 +360,70 @@ def api_run_history(retailer):
 @app.route('/api/logs/<retailer>/<run_id>')
 def api_get_logs(retailer, run_id):
     """Get logs for a specific run
-    
+
     Query params:
         tail: Number of lines to return from end (default: all)
+        offset: Line number to start from for incremental fetching (default: 0)
+
+    Response includes:
+        - total_lines: Total lines in log file
+        - offset: The offset that was applied
+        - is_active: Whether this run is currently active (scraper running)
     """
     try:
         # Validate retailer name format to prevent path traversal
         if not re.match(r'^[a-z][a-z0-9_]*$', retailer):
             return jsonify({"error": "Invalid retailer name format. Must start with lowercase letter and contain only lowercase, digits, and underscores"}), 400
-        
+
         config = status.load_retailers_config()
         if retailer not in config:
             return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
-        
+
         if not re.match(r'^[\w\-]+$', run_id):
             return jsonify({"error": "Invalid run_id format. Only alphanumeric, underscore, and hyphen allowed"}), 400
-        
+
         log_file = Path(f"data/{retailer}/logs/{run_id}.log")
-        
+
         if not log_file.exists():
             return jsonify({"error": "Log file not found"}), 404
-        
+
         # Use static base path for security - prevents path traversal even with malicious retailer names
         log_file_resolved = log_file.resolve()
         expected_base = Path("data").resolve()
-        
+
         if not str(log_file_resolved).startswith(str(expected_base)):
             return jsonify({"error": "Invalid log file path"}), 400
-        
+
+        # Check if scraper is currently running for this run_id
+        is_active = False
+        if _scraper_manager.is_running(retailer):
+            scraper_status = _scraper_manager.get_status(retailer)
+            if scraper_status and scraper_status.get('run_id') == run_id:
+                is_active = True
+
         tail = request.args.get('tail', type=int)
-        
+        offset = request.args.get('offset', type=int, default=0)
+
         with open(log_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-        
+
+        total_lines = len(lines)
+
+        # Apply offset first (for incremental fetching)
+        if offset > 0:
+            lines = lines[offset:]
+
+        # Then apply tail (for initial load)
         if tail:
             lines = lines[-tail:]
-        
+
         return jsonify({
             "retailer": retailer,
             "run_id": run_id,
             "lines": len(lines),
+            "total_lines": total_lines,
+            "offset": offset,
+            "is_active": is_active,
             "content": ''.join(lines)
         })
     except Exception as e:

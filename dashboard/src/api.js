@@ -159,12 +159,18 @@ export function getRunHistory(retailer, limit = 10) {
  * Get logs for a specific run
  * @param {string} retailer - Retailer ID
  * @param {string} runId - Run ID
- * @param {number} tail - Number of lines from end
- * @returns {Promise<object>} Log content
+ * @param {object} options - Options for fetching logs
+ * @param {number} options.tail - Number of lines from end
+ * @param {number} options.offset - Line number to start from (for incremental fetch)
+ * @returns {Promise<object>} Log content with total_lines, is_active, etc.
  */
-export function getLogs(retailer, runId, tail = null) {
-  const params = tail ? `?tail=${tail}` : '';
-  return get(`/logs/${retailer}/${runId}${params}`);
+export function getLogs(retailer, runId, options = {}) {
+  const params = new URLSearchParams();
+  if (options.tail) params.append('tail', options.tail);
+  if (options.offset) params.append('offset', options.offset);
+
+  const queryString = params.toString();
+  return get(`/logs/${retailer}/${runId}${queryString ? '?' + queryString : ''}`);
 }
 
 // ============================================

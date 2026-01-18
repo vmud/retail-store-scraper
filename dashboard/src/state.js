@@ -186,7 +186,12 @@ const initialDashboardState = {
     currentLogRetailer: null,
     currentLogRunId: null,
     expandedCards: new Set(),
-    changePanelOpen: false
+    changePanelOpen: false,
+    // Live log monitoring state
+    liveLogEnabled: false,
+    liveLogPaused: false,
+    logLineCount: 0,
+    logIsActive: false
   }
 };
 
@@ -209,7 +214,12 @@ export const selectors = {
   ui: (state) => state.ui,
   isConfigModalOpen: (state) => state.ui.configModalOpen,
   isLogModalOpen: (state) => state.ui.logModalOpen,
-  activeScrapers: (state) => state.summary.activeScrapers
+  activeScrapers: (state) => state.summary.activeScrapers,
+  // Live log selectors
+  liveLogEnabled: (state) => state.ui.liveLogEnabled,
+  liveLogPaused: (state) => state.ui.liveLogPaused,
+  logLineCount: (state) => state.ui.logLineCount,
+  logIsActive: (state) => state.ui.logIsActive
 };
 
 // ============================================
@@ -321,6 +331,57 @@ export const actions = {
    */
   setChanges(changes) {
     store.update({ changes });
+  },
+
+  /**
+   * Set live log enabled state
+   */
+  setLiveLogEnabled(enabled) {
+    store.update((state) => ({
+      ui: { ...state.ui, liveLogEnabled: enabled }
+    }));
+  },
+
+  /**
+   * Set live log paused state
+   */
+  setLiveLogPaused(paused) {
+    store.update((state) => ({
+      ui: { ...state.ui, liveLogPaused: paused }
+    }));
+  },
+
+  /**
+   * Set log line count
+   */
+  setLogLineCount(count) {
+    store.update((state) => ({
+      ui: { ...state.ui, logLineCount: count }
+    }));
+  },
+
+  /**
+   * Set log is active (scraper running)
+   */
+  setLogIsActive(isActive) {
+    store.update((state) => ({
+      ui: { ...state.ui, logIsActive: isActive }
+    }));
+  },
+
+  /**
+   * Reset live log state
+   */
+  resetLiveLogState() {
+    store.update((state) => ({
+      ui: {
+        ...state.ui,
+        liveLogEnabled: false,
+        liveLogPaused: false,
+        logLineCount: 0,
+        logIsActive: false
+      }
+    }));
   }
 };
 
