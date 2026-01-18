@@ -40,10 +40,10 @@
 
 @keyframes progress-shine {
   0% {
-    transform: translateX(-100%);
+    left: -30%;
   }
   100% {
-    transform: translateX(200%);
+    left: 100%;
   }
 }
 

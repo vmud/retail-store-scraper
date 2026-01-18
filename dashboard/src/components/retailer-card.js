@@ -26,11 +26,85 @@ const RETAILER_LOGOS = {
 let cardsRendered = false;
 
 /**
+ * Track start times for running scrapers (for duration timer)
+ */
+const scraperStartTimes = new Map();
+
+/**
+ * Track transitional UI states (starting, stopping) per retailer
+ * These are cleared when backend status confirms the transition
+ */
+const transitionalStates = new Map();
+
+/**
+ * Duration timer interval reference
+ */
+let durationTimerInterval = null;
+
+/**
+ * Format duration in HH:MM:SS format
+ * @param {number} seconds - Duration in seconds
+ * @returns {string} Formatted duration
+ */
+function formatDuration(seconds) {
+  if (seconds < 0 || !Number.isFinite(seconds)) return '00:00:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Update all duration displays for running scrapers
+ */
+function updateDurationDisplays() {
+  const now = Date.now();
+  scraperStartTimes.forEach((startTime, retailerId) => {
+    const durationEl = document.querySelector(
+      `.retailer-card[data-retailer="${retailerId}"] [data-field="duration"]`
+    );
+    if (durationEl) {
+      const elapsedSeconds = Math.floor((now - startTime) / 1000);
+      durationEl.textContent = formatDuration(elapsedSeconds);
+    }
+  });
+}
+
+/**
+ * Get effective status considering transitional UI states
+ * @param {string} retailerId - Retailer ID
+ * @param {string} backendStatus - Status from backend
+ * @returns {string} Effective status to display
+ */
+function getEffectiveStatus(retailerId, backendStatus) {
+  const transitional = transitionalStates.get(retailerId);
+
+  // Clear transitional state if backend confirms the transition
+  if (transitional === 'starting' && backendStatus === 'running') {
+    transitionalStates.delete(retailerId);
+    return 'running';
+  }
+  if (transitional === 'stopping' && backendStatus !== 'running') {
+    transitionalStates.delete(retailerId);
+    return backendStatus;
+  }
+
+  // Return transitional state if active
+  if (transitional) {
+    return transitional;
+  }
+
+  return backendStatus;
+}
+
+/**
  * Get status class for retailer
  */
 function getStatusClass(status) {
   const statusMap = {
     running: 'running',
+    starting: 'starting',
+    stopping: 'stopping',
     complete: 'complete',
     pending: 'pending',
     disabled: 'disabled',
@@ -45,14 +119,16 @@ function getStatusClass(status) {
  */
 function getStatusText(status) {
   const textMap = {
-    running: 'RUNNING',
-    complete: 'COMPLETE',
-    pending: 'PENDING',
+    running: 'SCRAPING',
+    starting: 'STARTING',
+    stopping: 'STOPPING',
+    complete: 'READY',
+    pending: 'READY',
     disabled: 'DISABLED',
     error: 'ERROR',
-    failed: 'FAILED'
+    failed: 'ERROR'
   };
-  return textMap[status] || 'PENDING';
+  return textMap[status] || 'READY';
 }
 
 /**
@@ -91,7 +167,8 @@ function renderCard(retailerId, data) {
   const retailerConfig = RETAILERS[retailerId];
   if (!retailerConfig) return '';
 
-  const status = data.status || 'pending';
+  const backendStatus = data.status || 'pending';
+  const status = getEffectiveStatus(retailerId, backendStatus);
   const statusClass = getStatusClass(status);
   const statusText = getStatusText(status);
 
@@ -105,7 +182,7 @@ function renderCard(retailerId, data) {
   const stats = data.stats || {};
   const duration = stats.stat2_value || '—';
 
-  const isRunning = status === 'running';
+  const isRunning = status === 'running' || status === 'starting';
   const isDisabled = status === 'disabled';
 
   const logo = RETAILER_LOGOS[retailerId] || '';
@@ -224,7 +301,8 @@ function updateCard(retailerId, data) {
   const card = document.querySelector(`.retailer-card[data-retailer="${retailerId}"]`);
   if (!card) return;
 
-  const status = data.status || 'pending';
+  const backendStatus = data.status || 'pending';
+  const status = getEffectiveStatus(retailerId, backendStatus);
   const statusClass = getStatusClass(status);
   const statusText = getStatusText(status);
 
@@ -238,7 +316,7 @@ function updateCard(retailerId, data) {
   const stats = data.stats || {};
   const duration = stats.stat2_value || '—';
 
-  const isRunning = status === 'running';
+  const isRunning = status === 'running' || status === 'starting';
 
   // Update status badge
   const statusEl = card.querySelector('[data-field="status"]');
@@ -278,10 +356,20 @@ function updateCard(retailerId, data) {
     storesEl.textContent = storeCount;
   }
 
-  // Update duration stat
+  // Update duration stat - track start times for running scrapers
   const durationEl = card.querySelector('[data-field="duration"]');
   if (durationEl) {
-    durationEl.textContent = duration;
+    if (isRunning) {
+      // Start tracking if not already tracked
+      if (!scraperStartTimes.has(retailerId)) {
+        scraperStartTimes.set(retailerId, Date.now());
+      }
+      // Duration will be updated by the timer interval
+    } else {
+      // Not running - stop tracking and reset display
+      scraperStartTimes.delete(retailerId);
+      durationEl.textContent = '—';
+    }
   }
 
   // Update phase
@@ -327,6 +415,11 @@ function renderAll(retailers) {
   Object.keys(RETAILERS).forEach(retailerId => {
     const data = retailers[retailerId] || { status: 'pending' };
     html += renderCard(retailerId, data);
+
+    // Start tracking duration for any already-running scrapers
+    if (data.status === 'running' && !scraperStartTimes.has(retailerId)) {
+      scraperStartTimes.set(retailerId, Date.now());
+    }
   });
 
   container.innerHTML = html;
@@ -373,6 +466,19 @@ async function loadRunHistory(retailerId) {
       const status = run.status || 'unknown';
       const startTime = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
 
+      // Map status to badge class:
+      // - complete: green (live) - successful full run
+      // - failed: red (fail) - error stopped the run
+      // - canceled: yellow (warn) - user manually stopped
+      // - running: green (live) - currently active
+      // - other: gray (idle)
+      const badgeClass = {
+        complete: 'live',
+        failed: 'fail',
+        canceled: 'warn',
+        running: 'live'
+      }[status] || 'idle';
+
       return `
         <div class="run-item">
           <div class="run-item__info">
@@ -380,7 +486,7 @@ async function loadRunHistory(retailerId) {
             <span class="run-item__time">${escapeHtml(startTime)}</span>
           </div>
           <div class="run-item__actions">
-            <span class="badge badge--${status === 'complete' ? 'done' : (status === 'running' ? 'live' : 'idle')}">
+            <span class="badge badge--${badgeClass}">
               ${escapeHtml(status)}
             </span>
             <button class="btn"
@@ -432,29 +538,87 @@ async function handleAction(event) {
   }
 }
 
+/**
+ * Immediately update card status in UI
+ */
+function updateCardStatusImmediate(retailerId, status) {
+  const card = document.querySelector(`.retailer-card[data-retailer="${retailerId}"]`);
+  if (!card) return;
+
+  const statusEl = card.querySelector('[data-field="status"]');
+  if (statusEl) {
+    statusEl.textContent = getStatusText(status);
+    statusEl.className = `retailer-card__status retailer-card__status--${getStatusClass(status)}`;
+  }
+
+  // Update button states
+  const isRunning = status === 'running' || status === 'starting';
+  const startBtn = card.querySelector('[data-action="start"]');
+  const stopBtn = card.querySelector('[data-action="stop"]');
+  if (startBtn) startBtn.disabled = isRunning || status === 'stopping';
+  if (stopBtn) stopBtn.disabled = !isRunning;
+
+  // Update progress bar active state
+  const progressBar = card.querySelector('[data-field="progress-bar"]');
+  if (progressBar) {
+    progressBar.className = `progress ${isRunning ? 'progress--active' : ''}`;
+  }
+}
+
 async function handleStart(retailerId) {
+  // Set transitional state immediately
+  transitionalStates.set(retailerId, 'starting');
+  updateCardStatusImmediate(retailerId, 'starting');
+
+  // Start tracking duration from now
+  scraperStartTimes.set(retailerId, Date.now());
+
   try {
     await api.startScraper(retailerId, { resume: true });
     showToast(`Started ${RETAILERS[retailerId]?.name || retailerId} scraper`, 'success');
   } catch (error) {
+    // Clear transitional state on error
+    transitionalStates.delete(retailerId);
+    scraperStartTimes.delete(retailerId);
+    updateCardStatusImmediate(retailerId, 'error');
     showToast(`Failed to start scraper: ${error.message}`, 'error');
   }
 }
 
 async function handleStop(retailerId) {
+  // Set transitional state immediately
+  transitionalStates.set(retailerId, 'stopping');
+  updateCardStatusImmediate(retailerId, 'stopping');
+
   try {
     await api.stopScraper(retailerId);
+    // Clear duration tracking
+    scraperStartTimes.delete(retailerId);
     showToast(`Stopped ${RETAILERS[retailerId]?.name || retailerId} scraper`, 'success');
   } catch (error) {
+    // Clear transitional state on error
+    transitionalStates.delete(retailerId);
+    updateCardStatusImmediate(retailerId, 'error');
     showToast(`Failed to stop scraper: ${error.message}`, 'error');
   }
 }
 
 async function handleRestart(retailerId) {
+  // Set transitional state immediately
+  transitionalStates.set(retailerId, 'stopping');
+  updateCardStatusImmediate(retailerId, 'stopping');
+
   try {
     await api.restartScraper(retailerId, { resume: true });
+    // Reset duration tracking for the new run
+    scraperStartTimes.set(retailerId, Date.now());
+    transitionalStates.set(retailerId, 'starting');
+    updateCardStatusImmediate(retailerId, 'starting');
     showToast(`Restarted ${RETAILERS[retailerId]?.name || retailerId} scraper`, 'success');
   } catch (error) {
+    // Clear transitional state on error
+    transitionalStates.delete(retailerId);
+    updateCardStatusImmediate(retailerId, 'error');
     showToast(`Failed to restart scraper: ${error.message}`, 'error');
   }
 }
@@ -486,6 +650,11 @@ export function init() {
   const container = document.getElementById('operations-grid');
   if (!container) return;
 
+  // Start duration timer - updates every second
+  if (!durationTimerInterval) {
+    durationTimerInterval = setInterval(updateDurationDisplays, 1000);
+  }
+
   // Subscribe to state changes
   store.subscribe((state) => {
     if (!cardsRendered) {
@@ -512,6 +681,17 @@ export function destroy() {
   if (container) {
     container.removeEventListener('click', handleAction);
   }
+
+  // Clear duration timer
+  if (durationTimerInterval) {
+    clearInterval(durationTimerInterval);
+    durationTimerInterval = null;
+  }
+
+  // Clear tracking maps
+  scraperStartTimes.clear();
+  transitionalStates.clear();
+
   cardsRendered = false;
 }
 

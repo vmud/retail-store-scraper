@@ -89,16 +89,16 @@
   background: var(--signal-idle);
 }
 
-/* Pulsing effect for active progress */
+/* Shimmer effect for active progress - spans full width */
 .progress--active .progress__fill::after {
   content: '';
   position: absolute;
   top: 0;
-  right: 0;
   bottom: 0;
-  width: 100px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  animation: progress-shine 2s infinite;
+  left: -30%;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: progress-shine 1.5s ease-in-out infinite;
 }
 
 /* === METRIC CARD === */
@@ -233,6 +233,18 @@
 .retailer-card__status--running {
   background: rgba(34, 197, 94, 0.15);
   color: var(--signal-live);
+}
+
+.retailer-card__status--starting {
+  background: rgba(234, 179, 8, 0.15);
+  color: var(--signal-warn);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.retailer-card__status--stopping {
+  background: rgba(234, 179, 8, 0.15);
+  color: var(--signal-warn);
+  animation: pulse-glow 1.5s ease-in-out infinite;
 }
 
 .retailer-card__status--complete {

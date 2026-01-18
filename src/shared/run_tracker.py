@@ -79,12 +79,12 @@ class RunTracker:
     
     def update_status(self, status: str) -> None:
         """Update run status
-        
+
         Args:
-            status: One of: running, paused, complete, failed
+            status: One of: running, paused, complete, failed, canceled
         """
         self.metadata["status"] = status
-        if status in ["complete", "failed"]:
+        if status in ["complete", "failed", "canceled"]:
             self.metadata["completed_at"] = datetime.utcnow().isoformat() + "Z"
         self._save()
     
@@ -166,7 +166,7 @@ class RunTracker:
     
     def fail(self, error_msg: Optional[str] = None) -> None:
         """Mark run as failed
-        
+
         Args:
             error_msg: Optional error message
         """
@@ -174,7 +174,12 @@ class RunTracker:
             self.add_error(error_msg)
         self.calculate_duration()
         self.update_status("failed")
-    
+
+    def cancel(self) -> None:
+        """Mark run as canceled (user manually stopped)"""
+        self.calculate_duration()
+        self.update_status("canceled")
+
     def get_metadata(self) -> Dict[str, Any]:
         """Get current metadata
         

@@ -7,6 +7,10 @@ import yaml
 import shutil
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (look in parent directory)
+load_dotenv(Path(__file__).parent.parent / '.env')
 
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -72,21 +76,30 @@ def _transform_status_for_frontend(backend_data: dict) -> dict:
     """Transform backend status format to frontend-expected format"""
     global_stats = backend_data.get("global", {})
     retailers_data = backend_data.get("retailers", {})
-    
+
+    # Count actually running scrapers from ScraperManager (more accurate than file-based check)
+    actual_active_count = 0
+    for retailer_id in retailers_data.keys():
+        if _scraper_manager.is_running(retailer_id):
+            actual_active_count += 1
+
     summary = {
         "total_stores": global_stats.get("total_stores", 0),
         "active_retailers": global_stats.get("enabled_retailers", 0),
         "total_retailers": global_stats.get("total_retailers", 6),
         "overall_progress": global_stats.get("overall_progress", 0.0),
         "estimated_remaining_seconds": 0,
-        "active_scrapers": global_stats.get("active_scrapers", 0),
+        "active_scrapers": actual_active_count,  # Use actual count from ScraperManager
     }
-    
+
     retailers = {}
-    
+
     for retailer_id, retailer_data in retailers_data.items():
         enabled = retailer_data.get("enabled", False)
-        scraper_active = retailer_data.get("scraper_active", False)
+        # Check BOTH file-based status AND ScraperManager process tracking
+        # ScraperManager knows immediately when a process starts, while file-based
+        # detection only works after checkpoint files are written
+        scraper_active = retailer_data.get("scraper_active", False) or _scraper_manager.is_running(retailer_id)
         
         if not enabled:
             status_value = "disabled"
