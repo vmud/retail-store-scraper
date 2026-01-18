@@ -7,6 +7,10 @@ import yaml
 import shutil
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (look in parent directory)
+load_dotenv(Path(__file__).parent.parent / '.env')
 
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))

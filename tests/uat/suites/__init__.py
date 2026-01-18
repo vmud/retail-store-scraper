@@ -15,6 +15,7 @@ from .ui import UISuite
 from .error import ErrorSuite
 from .api import APISuite
 from .perf import PerfSuite
+from .proxy import ProxySuite
 
 # Export all suites
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "ErrorSuite",
     "APISuite",
     "PerfSuite",
+    "ProxySuite",
 ]
 
 # Suite execution order (by priority)
@@ -42,6 +44,7 @@ SUITE_ORDER = [
     "ConfigSuite",
     "LogsSuite",
     "UISuite",
+    "ProxySuite",
     # Medium priority
     "HistorySuite",
     "PerfSuite",

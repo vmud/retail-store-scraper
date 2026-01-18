@@ -195,6 +195,12 @@ suites:
     priority: "medium"
     test_count: 3
 
+  proxy:
+    id: "PROXY"
+    name: "Proxy Configuration"
+    priority: "high"
+    test_count: 3
+
 # Report configuration
 reporting:
   output_dir: "tests/uat/reports"

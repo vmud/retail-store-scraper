@@ -42,6 +42,7 @@ from .suites import (
     ErrorSuite,
     APISuite,
     PerfSuite,
+    ProxySuite,
 )
 
 
@@ -75,6 +76,7 @@ class UATProtocol:
             "error": ErrorSuite(self.config),
             "api": APISuite(self.config),
             "perf": PerfSuite(self.config),
+            "proxy": ProxySuite(self.config),
         }
 
         # MCP tool functions (to be set by caller)
@@ -271,6 +273,10 @@ class UATProtocol:
                     self._wait_for,
                     self._evaluate,
                 )
+            elif suite_name == "proxy":
+                result = await suite.run_all(
+                    self._api_call,
+                )
             else:
                 print(f"[ERROR] Suite {suite_name} not implemented")
                 return None
@@ -334,6 +340,7 @@ class UATProtocol:
             "config",
             "logs",
             "ui",
+            "proxy",
             # Medium priority
             "history",
             "perf",

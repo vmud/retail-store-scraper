@@ -18,6 +18,10 @@ import sys
 import os
 import json
 from typing import List, Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from src.shared.utils import (
     setup_logging,
