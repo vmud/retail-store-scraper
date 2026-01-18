@@ -391,26 +391,24 @@ class ScraperManager:
                     except (OSError, ProcessLookupError):
                         exit_code = -1
                         status = "already_stopped"
-                
+
+                # User manually stopped the scraper - mark as canceled, not failed
                 tracker = RunTracker(retailer, run_id=run_id)
-                if exit_code == 0:
-                    tracker.complete()
-                else:
-                    tracker.fail(f"Process exited with code {exit_code}")
-                
+                tracker.cancel()
+
                 del self._processes[retailer]
-                
+
                 return {
                     "retailer": retailer,
                     "pid": pid,
                     "exit_code": exit_code,
                     "status": status
                 }
-            
+
             except Exception as e:
                 logger.error(f"Error stopping scraper for {retailer}: {e}")
                 raise
-    
+
     def restart(
         self,
         retailer: str,

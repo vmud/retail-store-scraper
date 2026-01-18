@@ -373,6 +373,19 @@ async function loadRunHistory(retailerId) {
       const status = run.status || 'unknown';
       const startTime = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
 
+      // Map status to badge class:
+      // - complete: green (live) - successful full run
+      // - failed: red (fail) - error stopped the run
+      // - canceled: yellow (warn) - user manually stopped
+      // - running: green (live) - currently active
+      // - other: gray (idle)
+      const badgeClass = {
+        complete: 'live',
+        failed: 'fail',
+        canceled: 'warn',
+        running: 'live'
+      }[status] || 'idle';
+
       return `
         <div class="run-item">
           <div class="run-item__info">
@@ -380,7 +393,7 @@ async function loadRunHistory(retailerId) {
             <span class="run-item__time">${escapeHtml(startTime)}</span>
           </div>
           <div class="run-item__actions">
-            <span class="badge badge--${status === 'complete' ? 'done' : (status === 'running' ? 'live' : 'idle')}">
+            <span class="badge badge--${badgeClass}">
               ${escapeHtml(status)}
             </span>
             <button class="btn"
