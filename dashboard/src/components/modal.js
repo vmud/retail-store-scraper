@@ -16,6 +16,7 @@ let liveLogInterval = null;
 let parsedLogLines = [];
 let lastLineCount = 0;
 let userHasScrolled = false;
+let isPolling = false; // Prevent overlapping requests
 const LIVE_POLL_INTERVAL = 2000; // 2 seconds
 
 /**
@@ -153,6 +154,7 @@ async function openLogModal(retailer, runId) {
   parsedLogLines = [];
   lastLineCount = 0;
   userHasScrolled = false;
+  isPolling = false; // Reset polling flag
   actions.resetLiveLogState();
 
   // Update title
@@ -219,6 +221,11 @@ function startLivePolling(retailer, runId) {
   stopLivePolling();
 
   liveLogInterval = setInterval(async () => {
+    // Skip if previous request is still in-flight
+    if (isPolling) {
+      return;
+    }
+
     const state = store.getState();
 
     // Check if modal is still open
@@ -231,6 +238,8 @@ function startLivePolling(retailer, runId) {
     if (state.ui.liveLogPaused) {
       return;
     }
+
+    isPolling = true;
 
     try {
       // Fetch only new lines using offset
@@ -266,6 +275,8 @@ function startLivePolling(retailer, runId) {
       }
     } catch (error) {
       console.error('Error fetching live logs:', error);
+    } finally {
+      isPolling = false;
     }
   }, LIVE_POLL_INTERVAL);
 }
@@ -278,6 +289,7 @@ function stopLivePolling() {
     clearInterval(liveLogInterval);
     liveLogInterval = null;
   }
+  isPolling = false; // Reset polling flag
 }
 
 /**
