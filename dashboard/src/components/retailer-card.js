@@ -556,7 +556,7 @@ function updateCardStatusImmediate(retailerId, status) {
   const startBtn = card.querySelector('[data-action="start"]');
   const stopBtn = card.querySelector('[data-action="stop"]');
   if (startBtn) startBtn.disabled = isRunning || status === 'stopping';
-  if (stopBtn) stopBtn.disabled = !isRunning && status !== 'stopping';
+  if (stopBtn) stopBtn.disabled = !isRunning;
 
   // Update progress bar active state
   const progressBar = card.querySelector('[data-field="progress-bar"]');
