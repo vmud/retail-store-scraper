@@ -137,15 +137,27 @@
     <div class="modal-overlay" id="log-modal">
       <div class="modal">
         <div class="modal__header">
-          <h2 class="modal__title" id="log-modal-title">Logs</h2>
+          <div style="display: flex; align-items: center; gap: var(--space-3);">
+            <h2 class="modal__title" id="log-modal-title">Logs</h2>
+            <!-- Live indicator -->
+            <div class="live-indicator" id="live-indicator" style="display: none;">
+              <span class="live-indicator__dot"></span>
+              <span class="live-indicator__text">LIVE</span>
+            </div>
+          </div>
           <button class="modal__close" id="log-modal-close">&times;</button>
         </div>
-        <div style="padding: var(--space-3) var(--space-5); background: var(--void); border-bottom: var(--border-width) solid var(--border); display: flex; gap: var(--space-2); align-items: center;">
+        <div class="log-toolbar" style="padding: var(--space-3) var(--space-5); background: var(--void); border-bottom: var(--border-width) solid var(--border); display: flex; gap: var(--space-2); align-items: center;">
           <button class="btn log-filter-btn active" data-level="ALL">All</button>
           <button class="btn log-filter-btn" data-level="INFO">Info</button>
           <button class="btn log-filter-btn" data-level="WARNING">Warning</button>
           <button class="btn log-filter-btn" data-level="ERROR">Error</button>
           <button class="btn log-filter-btn" data-level="DEBUG">Debug</button>
+          <!-- Live controls -->
+          <div class="log-toolbar__live-controls" id="log-live-controls" style="display: none; margin-left: var(--space-3); gap: var(--space-2);">
+            <button class="btn btn--secondary" id="log-pause-btn">⏸ Pause</button>
+            <button class="btn btn--secondary" id="log-scroll-btn">↓ Bottom</button>
+          </div>
           <span style="margin-left: auto; color: var(--text-muted); font-size: var(--text-xs);" id="log-stats">0 lines</span>
         </div>
         <div class="modal__body" style="padding: 0;">

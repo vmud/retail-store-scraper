@@ -1,6 +1,6 @@
 /**
  * Modal Component - Config editor and log viewer modals
- * Manages modal state and interactions
+ * Manages modal state and interactions with live log monitoring
  */
 
 import { store, actions, RETAILERS } from '../state.js';
@@ -10,6 +10,14 @@ import { showToast } from './toast.js';
 
 // Log filter state
 let activeLogFilters = new Set(['ALL']);
+
+// Live log polling state
+let liveLogInterval = null;
+let parsedLogLines = [];
+let lastLineCount = 0;
+let userHasScrolled = false;
+let isPolling = false; // Prevent overlapping requests
+const LIVE_POLL_INTERVAL = 2000; // 2 seconds
 
 /**
  * Open the config modal
@@ -140,9 +148,14 @@ async function openLogModal(retailer, runId) {
 
   if (!modal || !content) return;
 
-  // Reset filters
+  // Reset state
   activeLogFilters = new Set(['ALL']);
   updateLogFilterButtons();
+  parsedLogLines = [];
+  lastLineCount = 0;
+  userHasScrolled = false;
+  isPolling = false; // Reset polling flag
+  actions.resetLiveLogState();
 
   // Update title
   const retailerName = RETAILERS[retailer]?.name || retailer;
@@ -152,7 +165,7 @@ async function openLogModal(retailer, runId) {
 
   // Show modal
   modal.classList.add('modal-overlay--open');
-  
+
   // Update state
   actions.openLogModal(retailer, runId);
 
@@ -169,14 +182,25 @@ async function openLogModal(retailer, runId) {
     const lines = logContent.split('\n').filter(line => line.trim());
 
     // Parse log lines
-    const parsedLines = lines.map(line => parseLogLine(line));
+    parsedLogLines = lines.map(line => parseLogLine(line));
+    lastLineCount = data.total_lines || parsedLogLines.length;
 
     // Render logs
-    renderLogs(parsedLines);
+    renderLogs(parsedLogLines);
 
     // Update stats
-    if (stats) {
-      stats.textContent = `${parsedLines.length} lines`;
+    updateLogStats();
+
+    // Check if scraper is active and start live polling
+    if (data.is_active) {
+      actions.setLogIsActive(true);
+      actions.setLiveLogEnabled(true);
+      updateLiveIndicator(true);
+      startLivePolling(retailer, runId);
+      // Scroll to bottom for live logs
+      scrollToBottom();
+    } else {
+      updateLiveIndicator(false);
     }
   } catch (error) {
     content.innerHTML = `
@@ -188,9 +212,240 @@ async function openLogModal(retailer, runId) {
 }
 
 /**
+ * Start live polling for log updates
+ * @param {string} retailer - Retailer ID
+ * @param {string} runId - Run ID
+ */
+function startLivePolling(retailer, runId) {
+  // Clear any existing interval
+  stopLivePolling();
+
+  liveLogInterval = setInterval(async () => {
+    // Skip if previous request is still in-flight
+    if (isPolling) {
+      return;
+    }
+
+    const state = store.getState();
+
+    // Check if modal is still open
+    if (!state.ui.logModalOpen) {
+      stopLivePolling();
+      return;
+    }
+
+    // Check if paused
+    if (state.ui.liveLogPaused) {
+      return;
+    }
+
+    isPolling = true;
+
+    try {
+      // Fetch only new lines using offset
+      const data = await api.getLogs(retailer, runId, { offset: lastLineCount });
+
+      // CRITICAL: Re-check state after async request completes
+      // User may have closed modal and opened a different log view while request was in-flight
+      const currentState = store.getState();
+      if (!currentState.ui.logModalOpen ||
+          currentState.ui.currentLogRetailer !== retailer ||
+          currentState.ui.currentLogRunId !== runId) {
+        // Stale request - wrong retailer/run is now displayed, discard this response
+        stopLivePolling();
+        return;
+      }
+
+      // Check if scraper has stopped
+      if (!data.is_active) {
+        stopLivePolling();
+        actions.setLogIsActive(false);
+        actions.setLiveLogEnabled(false);
+        updateLiveIndicator(false);
+        showToast('Scraper completed', 'info');
+        return;
+      }
+
+      // If there are new lines, append them
+      if (data.lines > 0 && data.total_lines > lastLineCount) {
+        const newContent = data.content || '';
+        const newLines = newContent.split('\n').filter(line => line.trim());
+        const newParsedLines = newLines.map(line => parseLogLine(line));
+
+        // Append new lines
+        appendLogLines(newParsedLines);
+        lastLineCount = data.total_lines;
+
+        // Update stats
+        updateLogStats();
+
+        // Auto-scroll if not paused and user hasn't scrolled up
+        if (!userHasScrolled) {
+          scrollToBottom();
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching live logs:', error);
+    } finally {
+      isPolling = false;
+    }
+  }, LIVE_POLL_INTERVAL);
+}
+
+/**
+ * Stop live polling
+ */
+function stopLivePolling() {
+  if (liveLogInterval) {
+    clearInterval(liveLogInterval);
+    liveLogInterval = null;
+  }
+  isPolling = false; // Reset polling flag
+}
+
+/**
+ * Append new log lines to the viewer
+ * @param {Array} newParsedLines - Array of parsed log objects
+ */
+function appendLogLines(newParsedLines) {
+  const content = document.getElementById('log-content');
+  if (!content) return;
+
+  // Add to parsed lines array
+  parsedLogLines = [...parsedLogLines, ...newParsedLines];
+
+  // Create HTML for new lines
+  const html = newParsedLines.map(logLine => {
+    const shouldShow = activeLogFilters.has('ALL') || activeLogFilters.has(logLine.level);
+    const hiddenClass = shouldShow ? '' : 'hidden';
+    const levelClass = logLine.level.toLowerCase();
+
+    // Escape and format the line
+    let formattedLine = escapeHtml(logLine.raw);
+
+    // Highlight timestamp
+    if (logLine.timestamp) {
+      formattedLine = formattedLine.replace(
+        escapeHtml(logLine.timestamp),
+        `<span class="log-timestamp">${escapeHtml(logLine.timestamp)}</span>`
+      );
+    }
+
+    // Highlight level
+    if (logLine.level) {
+      formattedLine = formattedLine.replace(
+        new RegExp(`\\b${logLine.level}\\b`),
+        `<span class="log-level">${logLine.level}</span>`
+      );
+    }
+
+    // Add 'new' class for animation
+    return `<div class="log-line log-line--${levelClass} log-line--new ${hiddenClass}" data-level="${logLine.level}">${formattedLine}</div>`;
+  }).join('');
+
+  // Append to content
+  content.insertAdjacentHTML('beforeend', html);
+
+  // Remove 'new' class after animation completes
+  setTimeout(() => {
+    const newLines = content.querySelectorAll('.log-line--new');
+    newLines.forEach(line => line.classList.remove('log-line--new'));
+  }, 500);
+}
+
+/**
+ * Scroll log viewer to bottom
+ */
+function scrollToBottom() {
+  const content = document.getElementById('log-content');
+  if (content) {
+    content.scrollTop = content.scrollHeight;
+  }
+}
+
+/**
+ * Update live indicator visibility
+ * @param {boolean} isLive - Whether logs are live
+ */
+function updateLiveIndicator(isLive) {
+  const indicator = document.getElementById('live-indicator');
+  const liveControls = document.getElementById('log-live-controls');
+
+  if (indicator) {
+    indicator.style.display = isLive ? 'inline-flex' : 'none';
+  }
+
+  if (liveControls) {
+    liveControls.style.display = isLive ? 'flex' : 'none';
+  }
+
+  // Reset pause button UI when showing live controls
+  if (isLive) {
+    const pauseBtn = document.getElementById('log-pause-btn');
+    if (pauseBtn) {
+      pauseBtn.textContent = '⏸ Pause';
+      pauseBtn.classList.remove('btn--paused');
+    }
+  }
+}
+
+/**
+ * Toggle pause/resume for live logs
+ */
+function toggleLivePause() {
+  const state = store.getState();
+  const newPaused = !state.ui.liveLogPaused;
+  actions.setLiveLogPaused(newPaused);
+
+  const pauseBtn = document.getElementById('log-pause-btn');
+  if (pauseBtn) {
+    if (newPaused) {
+      pauseBtn.textContent = '▶ Resume';
+      pauseBtn.classList.add('btn--paused');
+    } else {
+      pauseBtn.textContent = '⏸ Pause';
+      pauseBtn.classList.remove('btn--paused');
+      // Reset scroll tracking when resuming
+      userHasScrolled = false;
+      scrollToBottom();
+    }
+  }
+}
+
+/**
+ * Update log stats display
+ */
+function updateLogStats() {
+  const stats = document.getElementById('log-stats');
+  const state = store.getState();
+
+  if (stats) {
+    const visibleCount = document.querySelectorAll('.log-line:not(.hidden)').length;
+    const totalCount = parsedLogLines.length;
+
+    if (state.ui.logIsActive) {
+      stats.textContent = `${visibleCount} of ${totalCount} lines (live)`;
+    } else {
+      stats.textContent = `${visibleCount} of ${totalCount} lines`;
+    }
+  }
+
+  actions.setLogLineCount(parsedLogLines.length);
+}
+
+/**
  * Close the log modal
  */
 function closeLogModal() {
+  // Stop live polling
+  stopLivePolling();
+
+  // Reset live log state
+  actions.resetLiveLogState();
+
+  // Hide live indicator
+  updateLiveIndicator(false);
+
   const modal = document.getElementById('log-modal');
   if (modal) {
     modal.classList.remove('modal-overlay--open');
@@ -312,11 +567,8 @@ function applyLogFilters() {
     }
   });
 
-  // Update stats
-  const stats = document.getElementById('log-stats');
-  if (stats) {
-    stats.textContent = `Showing ${visibleCount} of ${lines.length} lines`;
-  }
+  // Update stats using the shared function
+  updateLogStats();
 }
 
 /**
@@ -345,6 +597,7 @@ export function init() {
   // Log modal handlers
   const logCloseBtn = document.getElementById('log-modal-close');
   const logModal = document.getElementById('log-modal');
+  const logContent = document.getElementById('log-content');
 
   if (logCloseBtn) logCloseBtn.addEventListener('click', closeLogModal);
 
@@ -362,6 +615,38 @@ export function init() {
       toggleLogFilter(btn.dataset.level);
     });
   });
+
+  // Live log control buttons
+  const pauseBtn = document.getElementById('log-pause-btn');
+  const scrollBtn = document.getElementById('log-scroll-btn');
+
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', toggleLivePause);
+  }
+
+  if (scrollBtn) {
+    scrollBtn.addEventListener('click', () => {
+      userHasScrolled = false;
+      scrollToBottom();
+    });
+  }
+
+  // Track user scroll to auto-pause
+  if (logContent) {
+    logContent.addEventListener('scroll', () => {
+      const state = store.getState();
+      if (!state.ui.liveLogEnabled) return;
+
+      // Check if user has scrolled up (not at bottom)
+      const isAtBottom = logContent.scrollHeight - logContent.scrollTop <= logContent.clientHeight + 50;
+
+      if (!isAtBottom && !state.ui.liveLogPaused) {
+        userHasScrolled = true;
+      } else if (isAtBottom) {
+        userHasScrolled = false;
+      }
+    });
+  }
 
   // Subscribe to state changes for log modal
   store.subscribe((state) => {
