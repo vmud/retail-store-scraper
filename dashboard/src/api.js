@@ -195,6 +195,98 @@ export function updateConfig(content) {
 }
 
 // ============================================
+// Export APIs
+// ============================================
+
+/**
+ * Get list of available export formats
+ * @returns {Promise<object>} Formats list
+ */
+export function getExportFormats() {
+  return get('/export/formats');
+}
+
+/**
+ * Export retailer data in specified format
+ * Downloads the file directly in the browser
+ * @param {string} retailer - Retailer ID
+ * @param {string} format - Export format (json|csv|excel|geojson)
+ * @returns {Promise<void>}
+ */
+export async function exportRetailer(retailer, format) {
+  const url = `${BASE_URL}/export/${retailer}/${format}`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Export failed: ${response.statusText}`);
+  }
+
+  // Get filename from Content-Disposition header or generate one
+  const contentDisposition = response.headers.get('Content-Disposition');
+  let filename = `${retailer}_stores.${format === 'excel' ? 'xlsx' : format}`;
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+    if (match) filename = match[1];
+  }
+
+  // Download the file
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(downloadUrl);
+}
+
+/**
+ * Export multiple retailers combined
+ * @param {Array<string>} retailers - Retailer IDs
+ * @param {string} format - Export format
+ * @param {boolean} combine - Combine into single file
+ * @returns {Promise<void>}
+ */
+export async function exportMulti(retailers, format, combine = true) {
+  const url = `${BASE_URL}/export/multi`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ retailers, format, combine })
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Export failed: ${response.statusText}`);
+  }
+
+  // Get filename from Content-Disposition header or generate one
+  const contentDisposition = response.headers.get('Content-Disposition');
+  let filename = `stores_combined.${format === 'excel' ? 'xlsx' : format}`;
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+    if (match) filename = match[1];
+  }
+
+  // Download the file
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(downloadUrl);
+}
+
+// ============================================
 // Export API object
 // ============================================
 
@@ -207,5 +299,8 @@ export default {
   getRunHistory,
   getLogs,
   getConfig,
-  updateConfig
+  updateConfig,
+  getExportFormats,
+  exportRetailer,
+  exportMulti
 };

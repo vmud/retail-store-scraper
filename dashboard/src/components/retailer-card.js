@@ -291,6 +291,29 @@ function renderActions(retailerId, status, progress) {
         <span>RESTART</span>
       </button>
     ` : ''}
+    <div class="export-dropdown" data-retailer="${escapeHtml(retailerId)}">
+      <button class="btn btn--flex"
+              data-action="toggle-export"
+              data-retailer="${escapeHtml(retailerId)}"
+              data-tooltip="Export data">
+        <span>↓</span>
+        <span>EXPORT</span>
+      </button>
+      <div class="export-dropdown__menu">
+        <button class="export-dropdown__item" data-action="export" data-retailer="${escapeHtml(retailerId)}" data-format="csv">
+          CSV
+        </button>
+        <button class="export-dropdown__item" data-action="export" data-retailer="${escapeHtml(retailerId)}" data-format="excel">
+          Excel
+        </button>
+        <button class="export-dropdown__item" data-action="export" data-retailer="${escapeHtml(retailerId)}" data-format="geojson">
+          GeoJSON
+        </button>
+        <button class="export-dropdown__item" data-action="export" data-retailer="${escapeHtml(retailerId)}" data-format="json">
+          JSON
+        </button>
+      </div>
+    </div>
   `;
 }
 
@@ -518,6 +541,7 @@ async function handleAction(event) {
   const action = target.dataset.action;
   const retailerId = target.dataset.retailer;
   const runId = target.dataset.runId;
+  const format = target.dataset.format;
 
   switch (action) {
     case 'start':
@@ -534,6 +558,12 @@ async function handleAction(event) {
       break;
     case 'view-logs':
       handleViewLogs(retailerId, runId);
+      break;
+    case 'toggle-export':
+      handleToggleExport(retailerId);
+      break;
+    case 'export':
+      await handleExport(retailerId, format);
       break;
   }
 }
@@ -641,6 +671,39 @@ function handleToggleHistory(retailerId) {
 
 function handleViewLogs(retailerId, runId) {
   actions.openLogModal(retailerId, runId);
+}
+
+function handleToggleExport(retailerId) {
+  // Close all other dropdowns first
+  document.querySelectorAll('.export-dropdown--open').forEach(dropdown => {
+    if (dropdown.dataset.retailer !== retailerId) {
+      dropdown.classList.remove('export-dropdown--open');
+    }
+  });
+
+  // Toggle this dropdown
+  const dropdown = document.querySelector(`.export-dropdown[data-retailer="${retailerId}"]`);
+  if (dropdown) {
+    dropdown.classList.toggle('export-dropdown--open');
+  }
+}
+
+async function handleExport(retailerId, format) {
+  // Close dropdown
+  const dropdown = document.querySelector(`.export-dropdown[data-retailer="${retailerId}"]`);
+  if (dropdown) {
+    dropdown.classList.remove('export-dropdown--open');
+  }
+
+  const retailerName = RETAILERS[retailerId]?.name || retailerId;
+
+  try {
+    showToast(`Exporting ${retailerName} data as ${format.toUpperCase()}...`, 'info');
+    await api.exportRetailer(retailerId, format);
+    showToast(`${retailerName} exported as ${format.toUpperCase()}`, 'success');
+  } catch (error) {
+    showToast(`Export failed: ${error.message}`, 'error');
+  }
 }
 
 /**

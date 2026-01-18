@@ -939,3 +939,262 @@
 .log-viewer {
   scroll-behavior: smooth;
 }
+
+/* === EXPORT DROPDOWN === */
+
+.export-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.export-dropdown__menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: var(--space-1);
+  background: var(--panel);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 120px;
+  z-index: var(--z-dropdown);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out),
+    visibility var(--duration-fast);
+}
+
+.export-dropdown--open .export-dropdown__menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.export-dropdown__item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.export-dropdown__item:hover {
+  background: var(--grid);
+}
+
+.export-dropdown__item:first-child {
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.export-dropdown__item:last-child {
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+/* Close dropdown when clicking outside */
+.export-dropdown--open::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+}
+
+/* ============================================
+   Export Panel Styles
+   ============================================ */
+
+.export-panel {
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.export-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.export-panel__header:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.export-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--font-semibold);
+  color: var(--text);
+}
+
+.export-panel__title svg {
+  color: var(--primary);
+}
+
+.export-panel__toggle {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.export-panel--open .export-panel__toggle {
+  transform: rotate(180deg);
+}
+
+.export-panel__content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height var(--duration-normal) var(--ease-out);
+}
+
+.export-panel--open .export-panel__content {
+  max-height: 300px;
+}
+
+.export-panel__body {
+  padding: var(--space-5);
+  border-top: var(--border-width) solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.export-panel__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.export-panel__option-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.export-panel__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.export-panel__format-grid {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.export-panel__format-btn {
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-elevated);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.export-panel__format-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border-bright);
+}
+
+.export-panel__format-btn--active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--void);
+}
+
+.export-panel__format-btn--active:hover {
+  background: var(--primary-bright);
+  border-color: var(--primary-bright);
+  color: var(--void);
+}
+
+.export-panel__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.export-panel__checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.export-panel__checkbox input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-panel__hint {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  margin-left: var(--space-6);
+}
+
+.export-panel__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.export-panel__retailers-info {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.export-panel__count {
+  font-weight: var(--font-semibold);
+  color: var(--primary);
+}
+
+.export-panel__no-data {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.export-panel__export-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.export-panel__export-btn .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
