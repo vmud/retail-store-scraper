@@ -367,6 +367,15 @@ function updateLiveIndicator(isLive) {
   if (liveControls) {
     liveControls.style.display = isLive ? 'flex' : 'none';
   }
+
+  // Reset pause button UI when showing live controls
+  if (isLive) {
+    const pauseBtn = document.getElementById('log-pause-btn');
+    if (pauseBtn) {
+      pauseBtn.textContent = '⏸ Pause';
+      pauseBtn.classList.remove('btn--paused');
+    }
+  }
 }
 
 /**
