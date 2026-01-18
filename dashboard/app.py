@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Simple Flask dashboard for monitoring scraper progress"""
 
+import csv
+import io
+import json
 import sys
 import re
 import yaml
@@ -15,8 +18,9 @@ load_dotenv(Path(__file__).parent.parent / '.env')
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flask import Flask, jsonify, request, render_template, send_from_directory
+from flask import Flask, jsonify, request, render_template, send_from_directory, send_file
 from src.shared import status, scraper_manager, run_tracker
+from src.shared.export_service import ExportService, ExportFormat
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -622,11 +626,228 @@ def _create_config_backup(config_path: Path) -> Path:
 
 def _reload_config() -> None:
     """Reload configuration after update
-    
+
     Forces the status module to reload the configuration file
     on the next access by clearing any cached config data.
     """
     pass
+
+
+# =============================================================================
+# EXPORT API ENDPOINTS
+# =============================================================================
+
+VALID_EXPORT_FORMATS = {'json', 'csv', 'excel', 'geojson'}
+CONTENT_TYPES = {
+    'json': 'application/json',
+    'csv': 'text/csv',
+    'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'geojson': 'application/geo+json'
+}
+FILE_EXTENSIONS = {
+    'json': 'json',
+    'csv': 'csv',
+    'excel': 'xlsx',
+    'geojson': 'geojson'
+}
+
+
+@app.route('/api/export/<retailer>/<export_format>')
+def api_export_retailer(retailer, export_format):
+    """Export single retailer data in specified format
+
+    Path params:
+        retailer: Retailer ID (verizon, att, target, etc.)
+        export_format: Export format (json|csv|excel|geojson)
+
+    Returns:
+        File download with appropriate Content-Type
+    """
+    try:
+        # Validate format
+        export_format = export_format.lower()
+        if export_format not in VALID_EXPORT_FORMATS:
+            return jsonify({
+                "error": f"Invalid format '{export_format}'. Must be one of: {', '.join(VALID_EXPORT_FORMATS)}"
+            }), 400
+
+        # Validate retailer
+        config = status.load_retailers_config()
+        if retailer not in config:
+            return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
+
+        # Load stores
+        stores_file = Path(f"data/{retailer}/output/stores_latest.json")
+        if not stores_file.exists():
+            return jsonify({"error": f"No data found for {retailer}"}), 404
+
+        with open(stores_file, 'r', encoding='utf-8') as f:
+            stores = json.load(f)
+
+        # Get retailer config for field mapping
+        retailer_config = config.get(retailer, {})
+
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y-%m-%d")
+        ext = FILE_EXTENSIONS.get(export_format, export_format)
+        filename = f"{retailer}_stores_{timestamp}.{ext}"
+
+        # Generate export based on format
+        if export_format == 'json':
+            data = json.dumps(stores, indent=2, ensure_ascii=False).encode('utf-8')
+        elif export_format == 'csv':
+            fieldnames = retailer_config.get('output_fields')
+            if not fieldnames and stores:
+                fieldnames = list(stores[0].keys())
+            data = ExportService.generate_csv_string(stores, fieldnames).encode('utf-8')
+        elif export_format == 'excel':
+            fieldnames = retailer_config.get('output_fields')
+            data = ExportService.generate_excel_bytes(stores, retailer.title(), fieldnames)
+        elif export_format == 'geojson':
+            geojson_data = ExportService.generate_geojson(stores)
+            data = json.dumps(geojson_data, indent=2, ensure_ascii=False).encode('utf-8')
+
+        return send_file(
+            io.BytesIO(data),
+            mimetype=CONTENT_TYPES[export_format],
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/export/multi', methods=['POST'])
+@require_json
+def api_export_multi():
+    """Export multiple retailers combined
+
+    Request body:
+    {
+        "retailers": ["verizon", "att", "target"],
+        "format": "excel",
+        "combine": true
+    }
+
+    Returns:
+        File download (Excel: multi-sheet, others: merged arrays)
+    """
+    try:
+        data = request.get_json() or {}
+        retailers = data.get('retailers', [])
+        export_format = data.get('format', 'excel').lower()
+        # combine is accepted but always true for now
+
+        # Validation
+        if not retailers or not isinstance(retailers, list):
+            return jsonify({"error": "Missing or invalid 'retailers' field"}), 400
+
+        if len(retailers) > 10:
+            return jsonify({"error": "Maximum 10 retailers allowed"}), 400
+
+        if export_format not in VALID_EXPORT_FORMATS:
+            return jsonify({
+                "error": f"Invalid format. Must be one of: {', '.join(VALID_EXPORT_FORMATS)}"
+            }), 400
+
+        # Load stores for each retailer
+        config = status.load_retailers_config()
+        retailer_data = {}
+
+        for retailer in retailers:
+            if retailer not in config:
+                return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
+
+            stores_file = Path(f"data/{retailer}/output/stores_latest.json")
+            if not stores_file.exists():
+                continue
+
+            with open(stores_file, 'r', encoding='utf-8') as f:
+                retailer_data[retailer] = json.load(f)
+
+        if not retailer_data:
+            return jsonify({"error": "No data found for any retailer"}), 404
+
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y-%m-%d")
+        ext = FILE_EXTENSIONS.get(export_format, export_format)
+        filename = f"stores_combined_{timestamp}.{ext}"
+
+        if export_format == 'excel':
+            # Multi-sheet Excel
+            file_data = ExportService.generate_multi_sheet_excel(retailer_data, config)
+        else:
+            # Merge all stores into single array
+            all_stores = []
+            for retailer, stores in retailer_data.items():
+                for store in stores:
+                    store_copy = store.copy()
+                    store_copy['retailer'] = retailer  # Add retailer identifier
+                    all_stores.append(store_copy)
+
+            if export_format == 'json':
+                file_data = json.dumps(all_stores, indent=2, ensure_ascii=False).encode('utf-8')
+            elif export_format == 'csv':
+                # Get all unique fields across retailers
+                all_fields = set()
+                for store in all_stores:
+                    all_fields.update(store.keys())
+                fieldnames = sorted(all_fields)
+                # Ensure 'retailer' is first
+                if 'retailer' in fieldnames:
+                    fieldnames.remove('retailer')
+                    fieldnames = ['retailer'] + fieldnames
+                file_data = ExportService.generate_csv_string(all_stores, fieldnames).encode('utf-8')
+            elif export_format == 'geojson':
+                geojson_data = ExportService.generate_geojson(all_stores)
+                file_data = json.dumps(geojson_data, indent=2, ensure_ascii=False).encode('utf-8')
+
+        return send_file(
+            io.BytesIO(file_data),
+            mimetype=CONTENT_TYPES[export_format],
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/export/formats')
+def api_export_formats():
+    """Get list of available export formats
+
+    Returns:
+        List of format objects with id, name, extension, and description
+    """
+    formats = [
+        {
+            "id": "json",
+            "name": "JSON",
+            "extension": "json",
+            "description": "JavaScript Object Notation - full data with all fields"
+        },
+        {
+            "id": "csv",
+            "name": "CSV",
+            "extension": "csv",
+            "description": "Comma-Separated Values - compatible with Excel, Google Sheets"
+        },
+        {
+            "id": "excel",
+            "name": "Excel",
+            "extension": "xlsx",
+            "description": "Microsoft Excel workbook with formatting"
+        },
+        {
+            "id": "geojson",
+            "name": "GeoJSON",
+            "extension": "geojson",
+            "description": "Geographic JSON - for mapping applications"
+        }
+    ]
+    return jsonify({"formats": formats})
 
 
 if __name__ == '__main__':
