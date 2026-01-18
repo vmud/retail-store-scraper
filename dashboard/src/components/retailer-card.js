@@ -598,6 +598,7 @@ async function handleStop(retailerId) {
   } catch (error) {
     // Clear transitional state on error
     transitionalStates.delete(retailerId);
+    updateCardStatusImmediate(retailerId, 'error');
     showToast(`Failed to stop scraper: ${error.message}`, 'error');
   }
 }
@@ -617,6 +618,7 @@ async function handleRestart(retailerId) {
   } catch (error) {
     // Clear transitional state on error
     transitionalStates.delete(retailerId);
+    updateCardStatusImmediate(retailerId, 'error');
     showToast(`Failed to restart scraper: ${error.message}`, 'error');
   }
 }
