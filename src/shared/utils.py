@@ -8,6 +8,7 @@ import logging
 import tempfile
 import shutil
 import os
+import threading
 import yaml
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
@@ -35,6 +36,7 @@ DEFAULT_USER_AGENTS = [
 
 # Global proxy client instances (lazy initialized per retailer)
 _proxy_clients: Dict[str, ProxyClient] = {}
+_proxy_clients_lock = threading.Lock()
 
 
 def setup_logging(log_file: str = "logs/scraper.log") -> None:
@@ -226,8 +228,8 @@ def save_checkpoint(data: Any, filepath: str) -> None:
         )
 
         try:
-            # Write JSON to temp file
-            with open(temp_fd, 'w', encoding='utf-8') as f:
+            # Write JSON to temp file using os.fdopen to properly manage the fd
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
 
             # Atomic rename: either succeeds completely or fails (no partial file)
@@ -235,6 +237,11 @@ def save_checkpoint(data: Any, filepath: str) -> None:
             logging.info(f"Checkpoint saved: {filepath}")
 
         except Exception as e:
+            # Close the fd if fdopen failed and it's still open
+            try:
+                os.close(temp_fd)
+            except OSError:
+                pass
             # Clean up temp file on error
             try:
                 Path(temp_path).unlink(missing_ok=True)
@@ -481,7 +488,7 @@ def load_retailer_config(
 def get_proxy_client(config: Optional[Dict[str, Any]] = None, retailer: Optional[str] = None) -> ProxyClient:
     """
     Get or create a proxy client instance.
-    
+
     If retailer is specified, returns/creates retailer-specific client.
     Otherwise returns/creates global client.
 
@@ -494,28 +501,29 @@ def get_proxy_client(config: Optional[Dict[str, Any]] = None, retailer: Optional
         Configured ProxyClient instance
     """
     global _proxy_clients
-    
+
     cache_key = retailer if retailer else '__global__'
-    
-    if cache_key in _proxy_clients and config is None:
-        return _proxy_clients[cache_key]
-    
-    # Close existing client before overwriting to prevent resource leak
-    if cache_key in _proxy_clients:
-        try:
-            _proxy_clients[cache_key].close()
-        except Exception:
-            pass
-    
-    if config:
-        proxy_config = ProxyConfig.from_dict(config)
-    else:
-        proxy_config = ProxyConfig.from_env()
-    
-    client = ProxyClient(proxy_config)
-    _proxy_clients[cache_key] = client
-    
-    return client
+
+    with _proxy_clients_lock:
+        if cache_key in _proxy_clients and config is None:
+            return _proxy_clients[cache_key]
+
+        # Close existing client before overwriting to prevent resource leak
+        if cache_key in _proxy_clients:
+            try:
+                _proxy_clients[cache_key].close()
+            except Exception:
+                pass
+
+        if config:
+            proxy_config = ProxyConfig.from_dict(config)
+        else:
+            proxy_config = ProxyConfig.from_env()
+
+        client = ProxyClient(proxy_config)
+        _proxy_clients[cache_key] = client
+
+        return client
 
 
 def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClient:
@@ -654,29 +662,31 @@ def create_proxied_session(
 
 def close_proxy_client() -> None:
     """Close the global proxy client and release resources.
-    
+
     Deprecated: Use close_all_proxy_clients() for new code.
     """
     global _proxy_clients
-    if '__global__' in _proxy_clients:
-        _proxy_clients['__global__'].close()
-        del _proxy_clients['__global__']
-        logging.info("Global proxy client closed")
+    with _proxy_clients_lock:
+        if '__global__' in _proxy_clients:
+            _proxy_clients['__global__'].close()
+            del _proxy_clients['__global__']
+            logging.info("Global proxy client closed")
 
 
 def close_all_proxy_clients() -> None:
     """Close all proxy client sessions and clear cache"""
     global _proxy_clients
-    
-    for name, client in _proxy_clients.items():
-        try:
-            client.close()
-            logging.debug(f"Closed proxy client: {name}")
-        except Exception as e:
-            logging.warning(f"Error closing proxy client {name}: {e}")
-    
-    _proxy_clients.clear()
-    logging.info("All proxy clients closed")
+
+    with _proxy_clients_lock:
+        for name, client in _proxy_clients.items():
+            try:
+                client.close()
+                logging.debug(f"Closed proxy client: {name}")
+            except Exception as e:
+                logging.warning(f"Error closing proxy client {name}: {e}")
+
+        _proxy_clients.clear()
+        logging.info("All proxy clients closed")
 
 
 class ProxiedSession:
