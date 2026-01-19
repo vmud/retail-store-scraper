@@ -329,6 +329,7 @@ class ExportService:
         # Remove default sheet
         wb.remove(wb.active)
 
+        sheets_created = 0
         for retailer, stores in retailer_data.items():
             if not stores:
                 continue
@@ -342,6 +343,7 @@ class ExportService:
             # Create sheet with capitalized retailer name
             sheet_name = retailer.title()[:31]  # Excel sheet names max 31 chars
             ws = wb.create_sheet(title=sheet_name)
+            sheets_created += 1
 
             # Write header row
             header_font = Font(bold=True)
@@ -368,6 +370,12 @@ class ExportService:
 
             # Freeze header row
             ws.freeze_panes = 'A2'
+
+        # If no sheets were created (all retailers had empty data), create a placeholder sheet
+        if sheets_created == 0:
+            ws = wb.create_sheet(title="No Data")
+            ws['A1'] = "No store data available for any retailer"
+            ws['A1'].font = Font(bold=True)
 
         # Save to bytes
         output = BytesIO()

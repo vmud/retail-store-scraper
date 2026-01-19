@@ -287,6 +287,18 @@ class TestExportServiceExcel:
         result = ExportService.generate_multi_sheet_excel(retailer_data)
         assert isinstance(result, bytes)
 
+    def test_generate_multi_sheet_excel_all_empty_retailers(self):
+        """Test that multi-sheet Excel with all empty retailers doesn't crash"""
+        retailer_data = {
+            'retailer1': [],
+            'retailer2': [],
+            'retailer3': []
+        }
+
+        # Should not raise ValueError about no worksheets
+        result = ExportService.generate_multi_sheet_excel(retailer_data)
+        assert isinstance(result, bytes)
+
 
 class TestExportServiceIntegration:
     """Integration tests for ExportService"""

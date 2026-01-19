@@ -234,3 +234,36 @@ class TestAPIEndpoints:
                               content_type='application/json')
         # May return 404 if no stores data exists for these retailers
         assert response.status_code in [200, 404]
+
+    def test_api_export_multi_all_empty_stores_returns_404(self, client, tmp_path, monkeypatch):
+        """Test that multi export with all retailers having empty stores returns 404"""
+        import json
+        from pathlib import Path
+        
+        # Create temporary data directory with empty store files
+        data_dir = tmp_path / "data"
+        verizon_dir = data_dir / "verizon" / "output"
+        att_dir = data_dir / "att" / "output"
+        verizon_dir.mkdir(parents=True)
+        att_dir.mkdir(parents=True)
+        
+        # Create empty stores files
+        (verizon_dir / "stores_latest.json").write_text("[]")
+        (att_dir / "stores_latest.json").write_text("[]")
+        
+        # Mock Path to point to our temp directory
+        def mock_path(path_str):
+            if path_str.startswith("data/"):
+                return tmp_path / path_str
+            return Path(path_str)
+        
+        monkeypatch.setattr("dashboard.app.Path", mock_path)
+        
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['verizon', 'att'], 'format': 'excel'},
+                              content_type='application/json')
+        assert response.status_code == 404
+        data = response.get_json()
+        assert 'error' in data
+        assert 'empty' in data['error'].lower()
+

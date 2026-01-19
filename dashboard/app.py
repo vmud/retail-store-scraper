@@ -769,6 +769,11 @@ def api_export_multi():
         if not retailer_data:
             return jsonify({"error": "No data found for any retailer"}), 404
 
+        # Check if all retailers have empty store lists
+        all_empty = all(not stores for stores in retailer_data.values())
+        if all_empty:
+            return jsonify({"error": "All retailers have empty data"}), 404
+
         # Generate filename
         timestamp = datetime.now().strftime("%Y-%m-%d")
         ext = FILE_EXTENSIONS.get(export_format, export_format)
