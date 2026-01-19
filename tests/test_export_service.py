@@ -222,6 +222,67 @@ class TestExportServiceGeoJSON:
         assert len(result['features']) == 1
         assert result['features'][0]['properties']['name'] == 'With Coords'
 
+    def test_geojson_handles_zero_coordinates(self):
+        """Test GeoJSON correctly handles stores at equator (lat=0) or prime meridian (lng=0)"""
+        stores_with_zeros = [
+            # Equator store (lat=0)
+            {'store_id': '1', 'name': 'Equator Store', 'latitude': 0, 'longitude': 100.0},
+            # Prime meridian store (lng=0)
+            {'store_id': '2', 'name': 'Prime Meridian Store', 'latitude': 50.0, 'longitude': 0},
+            # Origin point (lat=0, lng=0) - Null Island
+            {'store_id': '3', 'name': 'Null Island', 'latitude': 0, 'longitude': 0},
+            # Normal store for comparison
+            {'store_id': '4', 'name': 'Normal Store', 'latitude': 40.0, 'longitude': -74.0}
+        ]
+        result = ExportService.generate_geojson(stores_with_zeros)
+
+        # All 4 stores should be included
+        assert len(result['features']) == 4
+        
+        # Verify equator store
+        equator = result['features'][0]
+        assert equator['properties']['name'] == 'Equator Store'
+        assert equator['geometry']['coordinates'] == [100.0, 0]
+        
+        # Verify prime meridian store
+        prime = result['features'][1]
+        assert prime['properties']['name'] == 'Prime Meridian Store'
+        assert prime['geometry']['coordinates'] == [0, 50.0]
+        
+        # Verify null island
+        null_island = result['features'][2]
+        assert null_island['properties']['name'] == 'Null Island'
+        assert null_island['geometry']['coordinates'] == [0, 0]
+
+    def test_geojson_fallback_coordinate_field_names(self):
+        """Test GeoJSON correctly handles alternative coordinate field names"""
+        stores_alt_fields = [
+            # Using 'lat' and 'lng' instead of 'latitude' and 'longitude'
+            {'store_id': '1', 'name': 'Store 1', 'lat': 40.0, 'lng': -74.0},
+            # Using 'lat' and 'lon'
+            {'store_id': '2', 'name': 'Store 2', 'lat': 50.0, 'lon': -120.0},
+            # Using 'lat' with 0 value
+            {'store_id': '3', 'name': 'Store 3', 'lat': 0, 'lng': 100.0},
+            # Primary field names take precedence even if 0
+            {'store_id': '4', 'name': 'Store 4', 'latitude': 0, 'lat': 50.0, 'longitude': 0, 'lng': 100.0}
+        ]
+        result = ExportService.generate_geojson(stores_alt_fields)
+
+        # All 4 stores should be included
+        assert len(result['features']) == 4
+        
+        # Store with lat/lng
+        assert result['features'][0]['geometry']['coordinates'] == [-74.0, 40.0]
+        
+        # Store with lat/lon
+        assert result['features'][1]['geometry']['coordinates'] == [-120.0, 50.0]
+        
+        # Store with zero lat
+        assert result['features'][2]['geometry']['coordinates'] == [100.0, 0]
+        
+        # Primary fields take precedence (latitude/longitude should be used, not lat/lng)
+        assert result['features'][3]['geometry']['coordinates'] == [0, 0]
+
     def test_export_geojson_to_file(self):
         """Test exporting GeoJSON to file"""
         with tempfile.NamedTemporaryFile(suffix='.geojson', delete=False) as f:

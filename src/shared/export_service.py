@@ -200,8 +200,11 @@ class ExportService:
 
         for store in stores:
             # Get coordinates - try multiple field names
-            lat = store.get('latitude') or store.get('lat')
-            lng = store.get('longitude') or store.get('lng') or store.get('lon')
+            # Use explicit None checks to handle 0 values (equator/prime meridian)
+            lat = store.get('latitude') if store.get('latitude') is not None else store.get('lat')
+            lng = store.get('longitude') if store.get('longitude') is not None else (
+                store.get('lng') if store.get('lng') is not None else store.get('lon')
+            )
 
             # Skip stores without valid coordinates
             if lat is None or lng is None:
