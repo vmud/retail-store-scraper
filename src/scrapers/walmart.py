@@ -102,7 +102,7 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
             # Try to decompress gzipped content, fall back to plain text if not gzipped
             try:
                 xml_content = gzip.decompress(response.content).decode('utf-8')
-            except gzip.BadGzipFile:
+            except (gzip.BadGzipFile, OSError):
                 # Content is not gzipped, try as plain text
                 logging.debug(f"Content from {sitemap_url} is not gzipped, using plain text")
                 xml_content = response.content.decode('utf-8')
