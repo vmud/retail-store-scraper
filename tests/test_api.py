@@ -139,6 +139,38 @@ class TestAPIEndpoints:
         response = client.get('/api/logs/verizon/../../../etc/passwd')
         assert response.status_code == 404
 
+    def test_api_logs_path_traversal_url_encoded(self, client):
+        """Test that URL-encoded path traversal is blocked"""
+        # %2e = '.', %2f = '/'
+        response = client.get('/api/logs/verizon/%2e%2e%2f%2e%2e%2fetc%2fpasswd')
+        assert response.status_code == 404
+
+    def test_api_logs_path_traversal_double_encoded(self, client):
+        """Test that double-encoded path traversal is blocked"""
+        # %252e = '%2e' which decodes to '.'
+        response = client.get('/api/logs/verizon/%252e%252e%252f%252e%252e%252fetc%252fpasswd')
+        assert response.status_code == 404
+
+    def test_api_logs_path_traversal_windows_separators(self, client):
+        """Test that Windows-style path traversal is blocked"""
+        response = client.get('/api/logs/verizon/..\\..\\..\\windows\\system32')
+        assert response.status_code == 404
+
+    def test_api_logs_run_id_path_traversal(self, client):
+        """Test that run_id parameter path traversal is blocked"""
+        response = client.get('/api/logs/verizon/../../etc/passwd')
+        assert response.status_code == 404
+
+    def test_api_export_path_traversal_blocked(self, client):
+        """Test that export endpoint blocks path traversal"""
+        response = client.get('/api/export/../../../etc/passwd/json')
+        assert response.status_code == 404
+
+    def test_api_runs_path_traversal_blocked(self, client):
+        """Test that runs endpoint blocks path traversal in retailer"""
+        response = client.get('/api/runs/../../../etc/passwd')
+        assert response.status_code == 404
+
     def test_dashboard_index_returns_200(self, client):
         """Test that main dashboard page loads"""
         response = client.get('/')
