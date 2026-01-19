@@ -67,50 +67,6 @@ def _check_pause_logic() -> None:
         time.sleep(pause_time)
 
 
-def _extract_state_from_url(url: str) -> Optional[str]:
-    """Extract state code from T-Mobile URL pattern.
-
-    URL pattern: /stores/bd/t-mobile-{city}-{state}-{zip}-{id}
-    Note: City can contain hyphens (e.g., "new-york"), so we need to match carefully.
-    We look for the two-letter state code followed by a hyphen and digits (zip code).
-
-    Args:
-        url: Store URL
-
-    Returns:
-        Lowercase state code (e.g., "ca", "ny", "tx") or None if pattern doesn't match
-    """
-    # Pattern: /stores/bd/t-mobile-{city}-{state}-{zip}-{id}
-    # Match: /stores/bd/t-mobile- followed by city (may contain hyphens),
-    # then -{state}-{zip}- where state is 2 letters and zip is digits
-    # We look for -XX- followed by digits, where XX is the state code
-    url_lower = url.lower()
-    pattern = r'/stores/bd/t-mobile-.*-([a-z]{2})-\d+-'
-    match = re.search(pattern, url_lower)
-    if match:
-        return match.group(1)
-    return None
-
-
-def _filter_urls_by_state(urls: List[str], state_code: str) -> List[str]:
-    """Filter URLs by state code (case-insensitive).
-
-    Args:
-        urls: List of store URLs
-        state_code: State code to filter by (e.g., "ca", "ny", "tx")
-
-    Returns:
-        List of URLs matching the specified state
-    """
-    state_code_lower = state_code.lower()
-    filtered = []
-    for url in urls:
-        extracted_state = _extract_state_from_url(url)
-        if extracted_state and extracted_state == state_code_lower:
-            filtered.append(url)
-    return filtered
-
-
 def _extract_store_type_from_title(page_title: str) -> Optional[str]:
     """Extract store type from T-Mobile store page title.
 
