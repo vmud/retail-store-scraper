@@ -25,6 +25,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+import yaml
+
 from src.shared.utils import (
     setup_logging,
     load_retailer_config,
@@ -35,6 +37,85 @@ from src.shared import init_proxy_from_yaml, get_proxy_client
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
 from src.scrapers import get_available_retailers, get_scraper_module
 from src.change_detector import ChangeDetector
+
+
+def validate_config_on_startup() -> List[str]:
+    """Validate configuration file on startup (#67).
+
+    Checks for common configuration errors before running scrapers.
+
+    Returns:
+        List of validation errors (empty if config is valid)
+    """
+    errors = []
+    config_path = "config/retailers.yaml"
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        return [f"Configuration file not found: {config_path}"]
+    except yaml.YAMLError as e:
+        return [f"Invalid YAML syntax in config file: {e}"]
+
+    if not config:
+        return ["Configuration file is empty"]
+
+    if not isinstance(config, dict):
+        return ["Configuration must be a dictionary"]
+
+    # Check for retailers section
+    if 'retailers' not in config:
+        errors.append("Missing required 'retailers' section")
+        return errors
+
+    retailers = config.get('retailers', {})
+    if not isinstance(retailers, dict):
+        errors.append("'retailers' must be a dictionary")
+        return errors
+
+    # Validate each retailer
+    for retailer_name, retailer_config in retailers.items():
+        prefix = f"Retailer '{retailer_name}'"
+
+        if not isinstance(retailer_config, dict):
+            errors.append(f"{prefix}: configuration must be a dictionary")
+            continue
+
+        # Check required fields
+        if 'enabled' not in retailer_config:
+            errors.append(f"{prefix}: missing 'enabled' field")
+
+        if 'base_url' in retailer_config:
+            base_url = retailer_config['base_url']
+            if not isinstance(base_url, str) or not base_url.startswith(('http://', 'https://')):
+                errors.append(f"{prefix}: 'base_url' must be a valid HTTP/HTTPS URL")
+
+        # Validate numeric fields
+        for field in ['min_delay', 'max_delay', 'timeout']:
+            if field in retailer_config:
+                value = retailer_config[field]
+                if not isinstance(value, (int, float)) or value < 0:
+                    errors.append(f"{prefix}: '{field}' must be a non-negative number")
+
+        # Validate delay order
+        min_delay = retailer_config.get('min_delay', 0)
+        max_delay = retailer_config.get('max_delay', 0)
+        if min_delay > max_delay:
+            errors.append(f"{prefix}: 'min_delay' ({min_delay}) cannot be greater than 'max_delay' ({max_delay})")
+
+    # Validate proxy section if present
+    if 'proxy' in config:
+        proxy = config['proxy']
+        if not isinstance(proxy, dict):
+            errors.append("'proxy' section must be a dictionary")
+        else:
+            mode = proxy.get('mode', 'direct')
+            valid_modes = {'direct', 'residential', 'web_scraper_api'}
+            if mode not in valid_modes:
+                errors.append(f"Invalid proxy mode '{mode}'. Must be one of: {', '.join(valid_modes)}")
+
+    return errors
 
 
 def setup_parser() -> argparse.ArgumentParser:
@@ -228,6 +309,7 @@ def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_mod
 async def run_retailer_async(
     retailer: str,
     cli_proxy_override: Optional[str] = None,
+    cli_proxy_settings: Optional[dict] = None,
     export_formats: Optional[List[ExportFormat]] = None,
     **kwargs
 ) -> dict:
@@ -239,6 +321,7 @@ async def run_retailer_async(
     Args:
         retailer: Retailer name
         cli_proxy_override: Optional CLI proxy mode override from --proxy flag
+        cli_proxy_settings: Optional CLI proxy settings (country_code, render_js)
         export_formats: List of formats to export (default: JSON, CSV)
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
@@ -249,7 +332,12 @@ async def run_retailer_async(
         export_formats = [ExportFormat.JSON, ExportFormat.CSV]
 
     try:
-        retailer_config = load_retailer_config(retailer, cli_proxy_override)
+        # Pass CLI proxy settings through to retailer config (#52)
+        retailer_config = load_retailer_config(
+            retailer,
+            cli_proxy_override,
+            cli_proxy_settings
+        )
 
         session = create_proxied_session(retailer_config)
 
@@ -344,6 +432,7 @@ async def run_retailer_async(
 async def run_all_retailers(
     retailers: List[str],
     cli_proxy_override: Optional[str] = None,
+    cli_proxy_settings: Optional[dict] = None,
     export_formats: Optional[List[ExportFormat]] = None,
     **kwargs
 ) -> dict:
@@ -352,6 +441,7 @@ async def run_all_retailers(
     Args:
         retailers: List of retailer names to run
         cli_proxy_override: Optional CLI proxy mode override from --proxy flag
+        cli_proxy_settings: Optional CLI proxy settings (country_code, render_js)
         export_formats: List of formats to export
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
@@ -361,6 +451,7 @@ async def run_all_retailers(
         run_retailer_async(
             retailer,
             cli_proxy_override=cli_proxy_override,
+            cli_proxy_settings=cli_proxy_settings,
             export_formats=export_formats,
             **kwargs
         )
@@ -383,6 +474,35 @@ async def run_all_retailers(
     return summary
 
 
+def validate_cli_options(args) -> List[str]:
+    """Validate CLI options for conflicts (#106).
+
+    Args:
+        args: Parsed command line arguments
+
+    Returns:
+        List of validation errors (empty if options are valid)
+    """
+    errors = []
+
+    # Check for conflicting options
+    if args.test and args.limit:
+        errors.append("Cannot use --test with --limit (--test already sets limit to 10)")
+
+    if args.render_js and args.proxy != 'web_scraper_api':
+        errors.append("--render-js requires --proxy web_scraper_api")
+
+    # Validate limit range
+    if args.limit is not None and args.limit < 1:
+        errors.append("--limit must be a positive integer")
+
+    # Validate exclude requires --all
+    if args.exclude and not args.all:
+        errors.append("--exclude can only be used with --all")
+
+    return errors
+
+
 def main():
     """Main entry point"""
     parser = setup_parser()
@@ -398,6 +518,22 @@ def main():
         retailers = [args.retailer] if args.retailer else None
         show_status(retailers)
         return 0
+
+    # Validate configuration on startup (#67)
+    config_errors = validate_config_on_startup()
+    if config_errors:
+        print("Configuration errors found:")
+        for error in config_errors:
+            print(f"  - {error}")
+        return 1
+
+    # Validate CLI options (#106)
+    cli_errors = validate_cli_options(args)
+    if cli_errors:
+        print("Invalid command line options:")
+        for error in cli_errors:
+            print(f"  - {error}")
+        return 1
 
     # Initialize proxy client if specified via CLI
     if args.proxy:
@@ -475,8 +611,14 @@ def main():
     if args.incremental:
         logging.info("Incremental mode enabled")
 
-    # Get CLI proxy override
+    # Get CLI proxy override and settings (#52)
     cli_proxy_override = args.proxy if args.proxy else None
+    cli_proxy_settings = None
+    if cli_proxy_override:
+        cli_proxy_settings = {
+            'country_code': args.proxy_country,
+            'render_js': args.render_js,
+        }
 
     # Run scrapers
     try:
@@ -485,6 +627,7 @@ def main():
             result = asyncio.run(run_retailer_async(
                 retailers[0],
                 cli_proxy_override=cli_proxy_override,
+                cli_proxy_settings=cli_proxy_settings,
                 export_formats=export_formats,
                 resume=args.resume,
                 incremental=args.incremental,
@@ -498,6 +641,7 @@ def main():
             results = asyncio.run(run_all_retailers(
                 retailers,
                 cli_proxy_override=cli_proxy_override,
+                cli_proxy_settings=cli_proxy_settings,
                 export_formats=export_formats,
                 resume=args.resume,
                 incremental=args.incremental,

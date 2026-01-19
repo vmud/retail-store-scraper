@@ -50,7 +50,15 @@
       "Bash(__NEW_LINE_0685ae918b7c1284__ In development, Vite serves files directly. This route allows)",
       "Bash(Flask to serve source files when running without Vite dev server.)",
       "Bash(gh issue close:*)",
-      "Bash(gh issue edit:*)"
+      "Bash(gh issue edit:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(git status:*)",
+      "Bash(python run.py:*)",
+      "Bash(lsof:*)",
+      "mcp__kapture__dom",
+      "Bash(kill:*)",
+      "Bash(python -c:*)"
     ]
   }
 }

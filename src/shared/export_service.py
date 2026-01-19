@@ -41,6 +41,47 @@ class ExportFormat(Enum):
         raise ValueError(f"Unknown export format: {value}")
 
 
+# Characters that can trigger formula injection in spreadsheet applications
+CSV_INJECTION_CHARS = ('=', '+', '-', '@', '\t', '\r', '\n')
+
+
+def sanitize_csv_value(value: Any) -> Any:
+    """Sanitize a value for CSV export to prevent formula injection (#73).
+
+    Spreadsheet applications like Excel interpret cells starting with
+    =, +, -, @, tab, or carriage return as formulas. This can be exploited
+    for CSV injection attacks.
+
+    The mitigation is to prefix potentially dangerous values with a single quote,
+    which Excel treats as a text prefix.
+
+    Args:
+        value: The value to sanitize
+
+    Returns:
+        The sanitized value (string prefixed with quote if dangerous, else unchanged)
+    """
+    if value is None:
+        return value
+    if not isinstance(value, str):
+        return value
+    if value and value[0] in CSV_INJECTION_CHARS:
+        return f"'{value}"
+    return value
+
+
+def sanitize_store_for_csv(store: Dict[str, Any]) -> Dict[str, Any]:
+    """Sanitize all string values in a store dict for CSV export.
+
+    Args:
+        store: Store dictionary
+
+    Returns:
+        New dictionary with sanitized values
+    """
+    return {key: sanitize_csv_value(value) for key, value in store.items()}
+
+
 class ExportService:
     """Service for exporting store data to various formats."""
 
@@ -129,11 +170,13 @@ class ExportService:
         path: Path,
         fieldnames: List[str]
     ) -> None:
-        """Save stores to CSV file."""
+        """Save stores to CSV file with formula injection protection (#73)."""
+        # Sanitize stores to prevent CSV injection
+        sanitized_stores = [sanitize_store_for_csv(store) for store in stores]
         with open(path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
             writer.writeheader()
-            writer.writerows(stores)
+            writer.writerows(sanitized_stores)
 
     @staticmethod
     def _save_excel(
@@ -397,7 +440,7 @@ class ExportService:
         fieldnames: Optional[List[str]] = None
     ) -> str:
         """
-        Generate CSV content as a string.
+        Generate CSV content as a string with formula injection protection (#73).
 
         Args:
             stores: List of store dictionaries
@@ -411,10 +454,13 @@ class ExportService:
         elif fieldnames is None:
             fieldnames = ExportService.DEFAULT_FIELDS
 
+        # Sanitize stores to prevent CSV injection
+        sanitized_stores = [sanitize_store_for_csv(store) for store in stores]
+
         output = StringIO()
         writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
-        writer.writerows(stores)
+        writer.writerows(sanitized_stores)
         return output.getvalue()
 
 

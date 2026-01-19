@@ -372,34 +372,39 @@ def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any
 def get_retailer_proxy_config(
     retailer: str,
     yaml_path: str = "config/retailers.yaml",
-    cli_override: Optional[str] = None
+    cli_override: Optional[str] = None,
+    cli_settings: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Get proxy configuration for specific retailer with priority resolution.
-    
+
     Priority (highest to lowest):
-    1. CLI override (--proxy flag)
+    1. CLI override (--proxy flag and related options)
     2. Retailer-specific config in YAML
     3. Global proxy section in YAML
     4. Environment variables (PROXY_MODE)
     5. Default: direct mode
-    
+
     Args:
         retailer: Retailer name
         yaml_path: Path to retailers.yaml file
         cli_override: CLI proxy mode override (from --proxy flag)
-    
+        cli_settings: Additional CLI proxy settings (country_code, render_js, etc.)
+
     Returns:
         Dict compatible with ProxyConfig.from_dict()
     """
     VALID_MODES = {'direct', 'residential', 'web_scraper_api'}
-    
+    cli_settings = cli_settings or {}
+
     if cli_override:
         if cli_override not in VALID_MODES:
             logging.warning(f"[{retailer}] Invalid CLI proxy mode '{cli_override}', falling back to direct")
             return _build_proxy_config_dict(mode='direct')
         logging.info(f"[{retailer}] Using CLI override proxy mode: {cli_override}")
-        return _build_proxy_config_dict(mode=cli_override)
+        # Include all CLI settings in the config (#52)
+        config = _build_proxy_config_dict(mode=cli_override, **cli_settings)
+        return config
     
     try:
         with open(yaml_path, 'r', encoding='utf-8') as f:
@@ -450,15 +455,17 @@ def get_retailer_proxy_config(
 
 def load_retailer_config(
     retailer: str,
-    cli_proxy_override: Optional[str] = None
+    cli_proxy_override: Optional[str] = None,
+    cli_proxy_settings: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Load full retailer configuration including proxy settings.
-    
+
     Args:
         retailer: Retailer name
-        cli_proxy_override: Optional CLI proxy mode override
-    
+        cli_proxy_override: Optional CLI proxy mode override (--proxy flag)
+        cli_proxy_settings: Optional CLI proxy settings (country_code, render_js, etc.)
+
     Returns:
         Dict with retailer config including 'proxy' key
     """
@@ -467,19 +474,27 @@ def load_retailer_config(
             config = yaml.safe_load(f)
     except FileNotFoundError:
         logging.error(f"[{retailer}] Config file config/retailers.yaml not found")
-        return {'proxy': {'mode': 'direct'}}
+        return {'proxy': {'mode': 'direct'}, 'name': retailer}
     except Exception as e:
         logging.error(f"[{retailer}] Error loading config: {e}")
-        return {'proxy': {'mode': 'direct'}}
-    
+        return {'proxy': {'mode': 'direct'}, 'name': retailer}
+
     # Handle empty YAML files (safe_load returns None)
     config = config or {}
-    
+
     retailer_config = config.get('retailers', {}).get(retailer, {})
-    
-    proxy_config = get_retailer_proxy_config(retailer, cli_override=cli_proxy_override)
+
+    # Add retailer name to config for logging purposes (#117)
+    retailer_config['name'] = retailer
+
+    # Get proxy config with CLI overrides (#52)
+    proxy_config = get_retailer_proxy_config(
+        retailer,
+        cli_override=cli_proxy_override,
+        cli_settings=cli_proxy_settings
+    )
     retailer_config['proxy'] = proxy_config
-    
+
     return retailer_config
 
 
@@ -699,6 +714,10 @@ class ProxiedSession:
     ProxyClient under the hood. This allows existing scrapers to work
     with minimal changes.
 
+    Each ProxiedSession owns its own ProxyClient instance to avoid
+    shared state issues when running multiple scrapers concurrently
+    with different proxy configurations.
+
     Usage:
         # Instead of: session = requests.Session()
         session = ProxiedSession(proxy_config)
@@ -707,12 +726,20 @@ class ProxiedSession:
 
     def __init__(self, proxy_config: Optional[Dict[str, Any]] = None):
         """
-        Initialize proxied session.
+        Initialize proxied session with its own dedicated ProxyClient.
 
         Args:
             proxy_config: Optional proxy configuration dict
         """
-        self._client = get_proxy_client(proxy_config)
+        # Create a dedicated ProxyClient instance for this session
+        # instead of sharing from the global cache to avoid concurrent
+        # scraper configurations interfering with each other (#53)
+        if proxy_config:
+            config = ProxyConfig.from_dict(proxy_config)
+        else:
+            config = ProxyConfig.from_env()
+        self._client = ProxyClient(config)
+        self._owns_client = True  # Track that we own this client for cleanup
         self._direct_session: Optional[requests.Session] = None
         self.headers: Dict[str, str] = get_headers()
 
@@ -763,10 +790,17 @@ class ProxiedSession:
             return self._client.get(url, params=params, headers=merged_headers, timeout=timeout)
 
     def close(self) -> None:
-        """Close the session"""
+        """Close the session and its owned resources"""
         if self._direct_session:
             self._direct_session.close()
             self._direct_session = None
+        # Close the dedicated client if we own it (#53)
+        if self._owns_client and self._client:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+            self._client = None
 
     def __enter__(self) -> "ProxiedSession":
         return self
