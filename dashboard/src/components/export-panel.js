@@ -38,7 +38,11 @@ function getRetailersWithData() {
   const retailers = state.retailers || {};
 
   return Object.entries(retailers)
-    .filter(([_, data]) => data.total_stores > 0)
+    .filter(([_, data]) => {
+      // Check if retailer has any phases with discovered stores (total > 0)
+      const phases = data.phases || [];
+      return phases.some(phase => phase.total > 0);
+    })
     .map(([id]) => id);
 }
 
