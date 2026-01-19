@@ -27,11 +27,10 @@ from src.shared.utils import (
     setup_logging,
     load_retailer_config,
     create_proxied_session,
-    save_to_json,
-    save_to_csv,
     close_all_proxy_clients
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
+from src.shared.export_service import ExportService, ExportFormat, parse_format_list
 from src.scrapers import get_available_retailers, get_scraper_module
 
 
@@ -120,6 +119,15 @@ def setup_parser() -> argparse.ArgumentParser:
         help='Proxy country code for geo-targeting (default: us)'
     )
 
+    # Export options
+    export_group = parser.add_argument_group('export options', 'Output format selection')
+    export_group.add_argument(
+        '--format', '-f',
+        type=str,
+        default='json,csv',
+        help='Export formats (comma-separated): json,csv,excel,geojson (default: json,csv)'
+    )
+
     # Logging
     parser.add_argument(
         '--log-file',
@@ -200,56 +208,71 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
     print("\n" + "=" * 60)
 
 
-async def run_retailer_async(retailer: str, cli_proxy_override: Optional[str] = None, **kwargs) -> dict:
+async def run_retailer_async(
+    retailer: str,
+    cli_proxy_override: Optional[str] = None,
+    export_formats: Optional[List[ExportFormat]] = None,
+    **kwargs
+) -> dict:
     """Run a single retailer scraper asynchronously
 
     Note: Currently wraps synchronous scrapers. Will be updated
     when scrapers are converted to async.
-    
+
     Args:
         retailer: Retailer name
         cli_proxy_override: Optional CLI proxy mode override from --proxy flag
+        export_formats: List of formats to export (default: JSON, CSV)
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
     logging.info(f"[{retailer}] Starting scraper")
 
+    # Default to JSON and CSV if no formats specified
+    if export_formats is None:
+        export_formats = [ExportFormat.JSON, ExportFormat.CSV]
+
     try:
         retailer_config = load_retailer_config(retailer, cli_proxy_override)
-        
+
         session = create_proxied_session(retailer_config)
-        
+
         scraper_module = get_scraper_module(retailer)
 
         # Call scraper entry point
         logging.info(f"[{retailer}] Calling scraper run() function")
         scraper_result = scraper_module.run(session, retailer_config, retailer=retailer, **kwargs)
-        
+
         # Extract data from scraper result
         stores = scraper_result.get('stores', [])
         count = scraper_result.get('count', 0)
         checkpoints_used = scraper_result.get('checkpoints_used', False)
-        
+
         logging.info(f"[{retailer}] Scraper completed: {count} stores")
         if checkpoints_used:
             logging.info(f"[{retailer}] Resumed from checkpoint")
-        
-        # Save outputs
+
+        # Export to all requested formats
         output_dir = f"data/{retailer}/output"
-        json_path = f"{output_dir}/stores_latest.json"
-        csv_path = f"{output_dir}/stores_latest.csv"
-        
-        save_to_json(stores, json_path)
-        logging.info(f"[{retailer}] Saved JSON to {json_path}")
-        
-        # Get fieldnames from config or use None (will use all keys)
-        fieldnames = retailer_config.get('output_fields')
-        save_to_csv(stores, csv_path, fieldnames=fieldnames)
-        logging.info(f"[{retailer}] Saved CSV to {csv_path}")
+        format_extensions = {
+            ExportFormat.JSON: 'json',
+            ExportFormat.CSV: 'csv',
+            ExportFormat.EXCEL: 'xlsx',
+            ExportFormat.GEOJSON: 'geojson'
+        }
+
+        for fmt in export_formats:
+            try:
+                ext = format_extensions.get(fmt, fmt.value)
+                output_path = f"{output_dir}/stores_latest.{ext}"
+                ExportService.export_stores(stores, fmt, output_path, retailer_config)
+            except Exception as export_err:
+                logging.warning(f"[{retailer}] Failed to export {fmt.value}: {export_err}")
 
         result = {
             'retailer': retailer,
             'status': 'completed',
             'stores': count,
+            'formats': [f.value for f in export_formats],
             'error': None
         }
 
@@ -266,18 +289,29 @@ async def run_retailer_async(retailer: str, cli_proxy_override: Optional[str] = 
         }
 
 
-async def run_all_retailers(retailers: List[str], cli_proxy_override: Optional[str] = None, **kwargs) -> dict:
+async def run_all_retailers(
+    retailers: List[str],
+    cli_proxy_override: Optional[str] = None,
+    export_formats: Optional[List[ExportFormat]] = None,
+    **kwargs
+) -> dict:
     """Run multiple retailers concurrently
-    
+
     Args:
         retailers: List of retailer names to run
         cli_proxy_override: Optional CLI proxy mode override from --proxy flag
+        export_formats: List of formats to export
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
     logging.info(f"Starting concurrent scrape for {len(retailers)} retailers: {retailers}")
 
     tasks = [
-        run_retailer_async(retailer, cli_proxy_override=cli_proxy_override, **kwargs)
+        run_retailer_async(
+            retailer,
+            cli_proxy_override=cli_proxy_override,
+            export_formats=export_formats,
+            **kwargs
+        )
         for retailer in retailers
     ]
 
@@ -374,7 +408,14 @@ def main():
     if args.test and limit is None:
         limit = 10
 
+    # Parse export formats
+    export_formats = parse_format_list(args.format)
+    if not export_formats:
+        print(f"No valid export formats specified. Valid formats: json, csv, excel, geojson")
+        return 1
+
     logging.info(f"Running scrapers for: {retailers}")
+    logging.info(f"Export formats: {', '.join(f.value for f in export_formats)}")
     if limit:
         logging.info(f"Limit: {limit} stores per retailer")
     if args.resume:
@@ -384,7 +425,7 @@ def main():
 
     # Get CLI proxy override
     cli_proxy_override = args.proxy if args.proxy else None
-    
+
     # Run scrapers
     try:
         if len(retailers) == 1:
@@ -392,16 +433,20 @@ def main():
             result = asyncio.run(run_retailer_async(
                 retailers[0],
                 cli_proxy_override=cli_proxy_override,
+                export_formats=export_formats,
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit
             ))
             print(f"\nResult for {retailers[0]}: {result['status']}")
+            if result.get('formats'):
+                print(f"  Exported: {', '.join(result['formats'])}")
         else:
             # Multiple retailers - run concurrently
             results = asyncio.run(run_all_retailers(
                 retailers,
                 cli_proxy_override=cli_proxy_override,
+                export_formats=export_formats,
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit

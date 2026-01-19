@@ -139,6 +139,40 @@ class TestAPIEndpoints:
         response = client.get('/api/logs/verizon/../../../etc/passwd')
         assert response.status_code == 404
 
+    def test_api_logs_path_traversal_url_encoded(self, client):
+        """Test that URL-encoded path traversal is blocked"""
+        # %2e = '.', %2f = '/'
+        response = client.get('/api/logs/verizon/%2e%2e%2f%2e%2e%2fetc%2fpasswd')
+        assert response.status_code == 404
+
+    def test_api_logs_path_traversal_double_encoded(self, client):
+        """Test that double-encoded path traversal is blocked"""
+        # %252e = '%2e' which decodes to '.'
+        response = client.get('/api/logs/verizon/%252e%252e%252f%252e%252e%252fetc%252fpasswd')
+        # Either 400 (bad request) or 404 (not found) is acceptable
+        assert response.status_code in [400, 404]
+
+    def test_api_logs_path_traversal_windows_separators(self, client):
+        """Test that Windows-style path traversal is blocked"""
+        response = client.get('/api/logs/verizon/..\\..\\..\\windows\\system32')
+        # Either 400 (bad request) or 404 (not found) is acceptable
+        assert response.status_code in [400, 404]
+
+    def test_api_logs_run_id_path_traversal(self, client):
+        """Test that run_id parameter path traversal is blocked"""
+        response = client.get('/api/logs/verizon/../../etc/passwd')
+        assert response.status_code == 404
+
+    def test_api_export_path_traversal_blocked(self, client):
+        """Test that export endpoint blocks path traversal"""
+        response = client.get('/api/export/../../../etc/passwd/json')
+        assert response.status_code == 404
+
+    def test_api_runs_path_traversal_blocked(self, client):
+        """Test that runs endpoint blocks path traversal in retailer"""
+        response = client.get('/api/runs/../../../etc/passwd')
+        assert response.status_code == 404
+
     def test_dashboard_index_returns_200(self, client):
         """Test that main dashboard page loads"""
         response = client.get('/')
@@ -175,3 +209,156 @@ class TestAPIEndpoints:
         expected = ['verizon', 'att', 'target', 'tmobile', 'walmart', 'bestbuy']
         for retailer in expected:
             assert retailer in retailers
+
+    # Export API tests
+
+    def test_api_export_formats_returns_200(self, client):
+        """Test that /api/export/formats returns 200 OK"""
+        response = client.get('/api/export/formats')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert 'formats' in data
+        assert isinstance(data['formats'], list)
+
+    def test_api_export_formats_contains_expected_formats(self, client):
+        """Test that export formats include all expected formats"""
+        response = client.get('/api/export/formats')
+        data = response.get_json()
+        format_ids = [f['id'] for f in data['formats']]
+        expected = ['json', 'csv', 'excel', 'geojson']
+        for fmt in expected:
+            assert fmt in format_ids
+
+    def test_api_export_invalid_retailer_returns_404(self, client):
+        """Test that export with invalid retailer returns 404"""
+        response = client.get('/api/export/invalid_retailer/json')
+        assert response.status_code == 404
+        data = response.get_json()
+        assert 'error' in data
+
+    def test_api_export_invalid_format_returns_400(self, client):
+        """Test that export with invalid format returns 400"""
+        response = client.get('/api/export/verizon/invalid_format')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+
+    def test_api_export_multi_without_retailers_returns_400(self, client):
+        """Test that multi export without retailers param returns 400"""
+        response = client.post('/api/export/multi',
+                              json={},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+
+    def test_api_export_multi_invalid_format_returns_400(self, client):
+        """Test that multi export with invalid format returns 400"""
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['verizon'], 'format': 'invalid'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+
+    def test_api_export_multi_no_data_returns_404(self, client):
+        """Test that multi export with no data returns 404"""
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['verizon', 'att'], 'format': 'json'},
+                              content_type='application/json')
+        # May return 404 if no stores data exists for these retailers
+        assert response.status_code in [200, 404]
+
+    def test_api_export_multi_all_empty_stores_returns_404(self, client, tmp_path, monkeypatch):
+        """Test that multi export with all retailers having empty stores returns 404"""
+        import json
+        from pathlib import Path
+        
+        # Create temporary data directory with empty store files
+        data_dir = tmp_path / "data"
+        verizon_dir = data_dir / "verizon" / "output"
+        att_dir = data_dir / "att" / "output"
+        verizon_dir.mkdir(parents=True)
+        att_dir.mkdir(parents=True)
+        
+        # Create empty stores files
+        (verizon_dir / "stores_latest.json").write_text("[]")
+        (att_dir / "stores_latest.json").write_text("[]")
+        
+        # Mock Path to point to our temp directory
+        def mock_path(path_str):
+            if path_str.startswith("data/"):
+                return tmp_path / path_str
+            return Path(path_str)
+        
+        monkeypatch.setattr("dashboard.app.Path", mock_path)
+        
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['verizon', 'att'], 'format': 'excel'},
+                              content_type='application/json')
+        assert response.status_code == 404
+        data = response.get_json()
+        assert 'error' in data
+        assert 'empty' in data['error'].lower()
+
+    def test_api_export_multi_non_string_retailers_returns_400(self, client):
+        """Test that multi export with non-string retailer values returns 400 Bad Request"""
+        # Test with dict in retailers list
+        response = client.post('/api/export/multi',
+                              json={'retailers': [{'evil': True}], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'string' in data['error'].lower() or 'invalid' in data['error'].lower()
+        
+        # Test with list in retailers list
+        response = client.post('/api/export/multi',
+                              json={'retailers': [['nested', 'list']], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        
+        # Test with number in retailers list
+        response = client.post('/api/export/multi',
+                              json={'retailers': [123], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        
+        # Test with mixed types
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['verizon', {'evil': True}, 'att'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+
+    def test_api_export_multi_invalid_retailer_format_returns_400(self, client):
+        """Test that multi export with invalid retailer name format returns 400"""
+        # Test with uppercase
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['Verizon'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'format' in data['error'].lower()
+        
+        # Test with special characters
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['../etc/passwd'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        
+        # Test starting with number
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['123retailer'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data

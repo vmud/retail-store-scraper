@@ -4,6 +4,43 @@
 
 const BASE_URL = '/api';
 
+// CSRF token storage
+let csrfToken = null;
+
+/**
+ * Fetch CSRF token from server
+ * @returns {Promise<string>} CSRF token
+ */
+async function fetchCsrfToken() {
+  if (csrfToken) {
+    return csrfToken;
+  }
+
+  try {
+    const response = await fetch(`${BASE_URL}/csrf-token`);
+    if (response.ok) {
+      const data = await response.json();
+      csrfToken = data.csrf_token;
+      return csrfToken;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch CSRF token:', error);
+  }
+  return null;
+}
+
+/**
+ * Get CSRF headers for POST requests
+ * @returns {Promise<object>} Headers object with CSRF token
+ */
+async function getCsrfHeaders() {
+  const token = await fetchCsrfToken();
+  if (token) {
+    return { 'X-CSRFToken': token };
+  }
+  return {};
+}
+
 /**
  * Make an API request
  * @param {string} endpoint - API endpoint path
@@ -13,9 +50,16 @@ const BASE_URL = '/api';
 async function request(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
 
+  // Add CSRF headers for non-GET requests
+  let csrfHeaders = {};
+  if (options.method && options.method !== 'GET') {
+    csrfHeaders = await getCsrfHeaders();
+  }
+
   const config = {
     headers: {
       'Content-Type': 'application/json',
+      ...csrfHeaders,
       ...options.headers
     },
     ...options
@@ -195,6 +239,100 @@ export function updateConfig(content) {
 }
 
 // ============================================
+// Export APIs
+// ============================================
+
+/**
+ * Get list of available export formats
+ * @returns {Promise<object>} Formats list
+ */
+export function getExportFormats() {
+  return get('/export/formats');
+}
+
+/**
+ * Export retailer data in specified format
+ * Downloads the file directly in the browser
+ * @param {string} retailer - Retailer ID
+ * @param {string} format - Export format (json|csv|excel|geojson)
+ * @returns {Promise<void>}
+ */
+export async function exportRetailer(retailer, format) {
+  const url = `${BASE_URL}/export/${retailer}/${format}`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Export failed: ${response.statusText}`);
+  }
+
+  // Get filename from Content-Disposition header or generate one
+  const contentDisposition = response.headers.get('Content-Disposition');
+  let filename = `${retailer}_stores.${format === 'excel' ? 'xlsx' : format}`;
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+    if (match) filename = match[1];
+  }
+
+  // Download the file
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(downloadUrl);
+}
+
+/**
+ * Export multiple retailers combined
+ * @param {Array<string>} retailers - Retailer IDs
+ * @param {string} format - Export format
+ * @param {boolean} combine - Combine into single file
+ * @returns {Promise<void>}
+ */
+export async function exportMulti(retailers, format, combine = true) {
+  const url = `${BASE_URL}/export/multi`;
+  const csrfHeaders = await getCsrfHeaders();
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...csrfHeaders
+    },
+    body: JSON.stringify({ retailers, format, combine })
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Export failed: ${response.statusText}`);
+  }
+
+  // Get filename from Content-Disposition header or generate one
+  const contentDisposition = response.headers.get('Content-Disposition');
+  let filename = `stores_combined.${format === 'excel' ? 'xlsx' : format}`;
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+    if (match) filename = match[1];
+  }
+
+  // Download the file
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(downloadUrl);
+}
+
+// ============================================
 // Export API object
 // ============================================
 
@@ -207,5 +345,8 @@ export default {
   getRunHistory,
   getLogs,
   getConfig,
-  updateConfig
+  updateConfig,
+  getExportFormats,
+  exportRetailer,
+  exportMulti
 };

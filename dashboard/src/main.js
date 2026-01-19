@@ -12,6 +12,7 @@ import header from './components/header.js';
 import metrics from './components/metrics.js';
 import retailerCard from './components/retailer-card.js';
 import changePanel from './components/change-panel.js';
+import exportPanel from './components/export-panel.js';
 import modal from './components/modal.js';
 import toast from './components/toast.js';
 
@@ -122,6 +123,7 @@ function init() {
   metrics.init();
   retailerCard.init();
   changePanel.init();
+  exportPanel.init();
   modal.init();
   keyboard.init();
 
@@ -167,6 +169,7 @@ function destroy() {
   metrics.destroy();
   retailerCard.destroy();
   changePanel.destroy();
+  exportPanel.destroy();
   modal.destroy();
   toast.destroy();
   keyboard.destroy();

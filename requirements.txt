@@ -10,6 +10,10 @@ aiofiles>=23.2.0
 
 # Dashboard
 flask>=3.0.0
+flask-wtf>=1.2.0  # CSRF protection
+
+# Export formats
+openpyxl>=3.1.0  # Excel export support
 
 # Configuration
 pyyaml>=6.0.0

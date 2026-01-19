@@ -102,7 +102,7 @@ class ChangeDetector:
 
         # Sort keys for consistent hashing
         json_str = json.dumps(data, sort_keys=True)
-        return hashlib.md5(json_str.encode()).hexdigest()
+        return hashlib.sha256(json_str.encode()).hexdigest()
 
     def load_previous_data(self) -> Optional[List[Dict[str, Any]]]:
         """Load previous run's store data"""

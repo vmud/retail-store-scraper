@@ -1,5 +1,6 @@
 """Core scraping functions for Best Buy Store Locator"""
 
+import hashlib
 import json
 import logging
 import random
@@ -13,21 +14,7 @@ import requests
 
 from config import bestbuy_config
 from src.shared import utils
-
-
-class RequestCounter:
-    """Track request count for pause logic"""
-    def __init__(self):
-        self.count = 0
-
-    def increment(self) -> int:
-        """Increment counter and return current count"""
-        self.count += 1
-        return self.count
-
-    def reset(self) -> None:
-        """Reset counter"""
-        self.count = 0
+from src.shared.request_counter import RequestCounter
 
 
 # Global request counter
@@ -398,8 +385,8 @@ def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
             if store_id_match:
                 store_id = store_id_match.group(1)
             else:
-                # Generate a hash-based ID from URL for tracking
-                store_id = str(abs(hash(url)) % 1000000)
+                # Generate a stable hash-based ID from URL for tracking
+                store_id = hashlib.md5(url.encode()).hexdigest()[:6]
 
             stores.append({
                 "store_id": store_id,
@@ -493,8 +480,8 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
         if store_id_match:
             store_id = store_id_match.group(1)
         else:
-            # Try to extract from JSON-LD or use hash
-            store_id = data.get('locationId') or data.get('branchCode') or str(abs(hash(url)) % 1000000)
+            # Try to extract from JSON-LD or use stable hash
+            store_id = data.get('locationId') or data.get('branchCode') or hashlib.md5(url.encode()).hexdigest()[:6]
 
         # Extract address components
         address = data.get('address', {})
@@ -565,7 +552,7 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
                             service_codes = store_js_data.get('serviceCodes', [])
                         if 'hours' in store_js_data:
                             hours = store_js_data.get('hours', [])
-                except:
+                except (json.JSONDecodeError, KeyError, AttributeError, ValueError, TypeError):
                     pass
 
         # Check for pickup/curbside indicators in HTML
@@ -610,79 +597,6 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
 
     except Exception as e:
         logging.warning(f"Error extracting store data from {url}: {e}")
-        return None
-
-
-def _parse_store_data_legacy(store_data: Dict[str, Any], store_id: str, url: str = None) -> Optional[BestBuyStore]:
-    """Parse API response data to BestBuyStore object.
-
-    Args:
-        store_data: Store data dictionary from API response
-        store_id: Store ID string
-
-    Returns:
-        BestBuyStore object if successful, None otherwise
-    """
-    try:
-        # Extract address
-        street_address = store_data.get('addr1', '')
-        city = store_data.get('city', '')
-        state = store_data.get('state', '')
-        zip_code = store_data.get('zipCode', '')
-
-        # Extract location
-        latitude = store_data.get('latitude', '')
-        longitude = store_data.get('longitude', '')
-
-        # Convert coordinates to strings
-        if latitude:
-            latitude = str(latitude)
-        if longitude:
-            longitude = str(longitude)
-
-        # Extract services and service codes
-        services = store_data.get('services', [])
-        service_codes = store_data.get('serviceCodes', [])
-
-        # Extract hours
-        hours = store_data.get('hours', [])
-
-        # Extract boolean flags
-        has_pickup = store_data.get('hasPickup', False)
-        curbside_enabled = store_data.get('curbsideEnabled', False)
-
-        # Use the actual URL if provided, otherwise construct from store_id
-        # This preserves the full URL path which may differ from store_id.html pattern
-        store_url = url if url else f"https://stores.bestbuy.com/{store_id}.html"
-
-        # Create BestBuyStore object
-        store = BestBuyStore(
-            store_id=store_id,
-            name=store_data.get('name', ''),
-            status=store_data.get('status', ''),
-            store_type=store_data.get('storeType', ''),
-            display_name=store_data.get('displayName', ''),
-            street_address=street_address,
-            city=city,
-            state=state,
-            zip=zip_code,
-            country='US',  # Default to US as all Best Buy stores are in US
-            latitude=latitude,
-            longitude=longitude,
-            phone=store_data.get('phone', ''),
-            services=services if services else None,
-            service_codes=service_codes if service_codes else None,
-            hours=hours if hours else None,
-            has_pickup=bool(has_pickup),
-            curbside_enabled=bool(curbside_enabled),
-            url=store_url,
-            scraped_at=datetime.now().isoformat()
-        )
-
-        return store
-
-    except Exception as e:
-        logging.warning(f"Error parsing store data for store_id={store_id}: {e}")
         return None
 
 

@@ -14,6 +14,7 @@ def app():
     """Flask application fixture"""
     flask_app.config.update({
         'TESTING': True,
+        'WTF_CSRF_ENABLED': False,  # Disable CSRF for testing
     })
     return flask_app
 
