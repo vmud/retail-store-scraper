@@ -1,5 +1,6 @@
 """Core scraping functions for Best Buy Store Locator"""
 
+import hashlib
 import json
 import logging
 import random
@@ -398,8 +399,8 @@ def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
             if store_id_match:
                 store_id = store_id_match.group(1)
             else:
-                # Generate a hash-based ID from URL for tracking
-                store_id = str(abs(hash(url)) % 1000000)
+                # Generate a stable hash-based ID from URL for tracking
+                store_id = hashlib.md5(url.encode()).hexdigest()[:6]
 
             stores.append({
                 "store_id": store_id,
@@ -493,8 +494,8 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
         if store_id_match:
             store_id = store_id_match.group(1)
         else:
-            # Try to extract from JSON-LD or use hash
-            store_id = data.get('locationId') or data.get('branchCode') or str(abs(hash(url)) % 1000000)
+            # Try to extract from JSON-LD or use stable hash
+            store_id = data.get('locationId') or data.get('branchCode') or hashlib.md5(url.encode()).hexdigest()[:6]
 
         # Extract address components
         address = data.get('address', {})
@@ -565,7 +566,7 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
                             service_codes = store_js_data.get('serviceCodes', [])
                         if 'hours' in store_js_data:
                             hours = store_js_data.get('hours', [])
-                except:
+                except (json.JSONDecodeError, KeyError, AttributeError, ValueError, TypeError):
                     pass
 
         # Check for pickup/curbside indicators in HTML
