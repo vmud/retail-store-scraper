@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from typing import List, Optional
+from bs4 import BeautifulSoup
 import requests
 
 from config import walmart_config
@@ -57,8 +58,10 @@ class WalmartStore:
             result['longitude'] = ''
         else:
             result['longitude'] = str(result['longitude'])
+        # Convert boolean fields to strings for CSV compatibility
         if result.get('is_glass_eligible') is None:
             result['is_glass_eligible'] = False
+        result['is_glass_eligible'] = 'True' if result['is_glass_eligible'] else 'False'
         return result
 
 
@@ -96,8 +99,13 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
         _check_pause_logic()
 
         try:
-            # Decompress gzipped content
-            xml_content = gzip.decompress(response.content).decode('utf-8')
+            # Try to decompress gzipped content, fall back to plain text if not gzipped
+            try:
+                xml_content = gzip.decompress(response.content).decode('utf-8')
+            except gzip.BadGzipFile:
+                # Content is not gzipped, try as plain text
+                logging.debug(f"Content from {sitemap_url} is not gzipped, using plain text")
+                xml_content = response.content.decode('utf-8')
 
             # Parse XML
             root = ET.fromstring(xml_content)
@@ -112,10 +120,6 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
 
             all_store_urls.extend(sitemap_urls)
             logging.info(f"Found {len(sitemap_urls)} store URLs from {sitemap_url}")
-
-        except gzip.BadGzipFile as e:
-            logging.error(f"Failed to decompress gzip sitemap {sitemap_url}: {e}")
-            continue
         except ET.ParseError as e:
             logging.error(f"Failed to parse XML sitemap {sitemap_url}: {e}")
             continue
@@ -148,21 +152,20 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[Walma
     _check_pause_logic()
 
     try:
-        # Find __NEXT_DATA__ script tag using regex
-        match = re.search(
-            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
-            response.text,
-            re.DOTALL
-        )
+        # Use BeautifulSoup to extract __NEXT_DATA__ script tag
+        # This is more robust than regex as it properly handles embedded scripts
+        # that might contain </script> within JSON string values
+        soup = BeautifulSoup(response.text, 'html.parser')
+        script_tag = soup.find('script', id='__NEXT_DATA__', type='application/json')
 
-        if not match:
+        if not script_tag or not script_tag.string:
             logging.warning(f"No __NEXT_DATA__ script tag found for {url}")
             logging.warning("Walmart requires JavaScript rendering. Enable proxy with render_js=true in config/retailers.yaml")
             return None
 
         # Parse JSON from script tag
         try:
-            data = json.loads(match.group(1))
+            data = json.loads(script_tag.string)
         except json.JSONDecodeError as e:
             logging.warning(f"Failed to parse JSON from __NEXT_DATA__ for {url}: {e}")
             return None

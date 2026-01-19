@@ -13,6 +13,8 @@ Usage:
 
 import argparse
 import asyncio
+import concurrent.futures
+import functools
 import logging
 import sys
 import os
@@ -32,6 +34,7 @@ from src.shared.utils import (
 from src.shared import init_proxy_from_yaml, get_proxy_client
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
 from src.scrapers import get_available_retailers, get_scraper_module
+from src.change_detector import ChangeDetector
 
 
 def setup_parser() -> argparse.ArgumentParser:
@@ -208,6 +211,20 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
     print("\n" + "=" * 60)
 
 
+# Thread pool executor for running synchronous scrapers without blocking the event loop
+_scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=6, thread_name_prefix='scraper')
+
+
+def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_module, **kwargs) -> dict:
+    """Synchronous wrapper that runs the scraper.
+
+    This function is designed to be called via run_in_executor()
+    so it doesn't block the async event loop.
+    """
+    logging.info(f"[{retailer}] Calling scraper run() function")
+    return scraper_module.run(session, retailer_config, retailer=retailer, **kwargs)
+
+
 async def run_retailer_async(
     retailer: str,
     cli_proxy_override: Optional[str] = None,
@@ -216,8 +233,8 @@ async def run_retailer_async(
 ) -> dict:
     """Run a single retailer scraper asynchronously
 
-    Note: Currently wraps synchronous scrapers. Will be updated
-    when scrapers are converted to async.
+    Uses ThreadPoolExecutor to run synchronous scrapers without
+    blocking the event loop, enabling true concurrent execution.
 
     Args:
         retailer: Retailer name
@@ -238,9 +255,20 @@ async def run_retailer_async(
 
         scraper_module = get_scraper_module(retailer)
 
-        # Call scraper entry point
-        logging.info(f"[{retailer}] Calling scraper run() function")
-        scraper_result = scraper_module.run(session, retailer_config, retailer=retailer, **kwargs)
+        # Run synchronous scraper in thread pool to avoid blocking the event loop
+        # This enables true concurrent execution when running multiple retailers
+        loop = asyncio.get_running_loop()
+        scraper_result = await loop.run_in_executor(
+            _scraper_executor,
+            functools.partial(
+                _run_scraper_sync,
+                retailer,
+                retailer_config,
+                session,
+                scraper_module,
+                **kwargs
+            )
+        )
 
         # Extract data from scraper result
         stores = scraper_result.get('stores', [])
@@ -250,6 +278,30 @@ async def run_retailer_async(
         logging.info(f"[{retailer}] Scraper completed: {count} stores")
         if checkpoints_used:
             logging.info(f"[{retailer}] Resumed from checkpoint")
+
+        # Run change detection if incremental mode is enabled
+        incremental = kwargs.get('incremental', False)
+        if incremental and stores:
+            logging.info(f"[{retailer}] Running change detection (incremental mode)")
+            try:
+                detector = ChangeDetector(retailer)
+                change_report = detector.detect_changes(stores)
+
+                if change_report.has_changes:
+                    logging.info(f"[{retailer}] {change_report.summary()}")
+                    # Save change report
+                    report_path = detector.save_change_report(change_report)
+                    logging.info(f"[{retailer}] Change report saved to {report_path}")
+                else:
+                    logging.info(f"[{retailer}] No changes detected")
+
+                # Save fingerprints for next run comparison
+                detector.save_fingerprints(stores)
+
+                # Rotate versions: stores_latest -> stores_previous
+                detector.save_version(stores)
+            except Exception as change_err:
+                logging.warning(f"[{retailer}] Change detection failed: {change_err}")
 
         # Export to all requested formats
         output_dir = f"data/{retailer}/output"
@@ -474,6 +526,8 @@ def main():
     finally:
         # Cleanup all proxy clients
         close_all_proxy_clients()
+        # Shutdown thread pool executor
+        _scraper_executor.shutdown(wait=False)
 
 
 if __name__ == '__main__':

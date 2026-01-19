@@ -272,7 +272,13 @@ async function updateDashboard() {
             );
         }
         
-        errorEl.innerHTML = `<strong>Error loading dashboard:</strong> ${error.message}`;
+        // SECURITY: Use textContent for error message to prevent XSS
+        // Build the error message safely without innerHTML
+        errorEl.textContent = '';
+        const strong = document.createElement('strong');
+        strong.textContent = 'Error loading dashboard:';
+        errorEl.appendChild(strong);
+        errorEl.appendChild(document.createTextNode(' ' + error.message));
         errorEl.style.display = 'block';
     }
 }
@@ -332,7 +338,8 @@ async function loadRunHistory(retailer) {
         const data = await response.json();
         
         if (data.error) {
-            listContainer.innerHTML = `<div class="run-history-empty">Error: ${data.error}</div>`;
+            // SECURITY: Escape error message to prevent XSS
+            listContainer.innerHTML = `<div class="run-history-empty">Error: ${escapeHtml(data.error)}</div>`;
             return;
         }
         
@@ -355,10 +362,10 @@ function createRunItem(retailer, run) {
     const startTime = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
     const endTime = run.completed_at ? new Date(run.completed_at).toLocaleString() : 'In progress';
     const stores = run.stats?.stores_scraped || 0;
-    
+
     let statusClass = '';
     let statusText = status;
-    
+
     if (status === 'complete') {
         statusClass = 'complete';
         statusText = 'Complete';
@@ -369,20 +376,29 @@ function createRunItem(retailer, run) {
         statusClass = 'running';
         statusText = 'Running';
     }
-    
+
+    // SECURITY: Escape retailer and runId for use in onclick handlers to prevent XSS
+    // These values come from server data and could potentially contain malicious content
+    const safeRetailer = escapeHtml(retailer).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const safeRunId = escapeHtml(runId).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const safeStatus = escapeHtml(status);
+    const safeStatusClass = escapeHtml(statusClass);
+    const safeStatusText = escapeHtml(statusText);
+    const safeRunIdDisplay = escapeHtml(runId);
+
     return `
-        <div class="run-item status-${status}">
+        <div class="run-item status-${safeStatus}">
             <div class="run-item-header">
-                <span class="run-id">${runId}</span>
-                <span class="run-status-badge ${statusClass}">${statusText}</span>
+                <span class="run-id">${safeRunIdDisplay}</span>
+                <span class="run-status-badge ${safeStatusClass}">${safeStatusText}</span>
             </div>
             <div class="run-item-details">
-                Started: ${startTime}<br>
-                ${run.completed_at ? `Ended: ${endTime}<br>` : ''}
+                Started: ${escapeHtml(startTime)}<br>
+                ${run.completed_at ? `Ended: ${escapeHtml(endTime)}<br>` : ''}
                 Stores: ${formatNumber(stores)}
             </div>
             <div class="run-item-actions">
-                <button class="btn-view-logs" onclick="openLogViewer('${retailer}', '${runId}')">
+                <button class="btn-view-logs" onclick="openLogViewer('${safeRetailer}', '${safeRunId}')">
                     View Logs
                 </button>
             </div>
@@ -424,7 +440,8 @@ async function loadLogs() {
         const data = await response.json();
         
         if (data.error) {
-            logContainer.innerHTML = `<div class="log-error">Error loading logs: ${data.error}</div>`;
+            // SECURITY: Escape error message to prevent XSS
+            logContainer.innerHTML = `<div class="log-error">Error loading logs: ${escapeHtml(data.error)}</div>`;
             return;
         }
         
@@ -439,7 +456,8 @@ async function loadLogs() {
         updateLogStats(parsedLines);
     } catch (error) {
         console.error('Error loading logs:', error);
-        logContainer.innerHTML = `<div class="log-error">Failed to load logs: ${error.message}</div>`;
+        // SECURITY: Escape error message to prevent XSS
+        logContainer.innerHTML = `<div class="log-error">Failed to load logs: ${escapeHtml(error.message)}</div>`;
     }
 }
 

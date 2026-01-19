@@ -2,27 +2,42 @@
 
 import logging
 import random
+import threading
 import time
 
 
 class RequestCounter:
-    """Track request count for pause logic"""
+    """Thread-safe request counter for tracking requests across scrapers.
+
+    Uses a threading lock to ensure atomic increment operations when
+    multiple scrapers run concurrently.
+    """
 
     def __init__(self):
-        self.count = 0
+        self._count = 0
+        self._lock = threading.Lock()
+
+    @property
+    def count(self) -> int:
+        """Get current count (thread-safe read)"""
+        with self._lock:
+            return self._count
 
     def increment(self) -> int:
-        """Increment counter and return current count"""
-        self.count += 1
-        return self.count
+        """Increment counter and return current count (thread-safe)"""
+        with self._lock:
+            self._count += 1
+            return self._count
 
     def reset(self) -> None:
-        """Reset counter"""
-        self.count = 0
+        """Reset counter (thread-safe)"""
+        with self._lock:
+            self._count = 0
 
     def get_count(self) -> int:
-        """Get current count without incrementing"""
-        return self.count
+        """Get current count without incrementing (thread-safe)"""
+        with self._lock:
+            return self._count
 
 
 def check_pause_logic(

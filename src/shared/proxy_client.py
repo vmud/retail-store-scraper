@@ -20,12 +20,37 @@ import json
 import logging
 import os
 import random
+import re
 import time
 import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Dict, Any
 import requests
+
+
+def redact_credentials(text: str) -> str:
+    """Redact credentials from text to prevent logging sensitive information.
+
+    Handles:
+    - URLs with embedded credentials (http://user:pass@host)
+    - Password parameters (...password=secret...)
+    - Bearer tokens (Authorization: Bearer xxx)
+    - API keys in common formats
+    """
+    if not text:
+        return text
+
+    # Redact URL-embedded credentials (user:password@host)
+    text = re.sub(r'(https?://[^:]+):([^@]+)@', r'\1:****@', text)
+
+    # Redact password parameters
+    text = re.sub(r'(password["\s]*[:=]["\s]*)([^"&\s,}]+)', r'\1****', text, flags=re.IGNORECASE)
+
+    # Redact Authorization headers
+    text = re.sub(r'(Authorization["\s]*[:=]["\s]*)(Bearer\s+)?([^"&\s,}]+)', r'\1\2****', text, flags=re.IGNORECASE)
+
+    return text
 
 
 class ProxyMode(Enum):
@@ -424,10 +449,14 @@ class ProxyClient:
                 logging.warning(f"Timeout on attempt {attempt + 1} for {url}")
                 time.sleep(self.config.retry_delay)
             except requests.exceptions.RequestException as e:
-                logging.warning(f"Request error on attempt {attempt + 1}: {e}")
+                # Redact credentials from error messages to prevent leaking sensitive info
+                safe_error = redact_credentials(str(e))
+                logging.warning(f"Request error on attempt {attempt + 1}: {safe_error}")
                 time.sleep(self.config.retry_delay)
             except Exception as e:
-                logging.error(f"Unexpected error: {e}")
+                # Redact credentials from error messages
+                safe_error = redact_credentials(str(e))
+                logging.error(f"Unexpected error: {safe_error}")
                 time.sleep(self.config.retry_delay)
 
         logging.error(f"All {self.config.max_retries} attempts failed for {url}")

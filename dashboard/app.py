@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import re
+import uuid
 import yaml
 import shutil
 from pathlib import Path
@@ -36,6 +37,32 @@ csrf = CSRFProtect(app)
 
 # Get singleton scraper manager instance
 _scraper_manager = scraper_manager.get_scraper_manager()
+
+
+def safe_error_response(error: Exception, operation: str = "operation") -> tuple:
+    """Generate a safe error response that doesn't leak sensitive information.
+
+    Logs the full exception internally with a reference ID, then returns
+    a generic error message to the client with that reference ID.
+
+    Args:
+        error: The caught exception
+        operation: Description of the operation that failed (for logging)
+
+    Returns:
+        Tuple of (jsonify response, status code) suitable for Flask routes
+    """
+    # Generate a reference ID for correlation
+    error_id = str(uuid.uuid4())[:8]
+
+    # Log the full error internally for debugging
+    logging.error(f"[{error_id}] Error during {operation}: {error}", exc_info=True)
+
+    # Return a generic message to the client
+    return jsonify({
+        "error": f"An internal error occurred. Reference: {error_id}",
+        "reference": error_id
+    }), 500
 
 
 def require_json(f):
@@ -196,7 +223,7 @@ def api_status():
         transformed = _transform_status_for_frontend(status_data)
         return jsonify(transformed)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/status/<retailer>')
@@ -210,7 +237,7 @@ def api_retailer_status(retailer):
         
         return jsonify(retailer_status)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/scraper/start', methods=['POST'])
@@ -276,7 +303,7 @@ def api_scraper_start():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/scraper/stop', methods=['POST'])
@@ -311,7 +338,7 @@ def api_scraper_stop():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/scraper/restart', methods=['POST'])
@@ -363,7 +390,7 @@ def api_scraper_restart():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/runs/<retailer>')
@@ -387,7 +414,7 @@ def api_run_history(retailer):
             "count": len(runs)
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/logs/<retailer>/<run_id>')
@@ -417,15 +444,16 @@ def api_get_logs(retailer, run_id):
 
         log_file = Path(f"data/{retailer}/logs/{run_id}.log")
 
-        if not log_file.exists():
-            return jsonify({"error": "Log file not found"}), 404
-
-        # Use static base path for security - prevents path traversal even with malicious retailer names
+        # SECURITY: Validate path BEFORE checking existence to prevent path traversal attacks
+        # that could probe the filesystem for existence of arbitrary files
         log_file_resolved = log_file.resolve()
         expected_base = Path("data").resolve()
 
         if not str(log_file_resolved).startswith(str(expected_base)):
             return jsonify({"error": "Invalid log file path"}), 400
+
+        if not log_file.exists():
+            return jsonify({"error": "Log file not found"}), 404
 
         # Check if scraper is currently running for this run_id
         is_active = False
@@ -460,7 +488,7 @@ def api_get_logs(retailer, run_id):
             "content": ''.join(lines)
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/config', methods=['GET'])
@@ -480,7 +508,7 @@ def api_get_config():
             "content": config_content
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/config', methods=['POST'])
@@ -545,7 +573,7 @@ def api_update_config():
             raise
     
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 def _validate_config(config: dict) -> dict:
@@ -735,7 +763,7 @@ def api_export_retailer(retailer, export_format):
         )
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/export/multi', methods=['POST'])
@@ -854,7 +882,7 @@ def api_export_multi():
         )
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return safe_error_response(e, "API request")
 
 
 @app.route('/api/export/formats')

@@ -61,33 +61,37 @@ def _check_pause_logic() -> None:
 def _extract_store_type_and_dealer(html_content: str) -> tuple:
     """
     Extract store type (COR or Dealer) and dealer name from AT&T store page HTML.
-    
+
     Looks for JavaScript variables in the page:
     - topDisplayType: "AT&T Retail" (COR) or "Authorized Retail" (Dealer)
     - storeMasterDealer: Dealer name with suffix (e.g., "PRIME COMMUNICATIONS - 58")
-    
+
     Args:
         html_content: Raw HTML content of store page
-    
+
     Returns:
         Tuple of (sub_channel, dealer_name)
         - sub_channel: "COR" or "Dealer"
         - dealer_name: Dealer name string or None for COR stores
     """
     # Extract topDisplayType JavaScript variable
+    # Use backreference (\1) to ensure opening and closing quotes match
+    # This prevents matching mismatched quotes like 'value" or "value'
     display_type_match = re.search(
-        r"let\s+topDisplayType\s*=\s*['\"]([^'\"]+)['\"]",
+        r"let\s+topDisplayType\s*=\s*(['\"])([^'\"]+)\1",
         html_content
     )
-    
+
     # Extract storeMasterDealer JavaScript variable
+    # Use backreference (\1) to ensure opening and closing quotes match
     dealer_match = re.search(
-        r"storeMasterDealer:\s*['\"]([^'\"]+)['\"]",
+        r"storeMasterDealer:\s*(['\"])([^'\"]+)\1",
         html_content
     )
     
-    display_type = display_type_match.group(1) if display_type_match else None
-    dealer_raw = dealer_match.group(1) if dealer_match else None
+    # Group 1 is the quote character, group 2 is the actual value
+    display_type = display_type_match.group(2) if display_type_match else None
+    dealer_raw = dealer_match.group(2) if dealer_match else None
     
     # Determine sub_channel and dealer_name based on display type
     if display_type == "AT&T Retail":

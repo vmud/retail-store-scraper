@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, List, Union
 import requests
 
 # Import proxy client for Oxylabs integration
-from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode, ProxyResponse
+from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode, ProxyResponse, redact_credentials
 
 
 # Default configuration values (can be overridden per-retailer)
@@ -205,7 +205,9 @@ def get_with_retry(
         except requests.exceptions.RequestException as e:
             response = None  # Ensure response is None after exception
             wait_time = 10
-            logging.warning(f"Request error for {url}: {e}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+            # Redact credentials from error messages to prevent leaking sensitive info
+            safe_error = redact_credentials(str(e))
+            logging.warning(f"Request error for {url}: {safe_error}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
             time.sleep(wait_time)
 
     logging.error(f"Failed to fetch {url} after {max_retries} attempts")
@@ -654,7 +656,9 @@ def create_proxied_session(
         return proxied_session
         
     except Exception as e:
-        logging.error(f"[{retailer_name}] Error creating proxy client: {e}, falling back to direct")
+        # Redact credentials from error messages
+        safe_error = redact_credentials(str(e))
+        logging.error(f"[{retailer_name}] Error creating proxy client: {safe_error}, falling back to direct")
         session = requests.Session()
         session.headers.update(get_headers())
         return session
@@ -750,7 +754,9 @@ class ProxiedSession:
                 response = self._session.get(url, params=params, timeout=timeout or 30, **kwargs)
                 return response
             except requests.exceptions.RequestException as e:
-                logging.warning(f"Request error: {e}")
+                # Redact credentials from error messages
+                safe_error = redact_credentials(str(e))
+                logging.warning(f"Request error: {safe_error}")
                 return None
         else:
             # Use proxy client

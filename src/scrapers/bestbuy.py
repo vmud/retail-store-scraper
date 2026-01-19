@@ -495,14 +495,19 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
 
         # Extract geo coordinates
         geo = data.get('geo', {})
-        latitude = geo.get('latitude', '')
-        longitude = geo.get('longitude', '')
+        latitude = geo.get('latitude')
+        longitude = geo.get('longitude')
 
         # Convert coordinates to strings
-        if latitude:
+        # Handle zero as a valid coordinate (e.g., equator at lat 0, prime meridian at lon 0)
+        if latitude is not None:
             latitude = str(latitude)
-        if longitude:
+        else:
+            latitude = ''
+        if longitude is not None:
             longitude = str(longitude)
+        else:
+            longitude = ''
 
         # Extract store type/name
         store_type = data.get('storeType', '')
