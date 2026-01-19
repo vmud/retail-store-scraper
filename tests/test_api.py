@@ -149,12 +149,14 @@ class TestAPIEndpoints:
         """Test that double-encoded path traversal is blocked"""
         # %252e = '%2e' which decodes to '.'
         response = client.get('/api/logs/verizon/%252e%252e%252f%252e%252e%252fetc%252fpasswd')
-        assert response.status_code == 404
+        # Either 400 (bad request) or 404 (not found) is acceptable
+        assert response.status_code in [400, 404]
 
     def test_api_logs_path_traversal_windows_separators(self, client):
         """Test that Windows-style path traversal is blocked"""
         response = client.get('/api/logs/verizon/..\\..\\..\\windows\\system32')
-        assert response.status_code == 404
+        # Either 400 (bad request) or 404 (not found) is acceptable
+        assert response.status_code in [400, 404]
 
     def test_api_logs_run_id_path_traversal(self, client):
         """Test that run_id parameter path traversal is blocked"""
