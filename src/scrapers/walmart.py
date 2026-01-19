@@ -33,8 +33,8 @@ class WalmartStore:
     state: str
     postal_code: str
     country: str
-    latitude: float
-    longitude: float
+    latitude: Optional[float]
+    longitude: Optional[float]
     capabilities: Optional[List[str]]
     is_glass_eligible: bool
     url: str
