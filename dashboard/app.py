@@ -4,6 +4,7 @@
 import csv
 import io
 import json
+import os
 import sys
 import re
 import yaml
@@ -19,10 +20,18 @@ load_dotenv(Path(__file__).parent.parent / '.env')
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from flask import Flask, jsonify, request, render_template, send_from_directory, send_file
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 from src.shared import status, scraper_manager, run_tracker
 from src.shared.export_service import ExportService, ExportFormat
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+
+# Configure secret key for CSRF protection (use env var or generate random)
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', os.urandom(32).hex())
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit on tokens
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
 # Get singleton scraper manager instance
 _scraper_manager = scraper_manager.get_scraper_manager()
@@ -170,6 +179,12 @@ def formatNumber(num):
     if num is None or num == 0:
         return "0"
     return f"{num:,}"
+
+
+@app.route('/api/csrf-token')
+def api_csrf_token():
+    """Get CSRF token for subsequent POST requests"""
+    return jsonify({"csrf_token": generate_csrf()})
 
 
 @app.route('/api/status')
