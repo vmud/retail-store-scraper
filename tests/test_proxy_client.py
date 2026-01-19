@@ -93,7 +93,8 @@ class TestProxyClientResidentialProxyURL:
         )
         client = ProxyClient(config)
         url = client._build_residential_proxy_url()
-        assert url == "http://customer_test:testpass@pr.oxylabs.io:7777"
+        # Oxylabs format adds customer- prefix to username
+        assert url == "http://customer-customer_test:testpass@pr.oxylabs.io:7777"
     
     def test_build_proxy_url_with_country(self):
         """Test proxy URL with country targeting"""
@@ -105,7 +106,8 @@ class TestProxyClientResidentialProxyURL:
         )
         client = ProxyClient(config)
         url = client._build_residential_proxy_url()
-        assert "country-de" in url
+        # Oxylabs uses cc-{COUNTRY} format with uppercase country code
+        assert "cc-DE" in url
     
     def test_build_proxy_url_with_city(self):
         """Test proxy URL with city targeting"""
@@ -118,7 +120,8 @@ class TestProxyClientResidentialProxyURL:
         )
         client = ProxyClient(config)
         url = client._build_residential_proxy_url()
-        assert "country-us" in url
+        # Oxylabs uses cc-{COUNTRY} and city-{city} format
+        assert "cc-US" in url
         assert "city-newyork" in url
     
     def test_build_proxy_url_with_state(self):
@@ -131,7 +134,8 @@ class TestProxyClientResidentialProxyURL:
         )
         client = ProxyClient(config)
         url = client._build_residential_proxy_url()
-        assert "state-california" in url
+        # Oxylabs uses st-{state} format for US states
+        assert "st-california" in url
     
     def test_build_proxy_url_with_sticky_session(self):
         """Test proxy URL with sticky session"""
@@ -144,7 +148,8 @@ class TestProxyClientResidentialProxyURL:
         )
         client = ProxyClient(config)
         url = client._build_residential_proxy_url()
-        assert "session-session123" in url
+        # Oxylabs uses sessid-{session_id} format for sticky sessions
+        assert "sessid-session123" in url
 
 
 class TestProxyClientGetHeaders:
