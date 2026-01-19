@@ -4,6 +4,7 @@
 import csv
 import io
 import json
+import logging
 import os
 import sys
 import re
@@ -640,12 +641,13 @@ def _create_config_backup(config_path: Path) -> Path:
 
 
 def _reload_config() -> None:
-    """Reload configuration after update
+    """Reload configuration after update.
 
-    Forces the status module to reload the configuration file
-    on the next access by clearing any cached config data.
+    Note: Full runtime config reload is not currently implemented.
+    This function logs a notice that the app needs restart for
+    configuration changes to take full effect.
     """
-    pass
+    logging.info("Config file updated. Restart app for changes to take full effect.")
 
 
 # =============================================================================
