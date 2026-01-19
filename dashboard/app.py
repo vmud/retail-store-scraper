@@ -723,6 +723,9 @@ def api_export_retailer(retailer, export_format):
         elif export_format == 'geojson':
             geojson_data = ExportService.generate_geojson(stores)
             data = json.dumps(geojson_data, indent=2, ensure_ascii=False).encode('utf-8')
+        else:
+            # Should not reach here due to format validation above
+            return jsonify({"error": f"Unsupported format: {export_format}"}), 400
 
         return send_file(
             io.BytesIO(data),
@@ -819,6 +822,9 @@ def api_export_multi():
             elif export_format == 'geojson':
                 geojson_data = ExportService.generate_geojson(all_stores)
                 file_data = json.dumps(geojson_data, indent=2, ensure_ascii=False).encode('utf-8')
+            else:
+                # Should not reach here due to format validation above
+                return jsonify({"error": f"Unsupported format: {export_format}"}), 400
 
         return send_file(
             io.BytesIO(file_data),
