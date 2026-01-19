@@ -301,3 +301,64 @@ class TestAPIEndpoints:
         assert 'error' in data
         assert 'empty' in data['error'].lower()
 
+    def test_api_export_multi_non_string_retailers_returns_400(self, client):
+        """Test that multi export with non-string retailer values returns 400 Bad Request"""
+        # Test with dict in retailers list
+        response = client.post('/api/export/multi',
+                              json={'retailers': [{'evil': True}], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'string' in data['error'].lower() or 'invalid' in data['error'].lower()
+        
+        # Test with list in retailers list
+        response = client.post('/api/export/multi',
+                              json={'retailers': [['nested', 'list']], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        
+        # Test with number in retailers list
+        response = client.post('/api/export/multi',
+                              json={'retailers': [123], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        
+        # Test with mixed types
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['verizon', {'evil': True}, 'att'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+
+    def test_api_export_multi_invalid_retailer_format_returns_400(self, client):
+        """Test that multi export with invalid retailer name format returns 400"""
+        # Test with uppercase
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['Verizon'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'format' in data['error'].lower()
+        
+        # Test with special characters
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['../etc/passwd'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        
+        # Test starting with number
+        response = client.post('/api/export/multi',
+                              json={'retailers': ['123retailer'], 'format': 'json'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data

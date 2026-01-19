@@ -763,8 +763,23 @@ def api_export_multi():
         if not retailers or not isinstance(retailers, list):
             return jsonify({"error": "Missing or invalid 'retailers' field"}), 400
 
+        # Validate each retailer is a string
+        for retailer in retailers:
+            if not isinstance(retailer, str):
+                return jsonify({
+                    "error": f"Invalid retailer value. All retailers must be strings, got {type(retailer).__name__}"
+                }), 400
+
         if len(retailers) > 10:
             return jsonify({"error": "Maximum 10 retailers allowed"}), 400
+
+        # Validate retailer name format to prevent path traversal and type errors
+        for retailer in retailers:
+            if not re.match(r'^[a-z][a-z0-9_]*$', retailer):
+                return jsonify({
+                    "error": f"Invalid retailer name format: '{retailer}'. "
+                            f"Must start with lowercase letter and contain only lowercase, digits, and underscores"
+                }), 400
 
         if export_format not in VALID_EXPORT_FORMATS:
             return jsonify({
