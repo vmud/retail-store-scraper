@@ -14,21 +14,7 @@ import requests
 
 from config import att_config
 from src.shared import utils
-
-
-class RequestCounter:
-    """Track request count for pause logic"""
-    def __init__(self):
-        self.count = 0
-
-    def increment(self) -> int:
-        """Increment counter and return current count"""
-        self.count += 1
-        return self.count
-
-    def reset(self) -> None:
-        """Reset counter"""
-        self.count = 0
+from src.shared.request_counter import RequestCounter
 
 
 # Global request counter
