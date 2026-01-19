@@ -14,21 +14,7 @@ import requests
 
 from config import walmart_config
 from src.shared import utils
-
-
-class RequestCounter:
-    """Track request count for pause logic"""
-    def __init__(self):
-        self.count = 0
-
-    def increment(self) -> int:
-        """Increment counter and return current count"""
-        self.count += 1
-        return self.count
-
-    def reset(self) -> None:
-        """Reset counter"""
-        self.count = 0
+from src.shared.request_counter import RequestCounter
 
 
 # Global request counter
@@ -47,8 +33,8 @@ class WalmartStore:
     state: str
     postal_code: str
     country: str
-    latitude: float
-    longitude: float
+    latitude: Optional[float]
+    longitude: Optional[float]
     capabilities: Optional[List[str]]
     is_glass_eligible: bool
     url: str
@@ -256,8 +242,8 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[Walma
             state=address.get('state', ''),
             postal_code=address.get('postalCode', ''),
             country=address.get('country', 'US'),
-            latitude=latitude or 0.0,
-            longitude=longitude or 0.0,
+            latitude=latitude,
+            longitude=longitude,
             capabilities=capabilities if capabilities else None,
             is_glass_eligible=bool(is_glass_eligible),
             url=url,

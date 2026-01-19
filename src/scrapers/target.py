@@ -15,21 +15,7 @@ import requests
 
 from config import target_config
 from src.shared import utils
-
-
-class RequestCounter:
-    """Track request count for pause logic"""
-    def __init__(self):
-        self.count = 0
-
-    def increment(self) -> int:
-        """Increment counter and return current count"""
-        self.count += 1
-        return self.count
-
-    def reset(self) -> None:
-        """Reset counter"""
-        self.count = 0
+from src.shared.request_counter import RequestCounter
 
 
 # Global request counter
@@ -270,85 +256,6 @@ def scrape_all_stores(session: requests.Session, store_ids: List[Dict[str, Any]]
 
     logging.info(f"Completed scraping {len(all_store_data)} stores")
     return all_store_data
-
-
-def scrape_state_stores(session: requests.Session, state: str) -> List[Dict[str, Any]]:
-    """Scrape store IDs from a state's directory page (fallback method).
-
-    Args:
-        session: Requests session object
-        state: State name (e.g., "california")
-
-    Returns:
-        List of store dictionaries with slug, store_id, and state
-    """
-    url = f"{target_config.STORE_DIRECTORY_BASE}/{state}"
-    logging.info(f"Fetching state directory: {url}")
-
-    response = utils.get_with_retry(session, url)
-    if not response:
-        logging.warning(f"Failed to fetch state directory for {state}")
-        return []
-
-    _request_counter.increment()
-    _check_pause_logic()
-
-    try:
-        # Extract /sl/{slug}/{id} links
-        pattern = r'/sl/([a-zA-Z0-9-]+)/(\d+)'
-        matches = re.findall(pattern, response.text)
-
-        # Remove duplicates
-        seen = set()
-        stores = []
-        for slug, store_id in matches:
-            store_id_int = int(store_id)
-            if store_id_int not in seen:
-                seen.add(store_id_int)
-                stores.append({
-                    "slug": slug,
-                    "store_id": store_id_int,
-                    "state": state
-                })
-
-        logging.info(f"Found {len(stores)} stores for {state}")
-        return stores
-
-    except Exception as e:
-        logging.warning(f"Error scraping state {state}: {e}")
-        return []
-
-
-def scrape_all_states(session: requests.Session) -> List[Dict[str, Any]]:
-    """Scrape stores from all state pages (fallback method).
-
-    Args:
-        session: Requests session object
-
-    Returns:
-        List of store dictionaries from all states
-    """
-    all_stores = []
-
-    for i, state in enumerate(target_config.STATES, 1):
-        logging.info(f"[{i}/{len(target_config.STATES)}] Processing {state}...")
-        stores = scrape_state_stores(session, state)
-        all_stores.extend(stores)
-
-        # Small delay between states
-        if i < len(target_config.STATES):
-            time.sleep(0.5)
-
-    # Remove duplicates by store_id
-    seen_ids = set()
-    unique_stores = []
-    for store in all_stores:
-        if store["store_id"] not in seen_ids:
-            seen_ids.add(store["store_id"])
-            unique_stores.append(store)
-
-    logging.info(f"Found {len(unique_stores)} unique stores from all states")
-    return unique_stores
 
 
 def get_request_count() -> int:

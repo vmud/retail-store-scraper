@@ -4,6 +4,8 @@
 import csv
 import io
 import json
+import logging
+import os
 import sys
 import re
 import yaml
@@ -19,10 +21,18 @@ load_dotenv(Path(__file__).parent.parent / '.env')
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from flask import Flask, jsonify, request, render_template, send_from_directory, send_file
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 from src.shared import status, scraper_manager, run_tracker
 from src.shared.export_service import ExportService, ExportFormat
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+
+# Configure secret key for CSRF protection (use env var or generate random)
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', os.urandom(32).hex())
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit on tokens
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
 # Get singleton scraper manager instance
 _scraper_manager = scraper_manager.get_scraper_manager()
@@ -170,6 +180,12 @@ def formatNumber(num):
     if num is None or num == 0:
         return "0"
     return f"{num:,}"
+
+
+@app.route('/api/csrf-token')
+def api_csrf_token():
+    """Get CSRF token for subsequent POST requests"""
+    return jsonify({"csrf_token": generate_csrf()})
 
 
 @app.route('/api/status')
@@ -625,12 +641,13 @@ def _create_config_backup(config_path: Path) -> Path:
 
 
 def _reload_config() -> None:
-    """Reload configuration after update
+    """Reload configuration after update.
 
-    Forces the status module to reload the configuration file
-    on the next access by clearing any cached config data.
+    Note: Full runtime config reload is not currently implemented.
+    This function logs a notice that the app needs restart for
+    configuration changes to take full effect.
     """
-    pass
+    logging.info("Config file updated. Restart app for changes to take full effect.")
 
 
 # =============================================================================
@@ -706,6 +723,9 @@ def api_export_retailer(retailer, export_format):
         elif export_format == 'geojson':
             geojson_data = ExportService.generate_geojson(stores)
             data = json.dumps(geojson_data, indent=2, ensure_ascii=False).encode('utf-8')
+        else:
+            # Should not reach here due to format validation above
+            return jsonify({"error": f"Unsupported format: {export_format}"}), 400
 
         return send_file(
             io.BytesIO(data),
@@ -807,6 +827,9 @@ def api_export_multi():
             elif export_format == 'geojson':
                 geojson_data = ExportService.generate_geojson(all_stores)
                 file_data = json.dumps(geojson_data, indent=2, ensure_ascii=False).encode('utf-8')
+            else:
+                # Should not reach here due to format validation above
+                return jsonify({"error": f"Unsupported format: {export_format}"}), 400
 
         return send_file(
             io.BytesIO(file_data),

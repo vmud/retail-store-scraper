@@ -4,6 +4,43 @@
 
 const BASE_URL = '/api';
 
+// CSRF token storage
+let csrfToken = null;
+
+/**
+ * Fetch CSRF token from server
+ * @returns {Promise<string>} CSRF token
+ */
+async function fetchCsrfToken() {
+  if (csrfToken) {
+    return csrfToken;
+  }
+
+  try {
+    const response = await fetch(`${BASE_URL}/csrf-token`);
+    if (response.ok) {
+      const data = await response.json();
+      csrfToken = data.csrf_token;
+      return csrfToken;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch CSRF token:', error);
+  }
+  return null;
+}
+
+/**
+ * Get CSRF headers for POST requests
+ * @returns {Promise<object>} Headers object with CSRF token
+ */
+async function getCsrfHeaders() {
+  const token = await fetchCsrfToken();
+  if (token) {
+    return { 'X-CSRFToken': token };
+  }
+  return {};
+}
+
 /**
  * Make an API request
  * @param {string} endpoint - API endpoint path
@@ -13,9 +50,16 @@ const BASE_URL = '/api';
 async function request(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
 
+  // Add CSRF headers for non-GET requests
+  let csrfHeaders = {};
+  if (options.method && options.method !== 'GET') {
+    csrfHeaders = await getCsrfHeaders();
+  }
+
   const config = {
     headers: {
       'Content-Type': 'application/json',
+      ...csrfHeaders,
       ...options.headers
     },
     ...options
@@ -252,11 +296,13 @@ export async function exportRetailer(retailer, format) {
  */
 export async function exportMulti(retailers, format, combine = true) {
   const url = `${BASE_URL}/export/multi`;
+  const csrfHeaders = await getCsrfHeaders();
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...csrfHeaders
     },
     body: JSON.stringify({ retailers, format, combine })
   });

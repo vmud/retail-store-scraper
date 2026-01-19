@@ -334,13 +334,13 @@ function appendLogLines(newParsedLines) {
     // Highlight level
     if (logLine.level) {
       formattedLine = formattedLine.replace(
-        new RegExp(`\\b${logLine.level}\\b`),
-        `<span class="log-level">${logLine.level}</span>`
+        new RegExp(`\\b${escapeHtml(logLine.level)}\\b`),
+        `<span class="log-level">${escapeHtml(logLine.level)}</span>`
       );
     }
 
     // Add 'new' class for animation
-    return `<div class="log-line log-line--${levelClass} log-line--new ${hiddenClass}" data-level="${logLine.level}">${formattedLine}</div>`;
+    return `<div class="log-line log-line--${levelClass} log-line--new ${hiddenClass}" data-level="${escapeHtml(logLine.level)}">${formattedLine}</div>`;
   }).join('');
 
   // Append to content
@@ -495,12 +495,12 @@ function renderLogs(parsedLines) {
     // Highlight level
     if (logLine.level) {
       formattedLine = formattedLine.replace(
-        new RegExp(`\\b${logLine.level}\\b`),
-        `<span class="log-level">${logLine.level}</span>`
+        new RegExp(`\\b${escapeHtml(logLine.level)}\\b`),
+        `<span class="log-level">${escapeHtml(logLine.level)}</span>`
       );
     }
 
-    return `<div class="log-line log-line--${levelClass} ${hiddenClass}" data-level="${logLine.level}">${formattedLine}</div>`;
+    return `<div class="log-line log-line--${levelClass} ${hiddenClass}" data-level="${escapeHtml(logLine.level)}">${formattedLine}</div>`;
   }).join('');
 
   content.innerHTML = html || '<div style="text-align: center; padding: var(--space-4); color: var(--text-muted);">No logs found</div>';

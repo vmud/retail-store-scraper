@@ -70,7 +70,12 @@ class ExportService:
             logging.warning("No stores to export")
             return
 
+        # Validate output path to prevent path traversal attacks
         path = Path(output_path)
+        # Check for path traversal attempts
+        if ".." in str(path) or ".." in str(path.resolve()):
+            raise ValueError(f"Invalid output path: {output_path}. Path traversal not allowed.")
+
         path.parent.mkdir(parents=True, exist_ok=True)
 
         fieldnames = ExportService._get_fieldnames(stores, retailer_config)
