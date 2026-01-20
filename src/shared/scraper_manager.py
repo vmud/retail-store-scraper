@@ -69,12 +69,17 @@ class ScraperManager:
         process that has reused the PID. This method verifies the process
         command line contains expected scraper identifiers.
 
+        Safety: When verification tools fail or are unavailable, we fall back
+        to trusting the PID check (return True) rather than incorrectly marking
+        valid processes as failed.
+
         Args:
             pid: Process ID to verify
             retailer: Expected retailer name in command line
 
         Returns:
-            True if the process appears to be our scraper, False otherwise
+            True if the process appears to be our scraper or if verification fails,
+            False only if we can confirm it's NOT our scraper
         """
         try:
             if platform.system() == 'Darwin' or platform.system() == 'Linux':
@@ -87,15 +92,31 @@ class ScraperManager:
                     check=False
                 )
                 if result.returncode != 0:
-                    return False
+                    # ps failed - could be PID doesn't exist OR tool error
+                    # Check if output suggests "no such process" vs other errors
+                    stderr_output = result.stderr if hasattr(result, 'stderr') else ""
+                    if not result.stdout.strip() and not stderr_output:
+                        # No output typically means PID doesn't exist
+                        return False
+                    # Other error - fall back to trusting PID check
+                    logger.debug(
+                        f"ps returned non-zero for PID {pid} but unclear if process "
+                        f"missing or tool error - falling back to PID check"
+                    )
+                    return True
 
                 cmdline = result.stdout.strip()
+                if not cmdline:
+                    # Empty output means process doesn't exist
+                    return False
+                    
                 # Verify it looks like our scraper command
                 if 'run.py' in cmdline and retailer in cmdline:
                     return True
                 # Also check for python process with our module
                 if 'python' in cmdline.lower() and retailer in cmdline:
                     return True
+                # Process exists but isn't our scraper
                 return False
 
             elif platform.system() == 'Windows':
@@ -108,20 +129,32 @@ class ScraperManager:
                     check=False
                 )
                 if result.returncode != 0:
-                    return False
+                    # wmic failed - fall back to trusting PID check to be safe
+                    logger.debug(
+                        f"wmic returned non-zero for PID {pid} - unclear if process "
+                        f"missing or tool error - falling back to PID check"
+                    )
+                    return True
 
                 cmdline = result.stdout.strip()
+                # WMIC returns headers even for non-existent PIDs, check for data
+                lines = [line.strip() for line in cmdline.split('\n') if line.strip()]
+                if len(lines) <= 1:  # Only header, no data
+                    return False
+                    
                 if 'run.py' in cmdline and retailer in cmdline:
                     return True
+                # Process exists but isn't our scraper
                 return False
 
             else:
                 # Unknown platform - fall back to PID-only check
+                logger.debug(f"Unknown platform {platform.system()} - falling back to PID-only check")
                 return True
 
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
-            logger.debug(f"Could not verify process {pid}: {e}")
-            # Fall back to PID-only check - assume process is valid if PID exists (#8 review feedback)
+            logger.debug(f"Could not verify process {pid}: {e} - falling back to PID-only check")
+            # Fall back to PID-only check - assume process is valid if PID exists
             # We can't determine either way, so trust the existing PID check
             return True
 
