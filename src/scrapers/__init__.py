@@ -36,6 +36,9 @@ def get_enabled_retailers() -> List[str]:
         # Fall back to all registered retailers if config can't be read
         return list(SCRAPER_REGISTRY.keys())
 
+    # Handle empty YAML files (safe_load returns None)
+    config = config or {}
+
     retailers_config = config.get('retailers', {})
     return [
         name for name in SCRAPER_REGISTRY
