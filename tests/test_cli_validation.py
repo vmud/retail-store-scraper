@@ -13,17 +13,18 @@ from run import validate_cli_options
 class TestCLIValidation:
     """Test CLI validation function."""
 
-    def test_render_js_without_proxy_passes(self):
-        """Test that --render-js without --proxy passes (uses YAML config default)."""
+    def test_render_js_without_proxy_fails(self):
+        """Test that --render-js without --proxy returns error."""
         args = Namespace(
             test=False,
             limit=None,
             render_js=True,
-            proxy=None,  # No proxy specified - allowed, will use YAML config
+            proxy=None,  # No proxy specified
             exclude=[]
         )
         errors = validate_cli_options(args)
-        assert len(errors) == 0
+        assert len(errors) == 1
+        assert '--render-js requires --proxy web_scraper_api' in errors[0]
 
     def test_render_js_with_wrong_proxy_fails(self):
         """Test that --render-js with non-web_scraper_api proxy returns error."""
