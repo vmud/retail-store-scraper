@@ -87,6 +87,13 @@ retailers:
     min_delay: 2.0
     max_delay: 5.0
     checkpoint_interval: 10
+    # Disable long pauses when using residential proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
     # Proxy override: Verizon works well with residential proxies
     proxy:
       mode: "residential"
@@ -119,9 +126,16 @@ retailers:
     min_delay: 0.5
     max_delay: 1.0
     checkpoint_interval: 100
+    # Disable long pauses when using residential proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
     # Sitemap-based scraping with low anti-bot measures
     proxy:
-      mode: "direct"
+      mode: "residential"
     output_fields:
       - store_id
       - name
@@ -149,9 +163,16 @@ retailers:
     min_delay: 0.1
     max_delay: 0.5
     checkpoint_interval: 100
-    # API-based scraping, no proxy needed
+    # Disable long pauses when using residential proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+    # API-based scraping, residential proxy for reliability
     proxy:
-      mode: "direct"
+      mode: "residential"
     output_fields:
       - store_id
       - name
@@ -214,9 +235,16 @@ retailers:
     min_delay: 1.0
     max_delay: 2.0
     checkpoint_interval: 100
+    # Disable long pauses when using residential proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
     # Proxy override: Walmart uses __NEXT_DATA__ which benefits from JS rendering
     proxy:
-      mode: "web_scraper_api"
+      mode: "residential"
       render_js: true
     output_fields:
       - store_id
