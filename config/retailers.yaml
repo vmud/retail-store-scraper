@@ -206,10 +206,10 @@ retailers:
     enabled: true
     base_url: "https://www.walmart.com"
     sitemap_urls:
-      - "https://www.walmart.com/store/sitemap_store_supercenter.xml.gz"
-      - "https://www.walmart.com/store/sitemap_store_discount.xml.gz"
-      - "https://www.walmart.com/store/sitemap_store_neighborhood.xml.gz"
-      - "https://www.walmart.com/store/sitemap_store_other.xml.gz"
+      - "https://www.walmart.com/sitemap_store_main_supercenter.xml.gz"
+      - "https://www.walmart.com/sitemap_store_main_discount.xml.gz"
+      - "https://www.walmart.com/sitemap_store_main_neighborhood.xml.gz"
+      - "https://www.walmart.com/sitemap_store_main_other.xml.gz"
     discovery_method: "sitemap_gzip"
     min_delay: 1.0
     max_delay: 2.0
