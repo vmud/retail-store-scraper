@@ -60,6 +60,17 @@ class TestAPIEndpoints:
         data = response.get_json()
         assert 'error' in data
 
+    def test_api_scraper_start_test_and_limit_conflict_returns_400(self, client):
+        """Test that start with both test and limit returns 400"""
+        response = client.post('/api/scraper/start',
+                              json={'retailer': 'verizon', 'test': True, 'limit': 50},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'test' in data['error'].lower()
+        assert 'limit' in data['error'].lower()
+
     def test_api_scraper_stop_without_retailer_returns_400(self, client):
         """Test that stop without retailer param returns 400"""
         response = client.post('/api/scraper/stop',

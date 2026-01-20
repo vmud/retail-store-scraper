@@ -351,6 +351,11 @@ def _validate_scraper_options(data: dict) -> tuple:
     if render_js and proxy is not None and proxy != 'web_scraper_api':
         return False, "--render-js requires proxy mode 'web_scraper_api'"
 
+    # Validate test + limit conflict (matches CLI validation)
+    test = data.get('test', False)
+    if test and limit is not None:
+        return False, "Cannot use 'test' with 'limit' (test mode already sets limit to 10)"
+
     # Build validated options
     options = {
         'resume': bool(data.get('resume', False)),
