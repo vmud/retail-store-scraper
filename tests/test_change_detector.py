@@ -428,6 +428,213 @@ class TestFilePersistence:
         assert result is None
 
 
+class TestKeyCollisionHandling:
+    """Test key collision handling with fingerprint suffixes"""
+
+    def _setup_previous_data(self, detector, stores):
+        """Helper to set up previous data for change detection tests."""
+        previous_path = detector.output_dir / 'stores_previous.json'
+        previous_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(previous_path, 'w', encoding='utf-8') as f:
+            json.dump(stores, f)
+
+    def test_all_colliding_stores_get_suffixes(self, temp_data_dir):
+        """All stores with colliding base keys should get fingerprint suffixes"""
+        detector = ChangeDetector('verizon', temp_data_dir)
+        
+        # Create stores with identical addresses (will have same base key)
+        stores = [
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0001'  # Different phone to get different fingerprints
+            },
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0002'  # Different phone to get different fingerprints
+            },
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0003'  # Different phone to get different fingerprints
+            }
+        ]
+        
+        stores_by_key, fingerprints, collision_count = detector._build_store_index(stores)
+        
+        # All 3 stores should be tracked (collision_count counts all participants)
+        assert collision_count == 3
+        assert len(stores_by_key) == 3
+        
+        # All keys should have fingerprint suffixes (format: base_key::fingerprint)
+        keys = list(stores_by_key.keys())
+        for key in keys:
+            assert '::' in key, f"Key '{key}' should have fingerprint suffix"
+
+    def test_keys_stable_across_input_order(self, temp_data_dir):
+        """Keys should be stable regardless of input order"""
+        detector = ChangeDetector('verizon', temp_data_dir)
+        
+        # Create stores with identical addresses
+        store_a = {
+            'name': 'Store A',
+            'street_address': '123 Main St',
+            'city': 'New York',
+            'state': 'NY',
+            'zip': '10001',
+            'phone': '555-0001'
+        }
+        store_b = {
+            'name': 'Store A',
+            'street_address': '123 Main St',
+            'city': 'New York',
+            'state': 'NY',
+            'zip': '10001',
+            'phone': '555-0002'
+        }
+        store_c = {
+            'name': 'Store A',
+            'street_address': '123 Main St',
+            'city': 'New York',
+            'state': 'NY',
+            'zip': '10001',
+            'phone': '555-0003'
+        }
+        
+        # Test different input orders
+        order1 = [store_a, store_b, store_c]
+        order2 = [store_c, store_b, store_a]
+        order3 = [store_b, store_a, store_c]
+        
+        keys_order1, _, _ = detector._build_store_index(order1)
+        keys_order2, _, _ = detector._build_store_index(order2)
+        keys_order3, _, _ = detector._build_store_index(order3)
+        
+        # Get the key assigned to each store (by phone number which is unique)
+        def get_key_by_phone(keys_dict, phone):
+            for key, store in keys_dict.items():
+                if store['phone'] == phone:
+                    return key
+            return None
+        
+        # Keys for each store should be identical regardless of order
+        key_a_1 = get_key_by_phone(keys_order1, '555-0001')
+        key_a_2 = get_key_by_phone(keys_order2, '555-0001')
+        key_a_3 = get_key_by_phone(keys_order3, '555-0001')
+        assert key_a_1 == key_a_2 == key_a_3, "Store A key should be stable"
+        
+        key_b_1 = get_key_by_phone(keys_order1, '555-0002')
+        key_b_2 = get_key_by_phone(keys_order2, '555-0002')
+        key_b_3 = get_key_by_phone(keys_order3, '555-0002')
+        assert key_b_1 == key_b_2 == key_b_3, "Store B key should be stable"
+        
+        key_c_1 = get_key_by_phone(keys_order1, '555-0003')
+        key_c_2 = get_key_by_phone(keys_order2, '555-0003')
+        key_c_3 = get_key_by_phone(keys_order3, '555-0003')
+        assert key_c_1 == key_c_2 == key_c_3, "Store C key should be stable"
+
+    def test_unique_stores_dont_get_suffixes(self, temp_data_dir):
+        """Stores with unique base keys should not get fingerprint suffixes"""
+        detector = ChangeDetector('verizon', temp_data_dir)
+        
+        # Create stores with unique addresses
+        stores = [
+            {
+                'store_id': '1001',
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY'
+            },
+            {
+                'store_id': '1002',
+                'name': 'Store B',
+                'street_address': '456 Oak Ave',
+                'city': 'Los Angeles',
+                'state': 'CA'
+            }
+        ]
+        
+        stores_by_key, _, collision_count = detector._build_store_index(stores)
+        
+        # No collisions
+        assert collision_count == 0
+        assert len(stores_by_key) == 2
+        
+        # Keys should NOT have fingerprint suffixes
+        keys = list(stores_by_key.keys())
+        for key in keys:
+            assert '::' not in key, f"Key '{key}' should not have fingerprint suffix"
+
+    def test_collision_prevents_false_changes(self, temp_data_dir):
+        """Collision handling should prevent false change detection"""
+        detector = ChangeDetector('verizon', temp_data_dir)
+        
+        # Create stores with same address but different details
+        stores_run1 = [
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0001'
+            },
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0002'
+            }
+        ]
+        
+        # Same stores but different input order
+        stores_run2 = [
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0002'
+            },
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0001'
+            }
+        ]
+        
+        # Simulate first run - set up previous data
+        self._setup_previous_data(detector, stores_run1)
+        
+        # Simulate second run with same stores in different order
+        # This should compare against the saved previous version
+        report = detector.detect_changes(stores_run2)
+        
+        # Should detect NO changes (not false positives)
+        assert report.has_changes is False, f"Expected no changes but got: {report.summary()}"
+        assert len(report.new_stores) == 0, f"False positive: {len(report.new_stores)} new stores detected"
+        assert len(report.closed_stores) == 0, f"False positive: {len(report.closed_stores)} closed stores detected"
+        assert len(report.modified_stores) == 0, f"False positive: {len(report.modified_stores)} modified stores detected"
+        assert report.unchanged_count == 2, f"Expected 2 unchanged stores, got {report.unchanged_count}"
+
+
 class TestEdgeCases:
     """Test edge cases and error handling"""
 
