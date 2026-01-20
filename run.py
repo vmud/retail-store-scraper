@@ -499,7 +499,7 @@ def validate_cli_options(args) -> List[str]:
     if args.test and args.limit:
         errors.append("Cannot use --test with --limit (--test already sets limit to 10)")
 
-    if args.render_js and args.proxy != 'web_scraper_api':
+    if args.render_js and args.proxy is not None and args.proxy != 'web_scraper_api':
         errors.append("--render-js requires --proxy web_scraper_api")
 
     # Validate limit range
