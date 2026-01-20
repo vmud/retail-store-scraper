@@ -68,6 +68,13 @@ class WalmartStore:
 
 def _check_pause_logic(retailer: str = 'walmart') -> None:
     """Check if we need to pause based on request count"""
+    # Skip modulo operations if pauses are effectively disabled (>= 999999)
+    try:
+        if walmart_config.PAUSE_50_REQUESTS >= 999999 and walmart_config.PAUSE_200_REQUESTS >= 999999:
+            return
+    except (TypeError, AttributeError):
+        pass  # Config mocked in tests, continue with normal pause logic
+    
     count = _request_counter.count
 
     if count % walmart_config.PAUSE_200_REQUESTS == 0 and count > 0:

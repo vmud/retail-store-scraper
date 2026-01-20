@@ -71,6 +71,13 @@ def _check_pause_logic(retailer: str = 'target') -> None:
 
     Uses standardized random delay ranges for consistency with other scrapers.
     """
+    # Skip modulo operations if pauses are effectively disabled (>= 999999)
+    try:
+        if target_config.PAUSE_50_REQUESTS >= 999999 and target_config.PAUSE_200_REQUESTS >= 999999:
+            return
+    except (TypeError, AttributeError):
+        pass  # Config mocked in tests, continue with normal pause logic
+    
     count = _request_counter.count
 
     if count % target_config.PAUSE_200_REQUESTS == 0 and count > 0:
