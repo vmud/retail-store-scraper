@@ -75,7 +75,7 @@ class ChangeDetector:
 
         Args:
             store: Store dictionary
-            fingerprint_suffix: Optional fingerprint suffix for collision disambiguation
+            fingerprint_suffix: Optional fingerprint suffix for stable disambiguation
 
         Returns:
             A unique string key for the store
@@ -93,7 +93,9 @@ class ChangeDetector:
             if store.get('url'):
                 return f"url:{store['url']}"
 
-        # Fall back to address-based key with more fields for uniqueness (#57)
+        # Fall back to address-based key with fingerprint for cross-run stability (#57)
+        # Always include fingerprint suffix for address-based keys to ensure the same
+        # store has the same key across runs, even if collision status changes
         addr_parts = [
             store.get('name', ''),
             store.get('street_address', ''),
@@ -103,67 +105,53 @@ class ChangeDetector:
         ]
         base_key = f"addr:{'-'.join(p.lower().strip() for p in addr_parts if p)}"
 
-        # Use fingerprint suffix for stable collision disambiguation (#9 review feedback)
-        # This ensures keys are stable across runs regardless of input order
+        # Always use fingerprint for address-based keys to prevent cross-run instability
+        # when stores transition from unique to colliding or vice versa (#9 review feedback)
         if fingerprint_suffix:
             return f"{base_key}::{fingerprint_suffix}"
-        return base_key
+        # If no fingerprint provided, generate it now for stability
+        return f"{base_key}::{self.compute_fingerprint(store)[:8]}"
 
     def _build_store_index(
         self,
         stores: List[Dict[str, Any]]
     ) -> tuple:
-        """Build store index and fingerprint maps, handling key collisions (#57).
+        """Build store index and fingerprint maps with stable key generation (#57).
 
-        Uses fingerprint-based disambiguation for stable keys across runs (#9 review feedback).
-        This ensures that the same store always gets the same key regardless of input order.
-
-        All stores with colliding base keys receive fingerprint suffixes to ensure
-        stable keys regardless of which store appears first in the input order.
+        Uses deterministic fingerprint-based keys that remain stable across runs,
+        even when collision status changes (#9 review feedback).
 
         Returns:
             Tuple of (stores_by_key dict, fingerprints_by_key dict, collision_count)
         """
-        # First pass: identify colliding base keys
-        base_key_groups = {}
-        for store in stores:
-            base_key = self._get_store_key(store)
-            fingerprint = self.compute_fingerprint(store)
-            
-            if base_key not in base_key_groups:
-                base_key_groups[base_key] = []
-            base_key_groups[base_key].append((store, fingerprint))
-
-        # Second pass: assign keys with fingerprint suffixes for ALL colliding stores
         stores_by_key = {}
         fingerprints_by_key = {}
         collision_count = 0
+        seen_keys = {}
 
-        for base_key, group in base_key_groups.items():
-            if len(group) > 1:
-                # Multiple stores share this base key - ALL get fingerprint suffixes
-                collision_count += len(group)
+        for store in stores:
+            fingerprint = self.compute_fingerprint(store)
+            # Keys are now always generated with fingerprints for address-based stores
+            # This ensures cross-run stability regardless of collision status changes
+            key = self._get_store_key(store, fingerprint[:8])
+            
+            # Track collisions for logging purposes
+            if key in seen_keys:
+                collision_count += 1
                 logging.debug(
-                    f"Key collision detected for '{base_key}': {len(group)} stores "
-                    f"will receive fingerprint suffixes"
+                    f"Key collision detected: '{key}' appears multiple times. "
+                    f"This suggests stores have identical identity fields and fingerprints."
                 )
-                
-                for store, fingerprint in group:
-                    fingerprint_suffix = fingerprint[:8]
-                    unique_key = self._get_store_key(store, fingerprint_suffix)
-                    stores_by_key[unique_key] = store
-                    fingerprints_by_key[unique_key] = fingerprint
-            else:
-                # Single store with unique base key - use base key as is
-                store, fingerprint = group[0]
-                stores_by_key[base_key] = store
-                fingerprints_by_key[base_key] = fingerprint
+            
+            stores_by_key[key] = store
+            fingerprints_by_key[key] = fingerprint
+            seen_keys[key] = True
 
         if collision_count > 0:
             logging.warning(
-                f"[{self.retailer}] {collision_count} store(s) with {len([g for g in base_key_groups.values() if len(g) > 1])} "
-                f"colliding base key(s) detected. All collision participants assigned fingerprint suffixes. "
-                f"Consider adding unique identifiers to store data."
+                f"[{self.retailer}] {collision_count} true key collision(s) detected "
+                f"(stores with identical identity fields AND fingerprints). "
+                f"Consider adding more unique identifiers to store data."
             )
 
         return stores_by_key, fingerprints_by_key, collision_count

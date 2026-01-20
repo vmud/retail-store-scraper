@@ -438,11 +438,12 @@ class TestKeyCollisionHandling:
         with open(previous_path, 'w', encoding='utf-8') as f:
             json.dump(stores, f)
 
-    def test_all_colliding_stores_get_suffixes(self, temp_data_dir):
-        """All stores with colliding base keys should get fingerprint suffixes"""
+    def test_all_address_based_stores_get_suffixes(self, temp_data_dir):
+        """All stores using address-based keys should get fingerprint suffixes for stability"""
         detector = ChangeDetector('verizon', temp_data_dir)
         
-        # Create stores with identical addresses (will have same base key)
+        # Create stores with identical addresses but different phones
+        # These will have different fingerprints, so NO true collision
         stores = [
             {
                 'name': 'Store A',
@@ -450,7 +451,7 @@ class TestKeyCollisionHandling:
                 'city': 'New York',
                 'state': 'NY',
                 'zip': '10001',
-                'phone': '555-0001'  # Different phone to get different fingerprints
+                'phone': '555-0001'  # Different phone = different fingerprint
             },
             {
                 'name': 'Store A',
@@ -458,7 +459,7 @@ class TestKeyCollisionHandling:
                 'city': 'New York',
                 'state': 'NY',
                 'zip': '10001',
-                'phone': '555-0002'  # Different phone to get different fingerprints
+                'phone': '555-0002'  # Different phone = different fingerprint
             },
             {
                 'name': 'Store A',
@@ -466,17 +467,17 @@ class TestKeyCollisionHandling:
                 'city': 'New York',
                 'state': 'NY',
                 'zip': '10001',
-                'phone': '555-0003'  # Different phone to get different fingerprints
+                'phone': '555-0003'  # Different phone = different fingerprint
             }
         ]
         
         stores_by_key, fingerprints, collision_count = detector._build_store_index(stores)
         
-        # All 3 stores should be tracked (collision_count counts all participants)
-        assert collision_count == 3
+        # No TRUE collisions since fingerprints are different
+        assert collision_count == 0
         assert len(stores_by_key) == 3
         
-        # All keys should have fingerprint suffixes (format: base_key::fingerprint)
+        # All keys should have fingerprint suffixes for cross-run stability
         keys = list(stores_by_key.keys())
         for key in keys:
             assert '::' in key, f"Key '{key}' should have fingerprint suffix"
@@ -543,11 +544,11 @@ class TestKeyCollisionHandling:
         key_c_3 = get_key_by_phone(keys_order3, '555-0003')
         assert key_c_1 == key_c_2 == key_c_3, "Store C key should be stable"
 
-    def test_unique_stores_dont_get_suffixes(self, temp_data_dir):
-        """Stores with unique base keys should not get fingerprint suffixes"""
+    def test_stores_with_ids_dont_need_suffixes(self, temp_data_dir):
+        """Stores with store_id or URL don't need fingerprint suffixes (already unique)"""
         detector = ChangeDetector('verizon', temp_data_dir)
         
-        # Create stores with unique addresses
+        # Create stores with store_id (these use id-based keys, not address-based)
         stores = [
             {
                 'store_id': '1001',
@@ -571,10 +572,11 @@ class TestKeyCollisionHandling:
         assert collision_count == 0
         assert len(stores_by_key) == 2
         
-        # Keys should NOT have fingerprint suffixes
+        # ID-based keys should NOT have fingerprint suffixes (not needed)
         keys = list(stores_by_key.keys())
         for key in keys:
-            assert '::' not in key, f"Key '{key}' should not have fingerprint suffix"
+            assert '::' not in key, f"ID-based key '{key}' should not have fingerprint suffix"
+            assert key.startswith('id:'), f"Key '{key}' should be ID-based"
 
     def test_collision_prevents_false_changes(self, temp_data_dir):
         """Collision handling should prevent false change detection"""
@@ -633,6 +635,72 @@ class TestKeyCollisionHandling:
         assert len(report.closed_stores) == 0, f"False positive: {len(report.closed_stores)} closed stores detected"
         assert len(report.modified_stores) == 0, f"False positive: {len(report.modified_stores)} modified stores detected"
         assert report.unchanged_count == 2, f"Expected 2 unchanged stores, got {report.unchanged_count}"
+
+    def test_stable_keys_when_new_store_added_at_same_address(self, temp_data_dir):
+        """Keys should remain stable when a new store is added at an existing address (#9)"""
+        detector = ChangeDetector('verizon', temp_data_dir)
+        
+        # Run 1: Single store at an address
+        stores_run1 = [
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0001'
+            }
+        ]
+        
+        # Get the key for this store in run 1
+        keys_run1, _, _ = detector._build_store_index(stores_run1)
+        key_run1 = list(keys_run1.keys())[0]
+        
+        # Run 2: A second store opens at the same address
+        stores_run2 = [
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0001'  # Original store
+            },
+            {
+                'name': 'Store A',
+                'street_address': '123 Main St',
+                'city': 'New York',
+                'state': 'NY',
+                'zip': '10001',
+                'phone': '555-0002'  # New store
+            }
+        ]
+        
+        # Get keys for run 2
+        keys_run2, _, _ = detector._build_store_index(stores_run2)
+        
+        # Find the original store's key in run 2 (by phone)
+        key_run2 = None
+        for key, store in keys_run2.items():
+            if store['phone'] == '555-0001':
+                key_run2 = key
+                break
+        
+        # The original store's key should be IDENTICAL across runs
+        assert key_run1 == key_run2, (
+            f"Store key changed from '{key_run1}' to '{key_run2}' when new store added. "
+            f"This causes false positives in change detection."
+        )
+        
+        # Verify with actual change detection
+        self._setup_previous_data(detector, stores_run1)
+        report = detector.detect_changes(stores_run2)
+        
+        # Should detect exactly 1 new store, 0 closed, 0 modified
+        assert len(report.new_stores) == 1, f"Expected 1 new store, got {len(report.new_stores)}"
+        assert len(report.closed_stores) == 0, f"Expected 0 closed stores, got {len(report.closed_stores)}"
+        assert len(report.modified_stores) == 0, f"Expected 0 modified stores, got {len(report.modified_stores)}"
+        assert report.unchanged_count == 1, f"Expected 1 unchanged store, got {report.unchanged_count}"
 
 
 class TestEdgeCases:
