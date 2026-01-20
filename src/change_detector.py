@@ -182,7 +182,13 @@ class ChangeDetector:
             SHA256 hash of identity fields only
         """
         # Only use address identity fields for stable keys
-        data = {k: store.get(k, '') for k in self.ADDRESS_IDENTITY_FIELDS if k in store}
+        # Normalize postal code field (some scrapers use 'zip', others 'postal_code')
+        data = {}
+        for k in self.ADDRESS_IDENTITY_FIELDS:
+            if k == 'zip':
+                data[k] = store.get('zip') or store.get('postal_code', '')
+            elif k in store:
+                data[k] = store.get(k, '')
         
         # Sort keys for consistent hashing
         json_str = json.dumps(data, sort_keys=True)
@@ -211,7 +217,13 @@ class ChangeDetector:
                 seen.add(field)
                 unique_fields.append(field)
         
-        data = {k: store.get(k, '') for k in unique_fields if k in store}
+        # Normalize postal code field (some scrapers use 'zip', others 'postal_code')
+        data = {}
+        for k in unique_fields:
+            if k == 'zip':
+                data[k] = store.get('zip') or store.get('postal_code', '')
+            elif k in store:
+                data[k] = store.get(k, '')
 
         # Sort keys for consistent hashing
         json_str = json.dumps(data, sort_keys=True)
@@ -357,8 +369,8 @@ class ChangeDetector:
 
     def save_change_report(self, report: ChangeReport) -> str:
         """Save change report to history directory"""
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"changes_{timestamp}.json"
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+        filename = f"changes_{self.retailer}_{timestamp}.json"
         filepath = self.history_dir / filename
 
         with open(filepath, 'w', encoding='utf-8') as f:

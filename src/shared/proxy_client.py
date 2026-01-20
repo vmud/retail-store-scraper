@@ -576,6 +576,28 @@ class ProxyClient:
             proxy_mode=ProxyMode.WEB_SCRAPER_API,
         )
 
+    def validate_credentials(self) -> tuple:
+        """Test proxy credentials with a simple request.
+
+        Returns:
+            tuple of (success: bool, message: str)
+        """
+        if self.config.mode == ProxyMode.DIRECT:
+            return True, "Direct mode - no validation needed"
+
+        test_url = "https://ip.oxylabs.io/location"
+        try:
+            response = self.get(test_url, timeout=10)
+            if response is None:
+                return False, "Connection failed - no response received"
+            if response.status_code == 200:
+                return True, f"Proxy working (mode: {self.config.mode.value})"
+            if response.status_code == 407:
+                return False, "Authentication failed (407) - check credentials"
+            return False, f"Unexpected status: {response.status_code}"
+        except Exception as e:
+            return False, f"Connection failed: {str(e)}"
+
     def get_stats(self) -> Dict[str, Any]:
         """Get client statistics"""
         return {

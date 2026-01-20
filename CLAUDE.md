@@ -8,7 +8,7 @@ Multi-retailer web scraper that collects retail store locations from Verizon, AT
 
 ## Environment Setup
 
-Requires Python 3.8-3.10:
+Requires Python 3.8-3.11:
 ```bash
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
@@ -37,6 +37,12 @@ python run.py --status
 
 # Run with Oxylabs proxy
 python run.py --all --proxy residential
+
+# Validate proxy credentials before running
+python run.py --all --proxy residential --validate-proxy
+
+# Export in multiple formats
+python run.py --retailer target --format json,csv,excel
 ```
 
 ### Testing
@@ -47,6 +53,9 @@ pytest tests/
 
 # Run specific test file
 pytest tests/test_change_detector.py
+
+# Run scraper unit tests
+pytest tests/test_scrapers/
 
 # Run with coverage
 pytest tests/ --cov=src --cov-report=html
@@ -85,8 +94,9 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   ├── walmart.py              # Multiple gzipped sitemaps
 │   └── bestbuy.py              # XML sitemap (WIP, disabled)
 ├── src/shared/
-│   ├── utils.py                # HTTP helpers, checkpoints, exports, delays
+│   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
 │   ├── proxy_client.py         # Oxylabs proxy abstraction (ProxyMode, ProxyClient)
+│   ├── export_service.py       # Multi-format export (JSON, CSV, Excel, GeoJSON)
 │   ├── request_counter.py      # Rate limiting tracker
 │   └── status.py               # Progress reporting
 ├── src/change_detector.py      # Detects new/closed/modified stores between runs
@@ -120,6 +130,17 @@ def run(session, retailer_config, retailer: str, **kwargs) -> dict:
 3. Register in `src/scrapers/__init__.py` - add to scraper registry
 4. Add config block to `config/retailers.yaml` - sitemap URLs, delays, output fields
 
+### Enabling/Disabling Retailers
+
+Set `enabled: false` in `config/retailers.yaml` to disable a retailer:
+```yaml
+retailers:
+  bestbuy:
+    enabled: false  # Won't appear in CLI choices or --all
+```
+
+The CLI uses `get_enabled_retailers()` which respects this setting.
+
 ### Proxy Configuration
 
 Proxies configured via environment variables (see `.env.example`):
@@ -138,7 +159,7 @@ Data stored in `data/{retailer}/`:
 - `output/stores_latest.json` - current run
 - `output/stores_previous.json` - previous run (for change detection)
 - `checkpoints/` - resumable state
-- `history/changes_YYYY-MM-DD.json` - change reports
+- `history/changes_{retailer}_YYYY-MM-DD_HH-MM-SS-ffffff.json` - change reports
 
 ### Anti-Blocking
 
@@ -146,3 +167,33 @@ Configurable in `config/retailers.yaml`:
 - `min_delay/max_delay` - random delays between requests
 - `pause_50_requests/pause_200_requests` - longer pauses at thresholds
 - User-agent rotation in `src/shared/utils.py` (DEFAULT_USER_AGENTS)
+
+### Store Data Validation
+
+Use `validate_store_data()` from `src/shared/utils.py` to validate scraped data:
+```python
+from src.shared.utils import validate_store_data, validate_stores_batch
+
+result = validate_store_data(store)  # Returns ValidationResult
+summary = validate_stores_batch(stores)  # Returns summary dict
+```
+
+Required fields: `store_id`, `name`, `street_address`, `city`, `state`
+Recommended fields: `latitude`, `longitude`, `phone`, `url`
+
+## Test Structure
+
+```
+tests/
+├── test_scrapers/           # Unit tests for individual scrapers
+│   ├── test_target.py
+│   ├── test_att.py
+│   ├── test_verizon.py
+│   ├── test_tmobile.py
+│   ├── test_walmart.py
+│   └── test_bestbuy.py
+├── test_change_detector.py  # Change detection tests
+├── test_proxy_client.py     # Proxy integration tests
+├── test_export_service.py   # Export format tests
+└── test_api.py              # Dashboard API tests
+```

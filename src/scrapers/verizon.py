@@ -5,8 +5,9 @@ import logging
 import random
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Set
 from bs4 import BeautifulSoup
 import requests
 
@@ -18,82 +19,98 @@ from src.shared.request_counter import RequestCounter
 # Global request counter
 _request_counter = RequestCounter()
 
-# Valid US state slugs (lowercase, hyphenated format)
-# Note: District of Columbia uses "washington-dc" slug
-VALID_STATE_SLUGS = {
-    'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
-    'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
-    'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
-    'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota',
-    'mississippi', 'missouri', 'montana', 'nebraska', 'nevada',
-    'new-hampshire', 'new-jersey', 'new-mexico', 'new-york',
-    'north-carolina', 'north-dakota', 'ohio', 'oklahoma', 'oregon',
-    'pennsylvania', 'rhode-island', 'south-carolina', 'south-dakota',
-    'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
-    'west-virginia', 'wisconsin', 'wyoming', 'washington-dc'
+
+# =============================================================================
+# STATE CONFIGURATION - Single Source of Truth (#101)
+# =============================================================================
+
+@dataclass(frozen=True)
+class StateConfig:
+    """Configuration for a US state in the Verizon store locator."""
+    slug: str
+    name: str
+    url_pattern: Optional[str] = None  # Custom URL pattern if different from standard
+
+
+# Single source of truth for all US states
+# States with custom URL patterns have them specified here
+_STATES: Dict[str, StateConfig] = {
+    'alabama': StateConfig('alabama', 'Alabama'),
+    'alaska': StateConfig('alaska', 'Alaska'),
+    'arizona': StateConfig('arizona', 'Arizona'),
+    'arkansas': StateConfig('arkansas', 'Arkansas'),
+    'california': StateConfig('california', 'California'),
+    'colorado': StateConfig('colorado', 'Colorado'),
+    'connecticut': StateConfig('connecticut', 'Connecticut'),
+    'delaware': StateConfig('delaware', 'Delaware'),
+    'florida': StateConfig('florida', 'Florida'),
+    'georgia': StateConfig('georgia', 'Georgia'),
+    'hawaii': StateConfig('hawaii', 'Hawaii'),
+    'idaho': StateConfig('idaho', 'Idaho'),
+    'illinois': StateConfig('illinois', 'Illinois'),
+    'indiana': StateConfig('indiana', 'Indiana'),
+    'iowa': StateConfig('iowa', 'Iowa'),
+    'kansas': StateConfig('kansas', 'Kansas'),
+    'kentucky': StateConfig('kentucky', 'Kentucky'),
+    'louisiana': StateConfig('louisiana', 'Louisiana'),
+    'maine': StateConfig('maine', 'Maine'),
+    'maryland': StateConfig('maryland', 'Maryland'),
+    'massachusetts': StateConfig('massachusetts', 'Massachusetts'),
+    'michigan': StateConfig('michigan', 'Michigan'),
+    'minnesota': StateConfig('minnesota', 'Minnesota'),
+    'mississippi': StateConfig('mississippi', 'Mississippi'),
+    'missouri': StateConfig('missouri', 'Missouri'),
+    'montana': StateConfig('montana', 'Montana'),
+    'nebraska': StateConfig('nebraska', 'Nebraska'),
+    'nevada': StateConfig('nevada', 'Nevada'),
+    'new-hampshire': StateConfig('new-hampshire', 'New Hampshire'),
+    'new-jersey': StateConfig('new-jersey', 'New Jersey'),
+    'new-mexico': StateConfig('new-mexico', 'New Mexico'),
+    'new-york': StateConfig('new-york', 'New York'),
+    # North Carolina: /stores/north-carolina/ (missing "state" in path)
+    'north-carolina': StateConfig('north-carolina', 'North Carolina', '/stores/north-carolina/'),
+    'north-dakota': StateConfig('north-dakota', 'North Dakota'),
+    'ohio': StateConfig('ohio', 'Ohio'),
+    'oklahoma': StateConfig('oklahoma', 'Oklahoma'),
+    'oregon': StateConfig('oregon', 'Oregon'),
+    'pennsylvania': StateConfig('pennsylvania', 'Pennsylvania'),
+    'rhode-island': StateConfig('rhode-island', 'Rhode Island'),
+    'south-carolina': StateConfig('south-carolina', 'South Carolina'),
+    'south-dakota': StateConfig('south-dakota', 'South Dakota'),
+    'tennessee': StateConfig('tennessee', 'Tennessee'),
+    'texas': StateConfig('texas', 'Texas'),
+    'utah': StateConfig('utah', 'Utah'),
+    'vermont': StateConfig('vermont', 'Vermont'),
+    'virginia': StateConfig('virginia', 'Virginia'),
+    'washington': StateConfig('washington', 'Washington'),
+    # Washington DC: uses "washington-dc" slug
+    'washington-dc': StateConfig('washington-dc', 'District Of Columbia', '/stores/state/washington-dc/'),
+    'west-virginia': StateConfig('west-virginia', 'West Virginia'),
+    'wisconsin': StateConfig('wisconsin', 'Wisconsin'),
+    'wyoming': StateConfig('wyoming', 'Wyoming'),
 }
 
-# Mapping from state slugs to proper state names
-STATE_SLUG_TO_NAME = {
-    'alabama': 'Alabama',
-    'alaska': 'Alaska',
-    'arizona': 'Arizona',
-    'arkansas': 'Arkansas',
-    'california': 'California',
-    'colorado': 'Colorado',
-    'connecticut': 'Connecticut',
-    'delaware': 'Delaware',
-    'florida': 'Florida',
-    'georgia': 'Georgia',
-    'hawaii': 'Hawaii',
-    'idaho': 'Idaho',
-    'illinois': 'Illinois',
-    'indiana': 'Indiana',
-    'iowa': 'Iowa',
-    'kansas': 'Kansas',
-    'kentucky': 'Kentucky',
-    'louisiana': 'Louisiana',
-    'maine': 'Maine',
-    'maryland': 'Maryland',
-    'massachusetts': 'Massachusetts',
-    'michigan': 'Michigan',
-    'minnesota': 'Minnesota',
-    'mississippi': 'Mississippi',
-    'missouri': 'Missouri',
-    'montana': 'Montana',
-    'nebraska': 'Nebraska',
-    'nevada': 'Nevada',
-    'new-hampshire': 'New Hampshire',
-    'new-jersey': 'New Jersey',
-    'new-mexico': 'New Mexico',
-    'new-york': 'New York',
-    'north-carolina': 'North Carolina',
-    'north-dakota': 'North Dakota',
-    'ohio': 'Ohio',
-    'oklahoma': 'Oklahoma',
-    'oregon': 'Oregon',
-    'pennsylvania': 'Pennsylvania',
-    'rhode-island': 'Rhode Island',
-    'south-carolina': 'South Carolina',
-    'south-dakota': 'South Dakota',
-    'tennessee': 'Tennessee',
-    'texas': 'Texas',
-    'utah': 'Utah',
-    'vermont': 'Vermont',
-    'virginia': 'Virginia',
-    'washington': 'Washington',
-    'west-virginia': 'West Virginia',
-    'wisconsin': 'Wisconsin',
-    'wyoming': 'Wyoming',
-    'washington-dc': 'District Of Columbia'
+# Derived views for backwards compatibility and fast lookups
+VALID_STATE_SLUGS: Set[str] = set(_STATES.keys())
+STATE_SLUG_TO_NAME: Dict[str, str] = {s.slug: s.name for s in _STATES.values()}
+STATE_URL_PATTERNS: Dict[str, str] = {
+    s.slug: s.url_pattern for s in _STATES.values() if s.url_pattern
 }
 
-# Special URL patterns for states that don't follow the standard pattern
-# North Carolina: /stores/north-carolina/ (missing "state" in path)
-STATE_URL_PATTERNS = {
-    'north-carolina': '/stores/north-carolina/',
-    'washington-dc': '/stores/state/washington-dc/'
-}
+
+def get_state_url(slug: str) -> str:
+    """Get URL path for a state.
+
+    Args:
+        slug: State slug (lowercase, hyphenated)
+
+    Returns:
+        URL path for the state (e.g., '/stores/state/california/')
+    """
+    state = _STATES.get(slug)
+    if state and state.url_pattern:
+        return state.url_pattern
+    return f"/stores/state/{slug}/"
 
 
 def _check_pause_logic() -> None:

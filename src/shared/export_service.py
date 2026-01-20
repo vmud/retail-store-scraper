@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment
-    from openpyxl.utils import get_column_letter
+    from openpyxl import Workbook  # pylint: disable=import-error
+    from openpyxl.styles import Font, Alignment  # pylint: disable=import-error
+    from openpyxl.utils import get_column_letter  # pylint: disable=import-error
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False

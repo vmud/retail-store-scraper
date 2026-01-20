@@ -14,7 +14,7 @@ class TestCLIValidation:
     """Test CLI validation function."""
 
     def test_render_js_without_proxy_fails(self):
-        """Test that --render-js without --proxy returns validation error."""
+        """Test that --render-js without --proxy returns error."""
         args = Namespace(
             test=False,
             limit=None,
