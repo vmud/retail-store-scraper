@@ -242,10 +242,13 @@ retailers:
     pause_50_max: 0
     pause_200_min: 0
     pause_200_max: 0
-    # Proxy override: Use residential mode for faster sitemap access
-    # __NEXT_DATA__ is server-side rendered, no JS rendering needed
+    # HYBRID PROXY MODE (configured in walmart.py):
+    # - Residential proxy for sitemaps (fast XML fetching)
+    # - Web Scraper API for store pages (JS rendering for __NEXT_DATA__)
+    # Note: Config below sets residential for sitemaps; scraper auto-creates
+    # web_scraper_api session for store extraction
     proxy:
-      mode: "residential"
+      mode: "residential"  # Used for sitemap fetching only
     output_fields:
       - store_id
       - name

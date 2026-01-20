@@ -16,6 +16,7 @@ import requests
 from config import walmart_config
 from src.shared import utils
 from src.shared.request_counter import RequestCounter
+from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
 
 
 # Global request counter
@@ -170,15 +171,25 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
             logging.warning(f"[{retailer}] Failed to parse JSON from __NEXT_DATA__ for {url}: {e}")
             return None
 
-        # Navigate to store data in Next.js structure: props.pageProps.store
+        # Navigate to store data in Next.js structure: props.pageProps.initialData.initialDataNodeDetail.data.nodeDetail
         page_props = data.get('props', {})
         if not page_props:
             logging.warning(f"[{retailer}] No 'props' found in __NEXT_DATA__ for {url}")
             return None
 
-        store_data = page_props.get('pageProps', {}).get('store', {})
+        initial_data = page_props.get('pageProps', {}).get('initialData', {})
+        if not initial_data:
+            logging.warning(f"[{retailer}] No 'initialData' found in props.pageProps for {url}")
+            return None
+
+        node_detail_wrapper = initial_data.get('initialDataNodeDetail', {})
+        if not node_detail_wrapper:
+            logging.warning(f"[{retailer}] No 'initialDataNodeDetail' found in initialData for {url}")
+            return None
+
+        store_data = node_detail_wrapper.get('data', {}).get('nodeDetail', {})
         if not store_data:
-            logging.warning(f"[{retailer}] No 'store' found in props.pageProps for {url}")
+            logging.warning(f"[{retailer}] No 'nodeDetail' found in data for {url}")
             return None
 
         # Extract store ID (from store_data.id or URL pattern)
@@ -274,8 +285,12 @@ def get_request_count() -> int:
 def run(session, config: dict, **kwargs) -> dict:
     """Standard scraper entry point.
     
+    HYBRID PROXY MODE:
+    - Uses passed-in session (residential) for fast sitemap fetching
+    - Creates web_scraper_api session for store pages (JS rendering)
+    
     Args:
-        session: Configured session (requests.Session or ProxyClient)
+        session: Configured session for sitemaps (requests.Session or ProxyClient)
         config: Retailer configuration dict from retailers.yaml
         **kwargs: Additional options
             - resume: bool - Resume from checkpoint
@@ -291,6 +306,9 @@ def run(session, config: dict, **kwargs) -> dict:
     retailer_name = kwargs.get('retailer', 'walmart')
     logging.info(f"[{retailer_name}] Starting scrape run")
     
+    # Create web_scraper_api session for store extraction (JS rendering)
+    store_session = None
+    
     try:
         limit = kwargs.get('limit')
         resume = kwargs.get('resume', False)
@@ -300,7 +318,17 @@ def run(session, config: dict, **kwargs) -> dict:
         # Auto-select delays based on proxy mode for optimal performance
         proxy_mode = config.get('proxy', {}).get('mode', 'direct')
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
-        logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
+        logging.info(f"[{retailer_name}] HYBRID MODE: Using residential for sitemaps, web_scraper_api for stores")
+        logging.info(f"[{retailer_name}] Sitemap delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
+        
+        # Create web_scraper_api session for store extraction
+        logging.info(f"[{retailer_name}] Creating web_scraper_api session for store extraction")
+        proxy_config = ProxyConfig.from_env()
+        proxy_config.mode = ProxyMode.WEB_SCRAPER_API
+        proxy_config.render_js = True
+        store_client = ProxyClient(proxy_config)
+        store_session = store_client.session
+        logging.info(f"[{retailer_name}] Web Scraper API session ready (render_js=true)")
         
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
         checkpoint_interval = config.get('checkpoint_interval', 100)
@@ -344,7 +372,8 @@ def run(session, config: dict, **kwargs) -> dict:
             logging.info(f"[{retailer_name}] No new stores to process")
         
         for i, url in enumerate(remaining_urls, 1):
-            store_obj = extract_store_details(session, url, retailer_name)
+            # Use web_scraper_api session for store extraction (JS rendering)
+            store_obj = extract_store_details(store_session, url, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_urls.add(url)
@@ -386,3 +415,11 @@ def run(session, config: dict, **kwargs) -> dict:
     except Exception as e:
         logging.error(f"[{retailer_name}] Fatal error: {e}", exc_info=True)
         raise
+    finally:
+        # Clean up store extraction session
+        if store_session and hasattr(store_session, '_proxy_client'):
+            try:
+                store_session._proxy_client.close()
+                logging.debug(f"[{retailer_name}] Closed web_scraper_api session")
+            except Exception as e:
+                logging.warning(f"[{retailer_name}] Error closing store session: {e}")
