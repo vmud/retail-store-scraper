@@ -242,10 +242,10 @@ retailers:
     pause_50_max: 0
     pause_200_min: 0
     pause_200_max: 0
-    # Proxy override: Walmart uses __NEXT_DATA__ which benefits from JS rendering
+    # Proxy override: Use residential mode for faster sitemap access
+    # __NEXT_DATA__ is server-side rendered, no JS rendering needed
     proxy:
       mode: "residential"
-      render_js: true
     output_fields:
       - store_id
       - name
