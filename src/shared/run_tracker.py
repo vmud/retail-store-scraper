@@ -236,27 +236,37 @@ def get_latest_run(retailer: str) -> Optional[Dict[str, Any]]:
 
 
 def get_active_run(retailer: str) -> Optional[Dict[str, Any]]:
-    """Get currently active run for a retailer
-    
+    """Get currently active run for a retailer (#69)
+
+    Returns the NEWEST running run by file mtime to avoid returning
+    stale "running" entries from crashed/abandoned runs.
+
     Args:
         retailer: Retailer name
-    
+
     Returns:
         Active run metadata or None
     """
     run_dir = Path(f"data/{retailer}/runs")
     if not run_dir.exists():
         return None
-    
+
+    # Collect all running runs with their mtime
+    running_runs = []
     for run_file in run_dir.glob("*.json"):
         try:
             metadata = load_checkpoint(str(run_file))
             if metadata and metadata.get("status") == "running":
-                return metadata
+                running_runs.append((run_file.stat().st_mtime, metadata))
         except Exception:
             pass
-    
-    return None
+
+    if not running_runs:
+        return None
+
+    # Return newest by mtime (#69)
+    running_runs.sort(key=lambda x: x[0], reverse=True)
+    return running_runs[0][1]
 
 
 def cleanup_old_runs(retailer: str, keep: int = 20) -> int:

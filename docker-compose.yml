@@ -35,18 +35,21 @@ services:
   dashboard:
     build: .
     container_name: retail-scraper-dashboard
-    command: python dashboard/app.py
+    # Ensure data directory exists before starting (#105)
+    command: ["sh", "-c", "mkdir -p /app/data && python dashboard/app.py"]
     ports:
-      - "5000:5000"
+      # Dashboard listens on port 5001 (#105)
+      - "5001:5001"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
+      # Optional API key for authentication (#92)
+      - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}
     restart: unless-stopped
-    depends_on:
-      - scraper
+    # Removed depends_on: scraper - dashboard can run independently (#105)
 
   # Single retailer services (optional, for running specific retailers)
   verizon:

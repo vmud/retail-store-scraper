@@ -790,20 +790,61 @@ async function saveConfig() {
     }
 }
 
+/**
+ * Validate YAML configuration syntax using js-yaml (#110)
+ * @param {string} content - YAML content to validate
+ * @returns {string|null} - Error message or null if valid
+ */
 function validateConfigSyntax(content) {
     if (!content || content.trim().length === 0) {
         return 'Configuration cannot be empty';
     }
-    
+
+    // Use js-yaml for proper YAML parsing (#110)
+    try {
+        // Check if jsyaml is available (loaded from CDN)
+        if (typeof jsyaml !== 'undefined') {
+            const parsed = jsyaml.load(content);
+
+            if (!parsed || typeof parsed !== 'object') {
+                return 'Configuration must be a valid YAML object';
+            }
+
+            if (!parsed.retailers) {
+                return 'Configuration must contain "retailers:" section';
+            }
+
+            if (typeof parsed.retailers !== 'object' || Array.isArray(parsed.retailers)) {
+                return '"retailers:" must be a dictionary/object';
+            }
+
+            // Validate each retailer has required fields
+            for (const [retailerName, retailerConfig] of Object.entries(parsed.retailers)) {
+                if (!retailerConfig || typeof retailerConfig !== 'object') {
+                    return `Retailer '${retailerName}' must have a configuration object`;
+                }
+                if (typeof retailerConfig.enabled !== 'boolean') {
+                    return `Retailer '${retailerName}' must have 'enabled: true/false'`;
+                }
+            }
+
+            return null; // Valid
+        }
+    } catch (e) {
+        // js-yaml parse error
+        return `YAML syntax error: ${e.message}`;
+    }
+
+    // Fallback validation if jsyaml not loaded
     if (!content.includes('retailers:')) {
         return 'Configuration must contain "retailers:" key';
     }
-    
+
     const lines = content.split('\n').filter(line => line.trim() && !line.trim().startsWith('#'));
     if (lines.length < 3) {
         return 'Configuration appears to be incomplete';
     }
-    
+
     return null;
 }
 
