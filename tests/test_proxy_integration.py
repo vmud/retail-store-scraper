@@ -172,6 +172,38 @@ class TestConfigMerging:
             os.unlink(yaml_path)
 
 
+class TestCliSettingsOverlay:
+    """Test CLI settings applied without mode override."""
+
+    def test_cli_render_js_overrides_yaml(self):
+        """CLI render_js should override YAML config when mode comes from YAML."""
+        yaml_config = {
+            'proxy': {
+                'mode': 'web_scraper_api',
+                'web_scraper_api': {
+                    'render_js': False
+                }
+            }
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(yaml_config, f)
+            yaml_path = f.name
+
+        try:
+            with patch.dict(os.environ, {}, clear=True):
+                config = get_retailer_proxy_config(
+                    'test',
+                    yaml_path,
+                    cli_override=None,
+                    cli_settings={'render_js': True}
+                )
+                assert config['mode'] == 'web_scraper_api'
+                assert config['render_js'] is True
+        finally:
+            os.unlink(yaml_path)
+
+
 class TestInvalidModeHandling:
     """Test handling of invalid proxy modes"""
     

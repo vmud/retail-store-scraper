@@ -526,6 +526,18 @@ def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any
     return config
 
 
+def _apply_cli_settings(
+    base_config: Dict[str, Any],
+    cli_settings: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Apply CLI proxy settings without mutating base config."""
+    if not cli_settings:
+        return base_config
+    updated_config = dict(base_config)
+    updated_config.update(cli_settings)
+    return updated_config
+
+
 def get_retailer_proxy_config(
     retailer: str,
     yaml_path: str = "config/retailers.yaml",
@@ -552,7 +564,11 @@ def get_retailer_proxy_config(
         Dict compatible with ProxyConfig.from_dict()
     """
     VALID_MODES = {'direct', 'residential', 'web_scraper_api'}
-    cli_settings = cli_settings or {}
+    cli_settings = {
+        key: value
+        for key, value in (cli_settings or {}).items()
+        if value is not None
+    }
 
     if cli_override:
         if cli_override not in VALID_MODES:
@@ -560,8 +576,8 @@ def get_retailer_proxy_config(
             return _build_proxy_config_dict(mode='direct')
         logging.info(f"[{retailer}] Using CLI override proxy mode: {cli_override}")
         # Include all CLI settings in the config (#52)
-        config = _build_proxy_config_dict(mode=cli_override, **cli_settings)
-        return config
+        config = _build_proxy_config_dict(mode=cli_override)
+        return _apply_cli_settings(config, cli_settings)
     
     try:
         with open(yaml_path, 'r', encoding='utf-8') as f:
@@ -586,7 +602,7 @@ def get_retailer_proxy_config(
             merged_config['mode'] = 'direct'
         else:
             logging.info(f"[{retailer}] Using retailer-specific proxy mode: {mode}")
-        return merged_config
+        return _apply_cli_settings(merged_config, cli_settings)
     
     if 'proxy' in config:
         proxy_config = _build_proxy_config_from_yaml(config['proxy'])
@@ -596,7 +612,7 @@ def get_retailer_proxy_config(
             proxy_config['mode'] = 'direct'
         else:
             logging.info(f"[{retailer}] Using global YAML proxy mode: {mode}")
-        return proxy_config
+        return _apply_cli_settings(proxy_config, cli_settings)
     
     env_mode = os.getenv('PROXY_MODE')
     if env_mode:
@@ -604,10 +620,11 @@ def get_retailer_proxy_config(
             logging.warning(f"[{retailer}] Invalid environment proxy mode '{env_mode}', falling back to direct")
             return _build_proxy_config_dict(mode='direct')
         logging.info(f"[{retailer}] Using environment variable proxy mode: {env_mode}")
-        return _build_proxy_config_dict(mode=env_mode)
+        env_config = _build_proxy_config_dict(mode=env_mode)
+        return _apply_cli_settings(env_config, cli_settings)
     
     logging.info(f"[{retailer}] Using default proxy mode: direct")
-    return {'mode': 'direct'}
+    return _apply_cli_settings({'mode': 'direct'}, cli_settings)
 
 
 def load_retailer_config(

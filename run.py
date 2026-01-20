@@ -205,7 +205,7 @@ def setup_parser() -> argparse.ArgumentParser:
     proxy_group.add_argument(
         '--proxy-country',
         type=str,
-        default='us',
+        default=None,
         help='Proxy country code for geo-targeting (default: us)'
     )
     proxy_group.add_argument(
@@ -603,12 +603,14 @@ def main():
         # Build proxy config from CLI args
         proxy_config = {
             'mode': args.proxy,
-            'country_code': args.proxy_country,
             'render_js': args.render_js,
         }
+        if args.proxy_country:
+            proxy_config['country_code'] = args.proxy_country
 
         get_proxy_client(proxy_config)
-        logging.info(f"Proxy mode: {args.proxy} (country: {args.proxy_country})")
+        proxy_country = args.proxy_country or "us"
+        logging.info(f"Proxy mode: {args.proxy} (country: {proxy_country})")
         if args.render_js:
             logging.info("JavaScript rendering enabled")
     else:
@@ -663,12 +665,13 @@ def main():
     # Get CLI proxy override and settings (#52)
     cli_proxy_override = args.proxy if args.proxy else None
     # Pass proxy settings if CLI override OR if render_js is set (can use YAML proxy)
-    cli_proxy_settings = None
-    if cli_proxy_override or args.render_js or args.proxy_country:
-        cli_proxy_settings = {
-            'country_code': args.proxy_country,
-            'render_js': args.render_js,
-        }
+    cli_proxy_settings = {}
+    if args.proxy_country:
+        cli_proxy_settings['country_code'] = args.proxy_country
+    if args.render_js:
+        cli_proxy_settings['render_js'] = True
+    if not cli_proxy_settings and not cli_proxy_override:
+        cli_proxy_settings = None
 
     # Run scrapers
     try:
