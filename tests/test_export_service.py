@@ -7,7 +7,14 @@ import os
 import tempfile
 import pytest
 
-from src.shared.export_service import ExportService, ExportFormat, parse_format_list
+from src.shared.export_service import (
+    ExportService,
+    ExportFormat,
+    parse_format_list,
+    sanitize_csv_value,
+    sanitize_store_for_csv,
+    CSV_INJECTION_CHARS
+)
 
 
 # Sample store data for testing
@@ -415,3 +422,195 @@ class TestExportServiceIntegration:
         finally:
             if os.path.exists(output_path):
                 os.unlink(output_path)
+
+
+class TestFormulaInjectionProtection:
+    """Tests for CSV/Excel formula injection protection (#73)"""
+
+    def test_csv_injection_chars_constant(self):
+        """Test that CSV_INJECTION_CHARS includes all dangerous characters"""
+        assert '=' in CSV_INJECTION_CHARS
+        assert '+' in CSV_INJECTION_CHARS
+        assert '-' in CSV_INJECTION_CHARS
+        assert '@' in CSV_INJECTION_CHARS
+        assert '\t' in CSV_INJECTION_CHARS
+        assert '\r' in CSV_INJECTION_CHARS
+        assert '\n' in CSV_INJECTION_CHARS
+
+    def test_sanitize_csv_value_equals_sign(self):
+        """Test that values starting with = are sanitized"""
+        assert sanitize_csv_value('=1+1') == "'=1+1"
+        assert sanitize_csv_value('=SUM(A1:A10)') == "'=SUM(A1:A10)"
+        assert sanitize_csv_value('=cmd|/c calc') == "'=cmd|/c calc"
+
+    def test_sanitize_csv_value_plus_sign(self):
+        """Test that values starting with + are sanitized"""
+        assert sanitize_csv_value('+1+1') == "'+1+1"
+        assert sanitize_csv_value('+cmd|/c calc') == "'+cmd|/c calc"
+
+    def test_sanitize_csv_value_minus_sign(self):
+        """Test that values starting with - are sanitized"""
+        assert sanitize_csv_value('-1+1') == "'-1+1"
+        assert sanitize_csv_value('-cmd|/c calc') == "'-cmd|/c calc"
+
+    def test_sanitize_csv_value_at_sign(self):
+        """Test that values starting with @ are sanitized"""
+        assert sanitize_csv_value('@SUM(A1:A10)') == "'@SUM(A1:A10)"
+
+    def test_sanitize_csv_value_tab_carriage_newline(self):
+        """Test that values starting with tab, CR, or newline are sanitized"""
+        assert sanitize_csv_value('\ttest') == "'\ttest"
+        assert sanitize_csv_value('\rtest') == "'\rtest"
+        assert sanitize_csv_value('\ntest') == "'\ntest"
+
+    def test_sanitize_csv_value_safe_strings(self):
+        """Test that safe strings are not modified"""
+        assert sanitize_csv_value('normal text') == 'normal text'
+        assert sanitize_csv_value('123 Main St') == '123 Main St'
+        assert sanitize_csv_value('test@example.com') == 'test@example.com'
+        assert sanitize_csv_value('(123) 456-7890') == '(123) 456-7890'
+
+    def test_sanitize_csv_value_none(self):
+        """Test that None values are unchanged"""
+        assert sanitize_csv_value(None) is None
+
+    def test_sanitize_csv_value_non_string(self):
+        """Test that non-string values are unchanged"""
+        assert sanitize_csv_value(123) == 123
+        assert sanitize_csv_value(45.67) == 45.67
+        assert sanitize_csv_value(True) is True
+        assert sanitize_csv_value([1, 2, 3]) == [1, 2, 3]
+
+    def test_sanitize_csv_value_empty_string(self):
+        """Test that empty strings are unchanged"""
+        assert sanitize_csv_value('') == ''
+
+    def test_sanitize_store_for_csv(self):
+        """Test that all string values in a store dict are sanitized"""
+        dangerous_store = {
+            'name': '=MALICIOUS()',
+            'address': '+evil command',
+            'city': 'Safe City',
+            'zip': '12345',
+            'phone': '@SUM(A1:A10)'
+        }
+        sanitized = sanitize_store_for_csv(dangerous_store)
+        
+        assert sanitized['name'] == "'=MALICIOUS()"
+        assert sanitized['address'] == "'+evil command"
+        assert sanitized['city'] == 'Safe City'  # unchanged
+        assert sanitized['zip'] == '12345'  # unchanged
+        assert sanitized['phone'] == "'@SUM(A1:A10)"
+
+    def test_csv_export_sanitizes_dangerous_values(self):
+        """Test that CSV export properly sanitizes formula injection attempts"""
+        dangerous_stores = [
+            {
+                'store_id': '1001',
+                'name': '=1+1',
+                'address': '+dangerous',
+                'phone': '@SUM(A1:A10)'
+            }
+        ]
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            output_path = f.name
+        
+        try:
+            ExportService.export_stores(
+                dangerous_stores,
+                ExportFormat.CSV,
+                output_path
+            )
+            
+            # Read the CSV and verify sanitization
+            with open(output_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                assert "'=1+1" in content
+                assert "'+dangerous" in content
+                assert "'@SUM" in content
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_excel_export_sanitizes_dangerous_values(self):
+        """Test that Excel export properly sanitizes formula injection attempts"""
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            pytest.skip("openpyxl not available")
+        
+        dangerous_stores = [
+            {
+                'store_id': '1001',
+                'name': '=1+1',
+                'address': '+dangerous',
+                'phone': '@SUM(A1:A10)'
+            }
+        ]
+        
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as f:
+            output_path = f.name
+        
+        try:
+            ExportService.export_stores(
+                dangerous_stores,
+                ExportFormat.EXCEL,
+                output_path
+            )
+            
+            # Load the Excel file and verify sanitization
+            wb = load_workbook(output_path)
+            ws = wb.active
+            
+            # Row 1 is headers, row 2 is data
+            assert ws['B2'].value == "'=1+1"  # name column
+            assert ws['C2'].value == "'+dangerous"  # address column
+            assert ws['D2'].value == "'@SUM(A1:A10)"  # phone column
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_generate_csv_string_sanitizes_values(self):
+        """Test that generate_csv_string sanitizes dangerous values"""
+        dangerous_stores = [
+            {
+                'name': '=MALICIOUS()',
+                'value': '+123'
+            }
+        ]
+        
+        csv_string = ExportService.generate_csv_string(
+            dangerous_stores,
+            fieldnames=['name', 'value']
+        )
+        
+        assert "'=MALICIOUS()" in csv_string
+        assert "'+123" in csv_string
+
+    def test_generate_excel_bytes_sanitizes_values(self):
+        """Test that generate_excel_bytes sanitizes dangerous values"""
+        try:
+            from openpyxl import load_workbook
+            from io import BytesIO
+        except ImportError:
+            pytest.skip("openpyxl not available")
+        
+        dangerous_stores = [
+            {
+                'name': '=MALICIOUS()',
+                'value': '-evil'
+            }
+        ]
+        
+        excel_bytes = ExportService.generate_excel_bytes(
+            dangerous_stores,
+            fieldnames=['name', 'value']
+        )
+        
+        # Load from bytes and verify sanitization
+        wb = load_workbook(BytesIO(excel_bytes))
+        ws = wb.active
+        
+        assert ws['A2'].value == "'=MALICIOUS()"
+        assert ws['B2'].value == "'-evil"
