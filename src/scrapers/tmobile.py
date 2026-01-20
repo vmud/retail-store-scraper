@@ -53,17 +53,17 @@ class TMobileStore:
         return result
 
 
-def _check_pause_logic() -> None:
+def _check_pause_logic(retailer: str = 'tmobile') -> None:
     """Check if we need to pause based on request count"""
     count = _request_counter.count
 
     if count % tmobile_config.PAUSE_200_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(tmobile_config.PAUSE_200_MIN, tmobile_config.PAUSE_200_MAX)
-        logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
     elif count % tmobile_config.PAUSE_50_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(tmobile_config.PAUSE_50_MIN, tmobile_config.PAUSE_50_MAX)
-        logging.info(f"Pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
 
 
@@ -121,7 +121,7 @@ def _extract_store_type_from_dom(soup: BeautifulSoup) -> Optional[str]:
     return None
 
 
-def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
+def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmobile') -> List[str]:
     """Fetch all store URLs from the T-Mobile paginated sitemaps.
 
     Returns:
@@ -135,15 +135,15 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
         else:
             sitemap_url = f"{tmobile_config.SITEMAP_BASE_URL}?p={page}"
 
-        logging.info(f"Fetching sitemap page {page} from {sitemap_url}")
+        logging.info(f"[{retailer}] Fetching sitemap page {page} from {sitemap_url}")
 
         response = utils.get_with_retry(session, sitemap_url)
         if not response:
-            logging.error(f"Failed to fetch sitemap page {page}")
+            logging.error(f"[{retailer}] Failed to fetch sitemap page {page}")
             continue
 
         _request_counter.increment()
-        _check_pause_logic()
+        _check_pause_logic(retailer)
 
         try:
             # Parse XML
@@ -156,20 +156,20 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
                 if url and '/stores/bd/' in url:
                     all_store_urls.append(url)
 
-            logging.info(f"Found {len(all_store_urls)} store URLs from page {page}")
+            logging.info(f"[{retailer}] Found {len(all_store_urls)} store URLs from page {page}")
 
         except ET.ParseError as e:
-            logging.error(f"Failed to parse XML sitemap page {page}: {e}")
+            logging.error(f"[{retailer}] Failed to parse XML sitemap page {page}: {e}")
             continue
         except Exception as e:
-            logging.error(f"Unexpected error parsing sitemap page {page}: {e}")
+            logging.error(f"[{retailer}] Unexpected error parsing sitemap page {page}: {e}")
             continue
 
-    logging.info(f"Total store URLs collected: {len(all_store_urls)}")
+    logging.info(f"[{retailer}] Total store URLs collected: {len(all_store_urls)}")
     return all_store_urls
 
 
-def extract_store_details(session: requests.Session, url: str) -> Optional[TMobileStore]:
+def extract_store_details(session: requests.Session, url: str, retailer: str = 'tmobile') -> Optional[TMobileStore]:
     """Extract store data from a single T-Mobile store page.
 
     Args:
@@ -179,15 +179,15 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
     Returns:
         TMobileStore object if successful, None otherwise
     """
-    logging.debug(f"Extracting details from {url}")
+    logging.debug(f"[{retailer}] Extracting details from {url}")
 
     response = utils.get_with_retry(session, url)
     if not response:
-        logging.warning(f"Failed to fetch store details: {url}")
+        logging.warning(f"[{retailer}] Failed to fetch store details: {url}")
         return None
 
     _request_counter.increment()
-    _check_pause_logic()
+    _check_pause_logic(retailer)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -205,7 +205,7 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
         # Find all JSON-LD script tags (there may be multiple)
         scripts = soup.find_all('script', type='application/ld+json')
         if not scripts:
-            logging.warning(f"No JSON-LD found for {url}")
+            logging.warning(f"[{retailer}] No JSON-LD found for {url}")
             return None
 
         # Try each script until we find a Store
@@ -231,7 +231,7 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
                     break
 
             except json.JSONDecodeError as e:
-                logging.debug(f"Failed to parse JSON-LD script for {url}: {e}")
+                logging.debug(f"[{retailer}] Failed to parse JSON-LD script for {url}: {e}")
                 continue
 
         # If no Store found, log and return None
@@ -242,9 +242,9 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
                     first_type = first_script.get('@type', 'Unknown') if isinstance(first_script, dict) else 'Unknown'
                     if isinstance(first_script, list) and first_script:
                         first_type = first_script[0].get('@type', 'Unknown') if isinstance(first_script[0], dict) else 'Unknown'
-                    logging.debug(f"Skipping {url}: No Store found (first @type: '{first_type}')")
+                    logging.debug(f"[{retailer}] Skipping {url}: No Store found (first @type: '{first_type}')")
                 except Exception:
-                    logging.debug(f"Skipping {url}: No Store found")
+                    logging.debug(f"[{retailer}] Skipping {url}: No Store found")
             return None
 
         # Extract address components
@@ -289,11 +289,11 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[TMobi
             scraped_at=datetime.now().isoformat()
         )
 
-        logging.debug(f"Extracted store: {store.name}")
+        logging.debug(f"[{retailer}] Extracted store: {store.name}")
         return store
 
     except Exception as e:
-        logging.warning(f"Error extracting store data from {url}: {e}")
+        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
         return None
 
 
@@ -348,7 +348,7 @@ def run(session, config: dict, **kwargs) -> dict:
                 logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
                 checkpoints_used = True
         
-        store_urls = get_store_urls_from_sitemap(session)
+        store_urls = get_store_urls_from_sitemap(session, retailer_name)
         logging.info(f"[{retailer_name}] Found {len(store_urls)} store URLs")
         
         if not store_urls:
@@ -367,7 +367,7 @@ def run(session, config: dict, **kwargs) -> dict:
         
         total_to_process = len(remaining_urls)
         for i, url in enumerate(remaining_urls, 1):
-            store_obj = extract_store_details(session, url)
+            store_obj = extract_store_details(session, url, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_urls.add(url)

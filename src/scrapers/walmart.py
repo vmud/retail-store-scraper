@@ -65,21 +65,21 @@ class WalmartStore:
         return result
 
 
-def _check_pause_logic() -> None:
+def _check_pause_logic(retailer: str = 'walmart') -> None:
     """Check if we need to pause based on request count"""
     count = _request_counter.count
 
     if count % walmart_config.PAUSE_200_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(walmart_config.PAUSE_200_MIN, walmart_config.PAUSE_200_MAX)
-        logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
     elif count % walmart_config.PAUSE_50_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(walmart_config.PAUSE_50_MIN, walmart_config.PAUSE_50_MAX)
-        logging.info(f"Pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
 
 
-def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
+def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'walmart') -> List[str]:
     """Fetch all store URLs from the Walmart gzipped sitemaps.
 
     Returns:
@@ -88,15 +88,15 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
     all_store_urls = []
 
     for sitemap_url in walmart_config.SITEMAP_URLS:
-        logging.info(f"Fetching sitemap: {sitemap_url}")
+        logging.info(f"[{retailer}] Fetching sitemap: {sitemap_url}")
 
         response = utils.get_with_retry(session, sitemap_url)
         if not response:
-            logging.error(f"Failed to fetch sitemap: {sitemap_url}")
+            logging.error(f"[{retailer}] Failed to fetch sitemap: {sitemap_url}")
             continue
 
         _request_counter.increment()
-        _check_pause_logic()
+        _check_pause_logic(retailer)
 
         try:
             # Try to decompress gzipped content, fall back to plain text if not gzipped
@@ -104,7 +104,7 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
                 xml_content = gzip.decompress(response.content).decode('utf-8')
             except (gzip.BadGzipFile, OSError):
                 # Content is not gzipped, try as plain text
-                logging.debug(f"Content from {sitemap_url} is not gzipped, using plain text")
+                logging.debug(f"[{retailer}] Content from {sitemap_url} is not gzipped, using plain text")
                 xml_content = response.content.decode('utf-8')
 
             # Parse XML
@@ -119,19 +119,19 @@ def get_store_urls_from_sitemap(session: requests.Session) -> List[str]:
                     sitemap_urls.append(url)
 
             all_store_urls.extend(sitemap_urls)
-            logging.info(f"Found {len(sitemap_urls)} store URLs from {sitemap_url}")
+            logging.info(f"[{retailer}] Found {len(sitemap_urls)} store URLs from {sitemap_url}")
         except ET.ParseError as e:
-            logging.error(f"Failed to parse XML sitemap {sitemap_url}: {e}")
+            logging.error(f"[{retailer}] Failed to parse XML sitemap {sitemap_url}: {e}")
             continue
         except Exception as e:
-            logging.error(f"Unexpected error processing sitemap {sitemap_url}: {e}")
+            logging.error(f"[{retailer}] Unexpected error processing sitemap {sitemap_url}: {e}")
             continue
 
-    logging.info(f"Total store URLs collected: {len(all_store_urls)}")
+    logging.info(f"[{retailer}] Total store URLs collected: {len(all_store_urls)}")
     return all_store_urls
 
 
-def extract_store_details(session: requests.Session, url: str) -> Optional[WalmartStore]:
+def extract_store_details(session: requests.Session, url: str, retailer: str = 'walmart') -> Optional[WalmartStore]:
     """Extract store data from a single Walmart store page.
 
     Args:
@@ -141,15 +141,15 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[Walma
     Returns:
         WalmartStore object if successful, None otherwise
     """
-    logging.debug(f"Extracting details from {url}")
+    logging.debug(f"[{retailer}] Extracting details from {url}")
 
     response = utils.get_with_retry(session, url)
     if not response:
-        logging.warning(f"Failed to fetch store details: {url}")
+        logging.warning(f"[{retailer}] Failed to fetch store details: {url}")
         return None
 
     _request_counter.increment()
-    _check_pause_logic()
+    _check_pause_logic(retailer)
 
     try:
         # Use BeautifulSoup to extract __NEXT_DATA__ script tag
@@ -159,26 +159,26 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[Walma
         script_tag = soup.find('script', id='__NEXT_DATA__', type='application/json')
 
         if not script_tag or not script_tag.string:
-            logging.warning(f"No __NEXT_DATA__ script tag found for {url}")
-            logging.warning("Walmart requires JavaScript rendering. Enable proxy with render_js=true in config/retailers.yaml")
+            logging.warning(f"[{retailer}] No __NEXT_DATA__ script tag found for {url}")
+            logging.warning(f"[{retailer}] Walmart requires JavaScript rendering. Enable proxy with render_js=true in config/retailers.yaml")
             return None
 
         # Parse JSON from script tag
         try:
             data = json.loads(script_tag.string)
         except json.JSONDecodeError as e:
-            logging.warning(f"Failed to parse JSON from __NEXT_DATA__ for {url}: {e}")
+            logging.warning(f"[{retailer}] Failed to parse JSON from __NEXT_DATA__ for {url}: {e}")
             return None
 
         # Navigate to store data in Next.js structure: props.pageProps.store
         page_props = data.get('props', {})
         if not page_props:
-            logging.warning(f"No 'props' found in __NEXT_DATA__ for {url}")
+            logging.warning(f"[{retailer}] No 'props' found in __NEXT_DATA__ for {url}")
             return None
 
         store_data = page_props.get('pageProps', {}).get('store', {})
         if not store_data:
-            logging.warning(f"No 'store' found in props.pageProps for {url}")
+            logging.warning(f"[{retailer}] No 'store' found in props.pageProps for {url}")
             return None
 
         # Extract store ID (from store_data.id or URL pattern)
@@ -253,11 +253,11 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[Walma
             scraped_at=datetime.now().isoformat()
         )
 
-        logging.debug(f"Extracted store: {store.name} ({store.store_type})")
+        logging.debug(f"[{retailer}] Extracted store: {store.name} ({store.store_type})")
         return store
 
     except Exception as e:
-        logging.warning(f"Error extracting store data from {url}: {e}")
+        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
         return None
 
 
@@ -312,7 +312,7 @@ def run(session, config: dict, **kwargs) -> dict:
                 logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
                 checkpoints_used = True
         
-        store_urls = get_store_urls_from_sitemap(session)
+        store_urls = get_store_urls_from_sitemap(session, retailer_name)
         logging.info(f"[{retailer_name}] Found {len(store_urls)} store URLs")
         
         if not store_urls:
@@ -331,7 +331,7 @@ def run(session, config: dict, **kwargs) -> dict:
         
         total_to_process = len(remaining_urls)
         for i, url in enumerate(remaining_urls, 1):
-            store_obj = extract_store_details(session, url)
+            store_obj = extract_store_details(session, url, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_urls.add(url)

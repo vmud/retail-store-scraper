@@ -113,33 +113,33 @@ def get_state_url(slug: str) -> str:
     return f"/stores/state/{slug}/"
 
 
-def _check_pause_logic() -> None:
+def _check_pause_logic(retailer: str = 'verizon') -> None:
     """Check if we need to pause based on request count"""
     count = _request_counter.count
 
     if count % config.PAUSE_200_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(config.PAUSE_200_MIN, config.PAUSE_200_MAX)
-        logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
     elif count % config.PAUSE_50_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(config.PAUSE_50_MIN, config.PAUSE_50_MAX)
-        logging.info(f"Pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
 
 
-def _scrape_states_from_html(session: requests.Session) -> List[Dict[str, str]]:
+def _scrape_states_from_html(session: requests.Session, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Scrape state URLs from the main stores page HTML.
     Returns empty list if scraping fails."""
     url = f"{config.BASE_URL}/stores/"
-    logging.info(f"Fetching states from {url}")
+    logging.info(f"[{retailer}] Fetching states from {url}")
 
     response = utils.get_with_retry(session, url)
     if not response:
-        logging.warning("Failed to fetch stores page for state scraping")
+        logging.warning(f"[{retailer}] Failed to fetch stores page for state scraping")
         return []
 
     _request_counter.increment()
-    _check_pause_logic()
+    _check_pause_logic(retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     states = []
@@ -170,10 +170,10 @@ def _scrape_states_from_html(session: requests.Session) -> List[Dict[str, str]]:
                                 })
                                 seen_slugs.add(state_slug)
                         if states:
-                            logging.info(f"Extracted {len(states)} states from statesJSON")
+                            logging.info(f"[{retailer}] Extracted {len(states)} states from statesJSON")
                             break
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                logging.debug(f"Failed to parse statesJSON: {e}")
+                logging.debug(f"[{retailer}] Failed to parse statesJSON: {e}")
                 continue
 
     # Fallback: Parse HTML links if JSON extraction didn't work
@@ -214,11 +214,11 @@ def _scrape_states_from_html(session: requests.Session) -> List[Dict[str, str]]:
 
     result = list(unique_states.values())
     if result:
-        logging.info(f"Scraped {len(result)} states from HTML")
+        logging.info(f"[{retailer}] Scraped {len(result)} states from HTML")
     return result
 
 
-def _generate_states_programmatically() -> List[Dict[str, str]]:
+def _generate_states_programmatically(retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Generate state URLs programmatically from the standard list of US states."""
     # Standard list of US states (50 states + DC)
     # Note: Using "District Of Columbia" (capital O) as per state-slugs.md
@@ -254,39 +254,39 @@ def _generate_states_programmatically() -> List[Dict[str, str]]:
             'url': f"{config.BASE_URL}{url_path}"
         })
 
-    logging.info(f"Generated {len(states)} states programmatically")
+    logging.info(f"[{retailer}] Generated {len(states)} states programmatically")
     return states
 
 
-def get_all_states(session: requests.Session) -> List[Dict[str, str]]:
+def get_all_states(session: requests.Session, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all US state URLs by scraping from the main stores page.
     Falls back to programmatic generation if scraping fails."""
 
     # Try HTML scraping first
-    states = _scrape_states_from_html(session)
+    states = _scrape_states_from_html(session, retailer)
 
     # Fallback to programmatic generation if scraping failed or found insufficient states
     if not states or len(states) < 50:
         if states:
-            logging.warning(f"HTML scraping found only {len(states)} states, using programmatic generation")
+            logging.warning(f"[{retailer}] HTML scraping found only {len(states)} states, using programmatic generation")
         else:
-            logging.warning("HTML scraping found no states, using programmatic generation")
-        states = _generate_states_programmatically()
+            logging.warning(f"[{retailer}] HTML scraping found no states, using programmatic generation")
+        states = _generate_states_programmatically(retailer)
 
     return states
 
 
-def get_cities_for_state(session: requests.Session, state_url: str, state_name: str) -> List[Dict[str, str]]:
+def get_cities_for_state(session: requests.Session, state_url: str, state_name: str, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all city URLs for a given state"""
-    logging.info(f"Fetching cities for state: {state_name}")
+    logging.info(f"[{retailer}] Fetching cities for state: {state_name}")
 
     response = utils.get_with_retry(session, state_url)
     if not response:
-        logging.warning(f"Failed to fetch cities for state: {state_name}")
+        logging.warning(f"[{retailer}] Failed to fetch cities for state: {state_name}")
         return []
 
     _request_counter.increment()
-    _check_pause_logic()
+    _check_pause_logic(retailer)
 
     # Extract state slug from URL (e.g., "new-jersey" from "/stores/state/new-jersey/")
     state_slug = state_url.rstrip('/').split('/')[-1].lower()
@@ -321,10 +321,10 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
                                     'url': city_url
                                 })
                                 seen_cities.add(city_name)
-                        logging.info(f"Extracted {len(cities)} cities from stateJSON")
+                        logging.info(f"[{retailer}] Extracted {len(cities)} cities from stateJSON")
                         break
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                logging.debug(f"Failed to parse stateJSON: {e}")
+                logging.debug(f"[{retailer}] Failed to parse stateJSON: {e}")
                 continue
 
     # Fallback: if no cities found from stateJSON, try parsing HTML links
@@ -362,21 +362,21 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
             unique_cities[city_key] = city
 
     result = list(unique_cities.values())
-    logging.info(f"Found {len(result)} cities for {state_name}")
+    logging.info(f"[{retailer}] Found {len(result)} cities for {state_name}")
     return result
 
 
-def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str) -> List[Dict[str, str]]:
+def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all store URLs for a given city"""
-    logging.info(f"Fetching stores for {city_name}, {state_name}")
+    logging.info(f"[{retailer}] Fetching stores for {city_name}, {state_name}")
 
     response = utils.get_with_retry(session, city_url)
     if not response:
-        logging.warning(f"Failed to fetch stores for {city_name}, {state_name}")
+        logging.warning(f"[{retailer}] Failed to fetch stores for {city_name}, {state_name}")
         return []
 
     _request_counter.increment()
-    _check_pause_logic()
+    _check_pause_logic(retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     stores = []
@@ -407,10 +407,10 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
                                         'url': store_url
                                     })
                                     seen_urls.add(store_url)
-                        logging.info(f"Extracted {len(stores)} stores from cityJSON")
+                        logging.info(f"[{retailer}] Extracted {len(stores)} stores from cityJSON")
                         break
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                logging.debug(f"Failed to parse cityJSON: {e}")
+                logging.debug(f"[{retailer}] Failed to parse cityJSON: {e}")
                 continue
 
     # Fallback: if no stores found from cityJSON, try parsing HTML links
@@ -435,7 +435,7 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
             unique_stores[store['url']] = store
 
     result = list(unique_stores.values())
-    logging.info(f"Found {len(result)} stores for {city_name}, {state_name}")
+    logging.info(f"[{retailer}] Found {len(result)} stores for {city_name}, {state_name}")
     return result
 
 
@@ -513,7 +513,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
                     }
                 else:
                     # Best Buy URL with insufficient parts - malformed
-                    logging.warning(f"Best Buy URL has insufficient parts: {url}")
+                    logging.warning(f"[verizon] Best Buy URL has insufficient parts: {url}")
                     return {
                         'sub_channel': sub_channel,
                         'dealer_name': dealer_name,
@@ -535,7 +535,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
                 }
             else:
                 # Dealer URL with insufficient parts - malformed
-                logging.warning(f"Dealer URL has insufficient parts: {url}")
+                logging.warning(f"[verizon] Dealer URL has insufficient parts: {url}")
                 return {
                     'sub_channel': sub_channel,
                     'dealer_name': dealer_name,
@@ -558,7 +558,7 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
         }
 
     # Fallback for unexpected format (shouldn't happen with real data)
-    logging.warning(f"Unexpected URL format, cannot parse components: {url}")
+    logging.warning(f"[verizon] Unexpected URL format, cannot parse components: {url}")
     return {
         'sub_channel': 'COR',
         'dealer_name': None,
@@ -610,23 +610,23 @@ def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
             issues.append(f"invalid longitude format: {lon}")
 
     if issues:
-        logging.warning(f"Store data validation failed for {store_url}: {', '.join(issues)}")
+        logging.warning(f"[verizon] Store data validation failed for {store_url}: {', '.join(issues)}")
         return False
 
     return True
 
 
-def extract_store_details(session: requests.Session, store_url: str) -> Optional[Dict[str, Any]]:
+def extract_store_details(session: requests.Session, store_url: str, retailer: str = 'verizon') -> Optional[Dict[str, Any]]:
     """Extract structured store data from JSON-LD on store detail page"""
-    logging.debug(f"Extracting details from {store_url}")
+    logging.debug(f"[{retailer}] Extracting details from {store_url}")
 
     response = utils.get_with_retry(session, store_url)
     if not response:
-        logging.warning(f"Failed to fetch store details: {store_url}")
+        logging.warning(f"[{retailer}] Failed to fetch store details: {store_url}")
         return None
 
     _request_counter.increment()
-    _check_pause_logic()
+    _check_pause_logic(retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -659,20 +659,20 @@ def extract_store_details(session: requests.Session, store_url: str) -> Optional
 
                 # Validate the extracted data
                 if _validate_store_data(result, store_url):
-                    logging.debug(f"Extracted store: {result.get('name', 'Unknown')}")
+                    logging.debug(f"[{retailer}] Extracted store: {result.get('name', 'Unknown')}")
                     return result
                 else:
-                    logging.warning(f"Skipping store due to validation failure: {store_url}")
+                    logging.warning(f"[{retailer}] Skipping store due to validation failure: {store_url}")
                     return None
 
         except json.JSONDecodeError as e:
-            logging.warning(f"JSON decode error for {store_url}: {e}")
+            logging.warning(f"[{retailer}] JSON decode error for {store_url}: {e}")
             continue
         except Exception as e:
-            logging.warning(f"Error parsing JSON-LD for {store_url}: {e}")
+            logging.warning(f"[{retailer}] Error parsing JSON-LD for {store_url}: {e}")
             continue
 
-    logging.warning(f"No JSON-LD Store data found for {store_url}")
+    logging.warning(f"[{retailer}] No JSON-LD Store data found for {store_url}")
     return None
 
 
@@ -734,15 +734,15 @@ def run(session, config: dict, **kwargs) -> dict:
                 checkpoints_used = True
         
         logging.info(f"[{retailer_name}] Phase 1: Discovering states")
-        all_states = get_all_states(session)
+        all_states = get_all_states(session, retailer_name)
         logging.info(f"[{retailer_name}] Found {len(all_states)} states")
         
         logging.info(f"[{retailer_name}] Phase 2-3: Discovering cities and stores")
         all_store_urls = []
         for state in all_states:
-            cities = get_cities_for_state(session, state['url'], state['name'])
+            cities = get_cities_for_state(session, state['url'], state['name'], retailer_name)
             for city in cities:
-                store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'])
+                store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], retailer_name)
                 all_store_urls.extend([s['url'] for s in store_infos])
         
         logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
@@ -764,7 +764,7 @@ def run(session, config: dict, **kwargs) -> dict:
         logging.info(f"[{retailer_name}] Phase 4: Extracting store details")
         total_to_process = len(remaining_urls)
         for i, url in enumerate(remaining_urls, 1):
-            store_data = extract_store_details(session, url)
+            store_data = extract_store_details(session, url, retailer_name)
             if store_data:
                 stores.append(store_data)
                 completed_urls.add(url)
