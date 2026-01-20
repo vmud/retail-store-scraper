@@ -39,16 +39,18 @@ from src.scrapers import get_available_retailers, get_scraper_module
 from src.change_detector import ChangeDetector
 
 
-def validate_config_on_startup() -> List[str]:
+def validate_config_on_startup(config_path: str = "config/retailers.yaml") -> List[str]:
     """Validate configuration file on startup (#67).
 
     Checks for common configuration errors before running scrapers.
+
+    Args:
+        config_path: Path to retailers.yaml config file (default: "config/retailers.yaml")
 
     Returns:
         List of validation errors (empty if config is valid)
     """
     errors = []
-    config_path = "config/retailers.yaml"
 
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
@@ -100,11 +102,13 @@ def validate_config_on_startup() -> List[str]:
 
         # Validate delay order only when both are explicitly set (#3 review feedback)
         # Using defaults causes false positives when only one delay is configured
+        # Only compare if both values are numeric to avoid TypeError on invalid configs
         if 'min_delay' in retailer_config and 'max_delay' in retailer_config:
             min_delay = retailer_config['min_delay']
             max_delay = retailer_config['max_delay']
-            if min_delay > max_delay:
-                errors.append(f"{prefix}: 'min_delay' ({min_delay}) cannot be greater than 'max_delay' ({max_delay})")
+            if isinstance(min_delay, (int, float)) and isinstance(max_delay, (int, float)):
+                if min_delay > max_delay:
+                    errors.append(f"{prefix}: 'min_delay' ({min_delay}) cannot be greater than 'max_delay' ({max_delay})")
 
     # Validate proxy section if present
     if 'proxy' in config:
