@@ -151,7 +151,7 @@ export function startScraper(retailer, options = {}) {
     incremental: options.incremental ?? false,
     limit: options.limit ?? null,
     test: options.test ?? false,
-    proxy: options.proxy ?? null,
+    proxy: options.proxy ?? 'direct',  // Default to direct mode (no proxy)
     render_js: options.renderJs ?? false,
     proxy_country: options.proxyCountry ?? 'us',
     verbose: options.verbose ?? false
@@ -181,7 +181,8 @@ export function restartScraper(retailer, options = {}) {
   return post('/scraper/restart', {
     retailer,
     resume: options.resume ?? true,
-    timeout: options.timeout ?? 30
+    timeout: options.timeout ?? 30,
+    proxy: options.proxy ?? 'direct'  // Default to direct mode (no proxy)
   });
 }
 
