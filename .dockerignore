@@ -1,0 +1,61 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+env/
+.venv
+
+# Data and logs (mounted as volumes)
+data/
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+.tox/
+
+# Documentation
+.docs/
+*.md
+!README.md
+
+# Node (for dashboard)
+node_modules/
+dashboard/node_modules/
+
+# Deployment
+deploy/
+.zenflow/
+
+# Temporary files
+*.tmp
+*.bak
+.flask_secret

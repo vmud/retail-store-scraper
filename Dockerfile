@@ -40,8 +40,14 @@ COPY --from=builder /root/.local /home/appuser/.local
 # Copy application code
 COPY --chown=appuser:appuser . .
 
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 # Create data and logs directories with correct ownership
-RUN mkdir -p /app/data /app/logs && chown -R appuser:appuser /app/data /app/logs
+RUN mkdir -p /app/data /app/logs /app/dashboard && \
+    touch /app/.flask_secret && \
+    chown -R appuser:appuser /app/data /app/logs /app/.flask_secret
 
 # Install curl for health checks (#115)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -65,6 +71,9 @@ EXPOSE 5001
 # Health check for dashboard (#115)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5001/api/status || exit 1
+
+# Set entrypoint to handle permissions and directory setup
+ENTRYPOINT ["/docker-entrypoint.sh"]
 
 # Default command - start the dashboard (aligns with healthcheck)
 # Override with: docker run <image> python run.py --all --resume

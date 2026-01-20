@@ -36,8 +36,7 @@ services:
   dashboard:
     build: .
     container_name: retail-scraper-dashboard
-    # Ensure data directory exists before starting (#105)
-    command: ["sh", "-c", "mkdir -p /app/data && python dashboard/app.py"]
+    # Default command (python dashboard/app.py) is set in Dockerfile
     ports:
       # Dashboard listens on port 5001 (#105)
       - "5001:5001"
@@ -47,8 +46,18 @@ services:
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
+      # Flask secret for sessions
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
       # Optional API key for authentication (#92)
       - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}
+      # Proxy credentials (for dashboard to start scrapers)
+      - OXYLABS_RESIDENTIAL_USERNAME=${OXYLABS_RESIDENTIAL_USERNAME:-}
+      - OXYLABS_RESIDENTIAL_PASSWORD=${OXYLABS_RESIDENTIAL_PASSWORD:-}
+      - OXYLABS_SCRAPER_API_USERNAME=${OXYLABS_SCRAPER_API_USERNAME:-}
+      - OXYLABS_SCRAPER_API_PASSWORD=${OXYLABS_SCRAPER_API_PASSWORD:-}
+      - OXYLABS_USERNAME=${OXYLABS_USERNAME:-}
+      - OXYLABS_PASSWORD=${OXYLABS_PASSWORD:-}
+      - PROXY_MODE=${PROXY_MODE:-direct}
     restart: unless-stopped
     # Removed depends_on: scraper - dashboard can run independently (#105)
     # Health check for dashboard service (#115)
