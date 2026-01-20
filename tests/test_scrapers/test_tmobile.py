@@ -22,6 +22,7 @@ class TestTMobileStore:
     def test_to_dict_basic(self):
         """Test basic dict conversion."""
         store = TMobileStore(
+            store_id='TX-DAL-001',
             branch_code='TX-DAL-001',
             name='T-Mobile Dallas',
             store_type='T-Mobile Store',
@@ -39,6 +40,7 @@ class TestTMobileStore:
         )
         result = store.to_dict()
 
+        assert result['store_id'] == 'TX-DAL-001'
         assert result['branch_code'] == 'TX-DAL-001'
         assert result['store_type'] == 'T-Mobile Store'
         assert json.loads(result['opening_hours']) == ['Mon-Fri: 10am-8pm', 'Sat: 10am-6pm', 'Sun: 12pm-6pm']
@@ -46,6 +48,7 @@ class TestTMobileStore:
     def test_to_dict_none_opening_hours(self):
         """Test dict conversion with None opening_hours."""
         store = TMobileStore(
+            store_id='TX-DAL-001',
             branch_code='TX-DAL-001',
             name='T-Mobile Dallas',
             store_type='T-Mobile Store',
@@ -68,6 +71,7 @@ class TestTMobileStore:
     def test_to_dict_none_store_type(self):
         """Test dict conversion with None store_type."""
         store = TMobileStore(
+            store_id='TX-DAL-001',
             branch_code='TX-DAL-001',
             name='T-Mobile Dallas',
             store_type=None,

@@ -66,6 +66,14 @@ def sanitize_csv_value(value: Any) -> Any:
     if not isinstance(value, str):
         return value
     if value and value[0] in CSV_INJECTION_CHARS:
+        # Exception: Don't sanitize negative numbers (e.g., -92.0963940)
+        # These are safe and common in coordinate data
+        if value[0] == '-':
+            try:
+                float(value)
+                return value  # It's a valid negative number, don't sanitize
+            except ValueError:
+                pass  # Not a number, continue with sanitization
         return f"'{value}"
     return value
 

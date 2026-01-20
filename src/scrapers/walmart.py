@@ -132,22 +132,39 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'walm
     return all_store_urls
 
 
-def extract_store_details(session: requests.Session, url: str, retailer: str = 'walmart') -> Optional[WalmartStore]:
+def extract_store_details(client, url: str, retailer: str = 'walmart') -> Optional[WalmartStore]:
     """Extract store data from a single Walmart store page.
 
     Args:
-        session: Requests session object
+        client: ProxyClient or requests.Session to use for fetching
         url: Store page URL
+        retailer: Retailer name for logging
 
     Returns:
         WalmartStore object if successful, None otherwise
     """
     logging.debug(f"[{retailer}] Extracting details from {url}")
 
-    response = utils.get_with_retry(session, url)
-    if not response:
-        logging.warning(f"[{retailer}] Failed to fetch store details: {url}")
-        return None
+    # Use ProxyClient.get() if available (for Web Scraper API with JS rendering)
+    # Otherwise fall back to utils.get_with_retry for regular sessions
+    if hasattr(client, 'get') and callable(getattr(client, 'get')):
+        # ProxyClient - use .get() method for proper Web Scraper API handling
+        proxy_response = client.get(url)
+        if not proxy_response or proxy_response.status_code != 200:
+            logging.warning(f"[{retailer}] Failed to fetch store details: {url} (status={proxy_response.status_code if proxy_response else 'None'})")
+            return None
+        # Create a mock response object with the expected attributes
+        class MockResponse:
+            def __init__(self, text, status_code):
+                self.text = text
+                self.status_code = status_code
+        response = MockResponse(proxy_response.text, proxy_response.status_code)
+    else:
+        # Regular requests.Session - use utils.get_with_retry
+        response = utils.get_with_retry(client, url)
+        if not response:
+            logging.warning(f"[{retailer}] Failed to fetch store details: {url}")
+            return None
 
     _request_counter.increment()
     _check_pause_logic(retailer)
@@ -306,9 +323,6 @@ def run(session, config: dict, **kwargs) -> dict:
     retailer_name = kwargs.get('retailer', 'walmart')
     logging.info(f"[{retailer_name}] Starting scrape run")
     
-    # Create web_scraper_api session for store extraction (JS rendering)
-    store_session = None
-    
     try:
         limit = kwargs.get('limit')
         resume = kwargs.get('resume', False)
@@ -321,14 +335,13 @@ def run(session, config: dict, **kwargs) -> dict:
         logging.info(f"[{retailer_name}] HYBRID MODE: Using residential for sitemaps, web_scraper_api for stores")
         logging.info(f"[{retailer_name}] Sitemap delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
         
-        # Create web_scraper_api session for store extraction
-        logging.info(f"[{retailer_name}] Creating web_scraper_api session for store extraction")
+        # Create web_scraper_api client for store extraction
+        logging.info(f"[{retailer_name}] Creating web_scraper_api client for store extraction")
         proxy_config = ProxyConfig.from_env()
         proxy_config.mode = ProxyMode.WEB_SCRAPER_API
         proxy_config.render_js = True
         store_client = ProxyClient(proxy_config)
-        store_session = store_client.session
-        logging.info(f"[{retailer_name}] Web Scraper API session ready (render_js=true)")
+        logging.info(f"[{retailer_name}] Web Scraper API client ready (render_js=true)")
         
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
         checkpoint_interval = config.get('checkpoint_interval', 100)
@@ -372,8 +385,8 @@ def run(session, config: dict, **kwargs) -> dict:
             logging.info(f"[{retailer_name}] No new stores to process")
         
         for i, url in enumerate(remaining_urls, 1):
-            # Use web_scraper_api session for store extraction (JS rendering)
-            store_obj = extract_store_details(store_session, url, retailer_name)
+            # Use web_scraper_api client for store extraction (JS rendering)
+            store_obj = extract_store_details(store_client, url, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_urls.add(url)

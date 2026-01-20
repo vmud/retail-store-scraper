@@ -228,7 +228,8 @@ function startLivePolling(retailer, runId) {
   pollErrors = 0;
   currentPollInterval = LIVE_POLL_INTERVAL;
 
-  liveLogInterval = setInterval(async () => {
+  // Define the polling function so it can be referenced by name (not arguments.callee)
+  const pollFunction = async () => {
     // Skip if previous request is still in-flight
     if (isPolling) {
       return;
@@ -303,13 +304,13 @@ function startLivePolling(retailer, runId) {
       // Handle rate limiting (429) - stop polling temporarily
       if (error.status === 429) {
         pollErrors++;
-        currentPollInterval = Math.min(
+        const backoffInterval = Math.min(
           LIVE_POLL_INTERVAL * Math.pow(BACKOFF_MULTIPLIER, pollErrors),
           MAX_POLL_INTERVAL
         );
         
-        console.warn(`Rate limited (429). Slowing polling to ${(currentPollInterval/1000).toFixed(1)}s`);
-        showToast(`Log polling rate limited. Slowing down to ${(currentPollInterval/1000).toFixed(1)}s intervals`, 'warning');
+        console.warn(`Rate limited (429). Slowing polling to ${(backoffInterval/1000).toFixed(1)}s`);
+        showToast(`Log polling rate limited. Slowing down to ${(backoffInterval/1000).toFixed(1)}s intervals`, 'warning');
         
         // If repeatedly rate limited, stop polling
         if (pollErrors >= 3) {
@@ -321,9 +322,11 @@ function startLivePolling(retailer, runId) {
           return;
         }
         
-        // Restart interval with new backoff delay
+        // Restart interval with new backoff delay using the named function reference
+        // IMPORTANT: Save backoffInterval before calling stopLivePolling() which resets currentPollInterval
         stopLivePolling();
-        liveLogInterval = setInterval(arguments.callee, currentPollInterval);
+        currentPollInterval = backoffInterval; // Restore the calculated backoff interval
+        liveLogInterval = setInterval(pollFunction, backoffInterval);
       }
       // Handle other errors (network, server errors)
       else if (error.status >= 500 || error.isNetworkError) {
@@ -339,7 +342,9 @@ function startLivePolling(retailer, runId) {
     } finally {
       isPolling = false;
     }
-  }, currentPollInterval);
+  };
+
+  liveLogInterval = setInterval(pollFunction, currentPollInterval);
 }
 
 /**

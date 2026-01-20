@@ -24,6 +24,7 @@ _request_counter = RequestCounter()
 @dataclass
 class TMobileStore:
     """Data model for T-Mobile store information"""
+    store_id: str
     branch_code: str
     name: str
     store_type: Optional[str]
@@ -125,7 +126,7 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
     """Fetch all store URLs from the T-Mobile paginated sitemaps.
 
     Returns:
-        List of store URLs (filtered to only those containing /stores/bd/)
+        List of retail store URLs (excludes service pages like business-internet, home-internet)
     """
     all_store_urls = []
 
@@ -154,9 +155,12 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
             for loc in root.findall(".//sm:loc", namespace):
                 url = loc.text
                 if url and '/stores/bd/' in url:
-                    all_store_urls.append(url)
+                    # Filter out service pages (business-internet, home-internet)
+                    # Only include actual retail store URLs that start with 't-mobile-'
+                    if 'business-internet' not in url and 'home-internet' not in url:
+                        all_store_urls.append(url)
 
-            logging.info(f"[{retailer}] Found {len(all_store_urls)} store URLs from page {page}")
+            logging.info(f"[{retailer}] Found {len(all_store_urls)} retail store URLs from page {page}")
 
         except ET.ParseError as e:
             logging.error(f"[{retailer}] Failed to parse XML sitemap page {page}: {e}")
@@ -165,7 +169,7 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
             logging.error(f"[{retailer}] Unexpected error parsing sitemap page {page}: {e}")
             continue
 
-    logging.info(f"[{retailer}] Total store URLs collected: {len(all_store_urls)}")
+    logging.info(f"[{retailer}] Total retail store URLs collected: {len(all_store_urls)}")
     return all_store_urls
 
 
@@ -268,11 +272,12 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
             # If it's a single string, convert to list
             opening_hours = [opening_hours]
 
-        # Extract branchCode
+        # Extract branchCode (used as store_id)
         branch_code = data.get('branchCode', '')
 
         # Create TMobileStore object
         store = TMobileStore(
+            store_id=branch_code,  # Use branch_code as the unique store identifier
             branch_code=branch_code,
             name=data.get('name', ''),
             store_type=store_type,

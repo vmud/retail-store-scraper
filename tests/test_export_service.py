@@ -449,7 +449,12 @@ class TestFormulaInjectionProtection:
         assert sanitize_csv_value('+cmd|/c calc') == "'+cmd|/c calc"
 
     def test_sanitize_csv_value_minus_sign(self):
-        """Test that values starting with - are sanitized"""
+        """Test that values starting with - are sanitized (except negative numbers)"""
+        # Negative numbers should NOT be sanitized (common in coordinate data)
+        assert sanitize_csv_value('-92.0963940') == '-92.0963940'
+        assert sanitize_csv_value('-123.456') == '-123.456'
+        assert sanitize_csv_value('-0.5') == '-0.5'
+        # But formulas starting with - should be sanitized
         assert sanitize_csv_value('-1+1') == "'-1+1"
         assert sanitize_csv_value('-cmd|/c calc') == "'-cmd|/c calc"
 
