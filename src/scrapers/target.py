@@ -267,6 +267,11 @@ def run(session, config: dict, **kwargs) -> dict:
         
         reset_request_counter()
         
+        # Auto-select delays based on proxy mode for optimal performance
+        proxy_mode = config.get('proxy', {}).get('mode', 'direct')
+        min_delay, max_delay = utils.select_delays(config, proxy_mode)
+        logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
+        
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
         checkpoint_interval = config.get('checkpoint_interval', 100)
         
@@ -291,6 +296,9 @@ def run(session, config: dict, **kwargs) -> dict:
         
         remaining_stores = [s for s in store_list if s.get('store_id') not in completed_ids]
         
+        if resume and completed_ids:
+            logging.info(f"[{retailer_name}] Skipping {len(store_list) - len(remaining_stores)} already-processed stores from checkpoint")
+        
         if limit:
             logging.info(f"[{retailer_name}] Limited to {limit} stores")
             total_needed = limit - len(stores)
@@ -300,12 +308,21 @@ def run(session, config: dict, **kwargs) -> dict:
                 remaining_stores = []
         
         total_to_process = len(remaining_stores)
+        if total_to_process > 0:
+            logging.info(f"[{retailer_name}] Extracting details for {total_to_process} stores")
+        else:
+            logging.info(f"[{retailer_name}] No new stores to process")
+        
         for i, store_info in enumerate(remaining_stores, 1):
             store_id = store_info.get('store_id')
             store_obj = get_store_details(session, store_id, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_ids.add(store_id)
+                
+                # Log successful extraction every 10 stores for more frequent updates
+                if i % 10 == 0:
+                    logging.info(f"[{retailer_name}] Extracted {len(stores)} stores so far ({i}/{total_to_process})")
             
             # Progress logging every 100 stores
             if i % 100 == 0:

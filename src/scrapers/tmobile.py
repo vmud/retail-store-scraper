@@ -333,6 +333,11 @@ def run(session, config: dict, **kwargs) -> dict:
         
         reset_request_counter()
         
+        # Auto-select delays based on proxy mode for optimal performance
+        proxy_mode = config.get('proxy', {}).get('mode', 'direct')
+        min_delay, max_delay = utils.select_delays(config, proxy_mode)
+        logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
+        
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
         checkpoint_interval = config.get('checkpoint_interval', 100)
         
@@ -357,6 +362,9 @@ def run(session, config: dict, **kwargs) -> dict:
         
         remaining_urls = [url for url in store_urls if url not in completed_urls]
         
+        if resume and completed_urls:
+            logging.info(f"[{retailer_name}] Skipping {len(store_urls) - len(remaining_urls)} already-processed stores from checkpoint")
+        
         if limit:
             logging.info(f"[{retailer_name}] Limited to {limit} stores")
             total_needed = limit - len(stores)
@@ -366,11 +374,20 @@ def run(session, config: dict, **kwargs) -> dict:
                 remaining_urls = []
         
         total_to_process = len(remaining_urls)
+        if total_to_process > 0:
+            logging.info(f"[{retailer_name}] Extracting details for {total_to_process} stores")
+        else:
+            logging.info(f"[{retailer_name}] No new stores to process")
+        
         for i, url in enumerate(remaining_urls, 1):
             store_obj = extract_store_details(session, url, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_urls.add(url)
+                
+                # Log successful extraction every 10 stores for more frequent updates
+                if i % 10 == 0:
+                    logging.info(f"[{retailer_name}] Extracted {len(stores)} stores so far ({i}/{total_to_process})")
             
             # Progress logging every 100 stores
             if i % 100 == 0:
