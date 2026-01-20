@@ -23,7 +23,7 @@ load_dotenv(Path(__file__).parent.parent / '.env')
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from functools import wraps
-from flask import Flask, jsonify, request, render_template, send_from_directory, send_file
+from flask import Flask, jsonify, request, render_template, send_from_directory, send_file, Response, stream_with_context
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -613,6 +613,50 @@ MAX_LOG_TAIL = 10000
 MAX_LOG_OFFSET = 1000000  # 1 million lines
 
 
+def read_log_tail(filepath: Path, lines: int = 200) -> tuple:
+    """Read last N lines efficiently without loading entire file (#70).
+
+    Args:
+        filepath: Path to log file
+        lines: Number of lines to read from end
+
+    Returns:
+        Tuple of (list of lines, total line count estimate)
+    """
+    with open(filepath, 'rb') as f:
+        # Get file size
+        f.seek(0, 2)
+        file_size = f.tell()
+
+        if file_size == 0:
+            return [], 0
+
+        # Read in blocks from the end
+        block_size = 8192
+        blocks = []
+        remaining_size = file_size
+
+        # Estimate: read enough to get requested lines (assuming ~100 bytes/line avg)
+        bytes_needed = lines * 200
+
+        while remaining_size > 0 and sum(len(b) for b in blocks) < bytes_needed:
+            read_size = min(block_size, remaining_size)
+            remaining_size -= read_size
+            f.seek(remaining_size)
+            blocks.append(f.read(read_size))
+
+        # Combine and decode
+        content = b''.join(reversed(blocks)).decode('utf-8', errors='replace')
+        all_lines = content.splitlines(keepends=True)
+
+        # Estimate total lines (rough approximation based on file size / avg line length)
+        avg_line_len = len(content) / max(len(all_lines), 1) if all_lines else 100
+        estimated_total = int(file_size / avg_line_len)
+
+        # Return last N lines
+        return all_lines[-lines:], estimated_total
+
+
 @app.route('/api/logs/<retailer>/<run_id>')
 def api_get_logs(retailer, run_id):
     """Get logs for a specific run
@@ -670,18 +714,23 @@ def api_get_logs(retailer, run_id):
         offset = max(offset, 0)
         offset = min(offset, MAX_LOG_OFFSET)
 
-        with open(log_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        # Use efficient tail reading when offset is 0 and tail is specified (#70)
+        if offset == 0 and tail is not None:
+            lines, total_lines = read_log_tail(log_file, tail)
+        else:
+            # Fall back to full read for offset-based queries
+            with open(log_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
 
-        total_lines = len(lines)
+            total_lines = len(lines)
 
-        # Apply offset first (for incremental fetching)
-        if offset > 0:
-            lines = lines[offset:]
+            # Apply offset first (for incremental fetching)
+            if offset > 0:
+                lines = lines[offset:]
 
-        # Then apply tail (for initial load)
-        if tail:
-            lines = lines[-tail:]
+            # Then apply tail (for initial load)
+            if tail:
+                lines = lines[-tail:]
 
         return jsonify({
             "retailer": retailer,
@@ -903,6 +952,54 @@ FILE_EXTENSIONS = {
     'geojson': 'geojson'
 }
 
+# Threshold for using streaming exports (50MB file size) (#74)
+STREAMING_THRESHOLD = 50 * 1024 * 1024
+
+
+def generate_csv_stream(stores_file: Path, fieldnames: list = None):
+    """Generate CSV content as a stream for large files (#74).
+
+    Args:
+        stores_file: Path to JSON file containing stores
+        fieldnames: Optional list of fields to include
+
+    Yields:
+        CSV lines as strings
+    """
+    import csv
+    import io
+
+    with open(stores_file, 'r', encoding='utf-8') as f:
+        stores = json.load(f)
+
+    if not stores:
+        return
+
+    # Determine fieldnames
+    if not fieldnames:
+        fieldnames = list(stores[0].keys())
+
+    # Yield header
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+    yield output.getvalue()
+
+    # Yield rows in chunks
+    chunk_size = 100
+    for i in range(0, len(stores), chunk_size):
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        for store in stores[i:i + chunk_size]:
+            # Sanitize CSV values to prevent formula injection
+            sanitized = {}
+            for k, v in store.items():
+                if isinstance(v, str) and v and v[0] in ('=', '+', '-', '@', '\t', '\n'):
+                    v = "'" + v
+                sanitized[k] = v
+            writer.writerow(sanitized)
+        yield output.getvalue()
+
 
 @app.route('/api/export/<retailer>/<export_format>')
 def api_export_retailer(retailer, export_format):
@@ -933,9 +1030,6 @@ def api_export_retailer(retailer, export_format):
         if not stores_file.exists():
             return jsonify({"error": f"No data found for {retailer}"}), 404
 
-        with open(stores_file, 'r', encoding='utf-8') as f:
-            stores = json.load(f)
-
         # Get retailer config for field mapping
         retailer_config = config.get(retailer, {})
 
@@ -943,6 +1037,22 @@ def api_export_retailer(retailer, export_format):
         timestamp = datetime.now().strftime("%Y-%m-%d")
         ext = FILE_EXTENSIONS.get(export_format, export_format)
         filename = f"{retailer}_stores_{timestamp}.{ext}"
+
+        # Check file size for streaming decision (#74)
+        file_size = stores_file.stat().st_size
+
+        # Use streaming for large CSV files (#74)
+        if export_format == 'csv' and file_size > STREAMING_THRESHOLD:
+            fieldnames = retailer_config.get('output_fields')
+            return Response(
+                stream_with_context(generate_csv_stream(stores_file, fieldnames)),
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename={filename}'}
+            )
+
+        # Standard in-memory export for smaller files
+        with open(stores_file, 'r', encoding='utf-8') as f:
+            stores = json.load(f)
 
         # Generate export based on format
         if export_format == 'json':

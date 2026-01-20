@@ -12,7 +12,14 @@ import shutil
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Iterator
+
+try:
+    import ijson
+    IJSON_AVAILABLE = True
+except ImportError:
+    IJSON_AVAILABLE = False
+    logging.debug("ijson not available, will use standard JSON loading")
 
 
 @dataclass
@@ -247,13 +254,43 @@ class ChangeDetector:
             return True
         return False
 
+    def _load_stores_streaming(self, filepath: Path) -> Iterator[Dict[str, Any]]:
+        """Load stores incrementally using ijson for memory efficiency (#65).
+
+        Args:
+            filepath: Path to JSON file containing array of stores
+
+        Yields:
+            Store dictionaries one at a time
+        """
+        if not IJSON_AVAILABLE:
+            # Fallback to standard loading if ijson not available
+            with open(filepath, 'r', encoding='utf-8') as f:
+                stores = json.load(f)
+            yield from stores
+            return
+
+        with open(filepath, 'rb') as f:
+            for store in ijson.items(f, 'item'):
+                yield store
+
     def load_previous_data(self) -> Optional[List[Dict[str, Any]]]:
-        """Load previous run's store data"""
+        """Load previous run's store data.
+
+        For files larger than 50MB, uses streaming parser if available (#65).
+        """
         previous_path = self.output_dir / "stores_previous.json"
         if not previous_path.exists():
             return None
 
         try:
+            file_size = previous_path.stat().st_size
+            # Use streaming for large files (>50MB) if ijson is available
+            if file_size > 50 * 1024 * 1024 and IJSON_AVAILABLE:
+                logging.info(f"[{self.retailer}] Loading previous data with streaming parser (file size: {file_size / 1024 / 1024:.1f}MB)")
+                return list(self._load_stores_streaming(previous_path))
+
+            # Standard loading for smaller files
             with open(previous_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:

@@ -39,21 +39,40 @@ _proxy_clients: Dict[str, ProxyClient] = {}
 _proxy_clients_lock = threading.Lock()
 
 
-def setup_logging(log_file: str = "logs/scraper.log") -> None:
-    """Setup logging configuration"""
+def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = 10*1024*1024, backup_count: int = 5) -> None:
+    """Setup logging configuration with rotation (#118).
+
+    Args:
+        log_file: Path to log file
+        max_bytes: Maximum file size before rotation (default: 10MB)
+        backup_count: Number of backup files to keep (default: 5)
+    """
+    from logging.handlers import RotatingFileHandler
+
     # Ensure log directory exists
     log_path = Path(log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
+    # Configure logging with rotating file handler (#118)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    # Create rotating file handler
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count
     )
+    file_handler.setFormatter(formatter)
+
+    # Create console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 
 
 def get_headers(user_agent: str = None, base_url: str = None) -> Dict[str, str]:
