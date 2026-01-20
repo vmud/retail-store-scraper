@@ -502,6 +502,8 @@ function escapeHtml(str) {
 function escapeForJs(str) {
     return String(str)
         .replace(/\\/g, '\\\\')  // Escape backslashes FIRST
+        .replace(/\n/g, '\\n')   // Escape newlines
+        .replace(/\r/g, '\\r')   // Escape carriage returns
         .replace(/'/g, "\\'")
         .replace(/"/g, '\\"');
 }
