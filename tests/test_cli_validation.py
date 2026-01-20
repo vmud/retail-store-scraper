@@ -63,6 +63,28 @@ class TestCLIValidation:
         errors = validate_cli_options(args)
         assert len(errors) == 0
 
+    def test_render_js_with_retailer_proxy_config_passes(self):
+        """Test that retailer-specific web_scraper_api config allows --render-js."""
+        args = Namespace(
+            test=False,
+            limit=None,
+            render_js=True,
+            proxy=None,
+            exclude=[],
+            retailer='verizon',
+            all=False
+        )
+        config = {
+            'proxy': {'mode': 'direct'},
+            'retailers': {
+                'verizon': {
+                    'proxy': {'mode': 'web_scraper_api'}
+                }
+            }
+        }
+        errors = validate_cli_options(args, config)
+        assert len(errors) == 0
+
     def test_test_and_limit_conflict(self):
         """Test that --test with --limit returns validation error."""
         args = Namespace(

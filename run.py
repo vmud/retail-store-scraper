@@ -498,6 +498,29 @@ async def run_all_retailers(
     return summary
 
 
+def _get_yaml_proxy_mode(config: dict, retailer: Optional[str] = None) -> Optional[str]:
+    """Resolve proxy mode from YAML config for a retailer or global."""
+    if not config:
+        return None
+    global_mode = config.get('proxy', {}).get('mode')
+    if retailer:
+        retailer_proxy = config.get('retailers', {}).get(retailer, {}).get('proxy')
+        if isinstance(retailer_proxy, dict):
+            return retailer_proxy.get('mode', global_mode)
+    return global_mode
+
+
+def _get_target_retailers(args) -> List[str]:
+    """Return retailers targeted by CLI args."""
+    retailer = getattr(args, 'retailer', None)
+    if retailer:
+        return [retailer]
+    if getattr(args, 'all', False):
+        excluded = set(getattr(args, 'exclude', []) or [])
+        return [name for name in get_enabled_retailers() if name not in excluded]
+    return []
+
+
 def validate_cli_options(args, config: dict = None) -> List[str]:
     """Validate CLI options for conflicts (#106).
 
@@ -516,19 +539,31 @@ def validate_cli_options(args, config: dict = None) -> List[str]:
 
     # --render-js requires web_scraper_api proxy mode (CLI or YAML config)
     if args.render_js:
-        yaml_proxy_mode = None
-        if config:
-            yaml_proxy_mode = config.get('proxy', {}).get('mode')
-        # Allow if CLI specifies web_scraper_api OR YAML config has web_scraper_api
-        if args.proxy != 'web_scraper_api' and yaml_proxy_mode != 'web_scraper_api':
-            errors.append("--render-js requires --proxy web_scraper_api (or proxy.mode: web_scraper_api in config)")
+        if args.proxy and args.proxy != 'web_scraper_api':
+            errors.append("--render-js requires --proxy web_scraper_api (or proxy.mode: web_scraper_api in config for selected retailers)")
+        else:
+            yaml_proxy_modes = set()
+            if config:
+                target_retailers = _get_target_retailers(args)
+                if target_retailers:
+                    for retailer in target_retailers:
+                        mode = _get_yaml_proxy_mode(config, retailer)
+                        if mode:
+                            yaml_proxy_modes.add(mode)
+                else:
+                    mode = _get_yaml_proxy_mode(config, None)
+                    if mode:
+                        yaml_proxy_modes.add(mode)
+            # Allow if CLI specifies web_scraper_api OR YAML config has web_scraper_api
+            if args.proxy != 'web_scraper_api' and 'web_scraper_api' not in yaml_proxy_modes:
+                errors.append("--render-js requires --proxy web_scraper_api (or proxy.mode: web_scraper_api in config for selected retailers)")
 
     # Validate limit range
     if args.limit is not None and args.limit < 1:
         errors.append("--limit must be a positive integer")
 
     # Validate exclude requires --all
-    if args.exclude and not args.all:
+    if getattr(args, 'exclude', None) and not getattr(args, 'all', False):
         errors.append("--exclude can only be used with --all")
 
     return errors
