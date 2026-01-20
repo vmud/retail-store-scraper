@@ -450,6 +450,10 @@ def api_scraper_stop():
         if not retailer:
             return jsonify({"error": "Missing required field: retailer"}), 400
         
+        # Validate timeout is a proper integer, not a boolean
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+            return jsonify({"error": "Field 'timeout' must be a positive integer"}), 400
+        
         if retailer == 'all':
             result = _scraper_manager.stop_all(timeout=timeout)
             return jsonify({
@@ -487,6 +491,10 @@ def api_scraper_restart():
         
         resume = data.get('resume', True)
         timeout = data.get('timeout', 30)
+        
+        # Validate timeout is a proper integer, not a boolean
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+            return jsonify({"error": "Field 'timeout' must be a positive integer"}), 400
         
         if retailer == 'all':
             config = status.load_retailers_config()

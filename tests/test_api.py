@@ -124,6 +124,50 @@ class TestAPIEndpoints:
         data = response.get_json()
         assert 'error' in data
 
+    def test_api_scraper_stop_timeout_boolean_true_returns_400(self, client):
+        """Test that stop with boolean True timeout returns 400 (not accepted as int)"""
+        response = client.post('/api/scraper/stop',
+                              json={'retailer': 'verizon', 'timeout': True},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'timeout' in data['error'].lower()
+        assert 'integer' in data['error'].lower()
+
+    def test_api_scraper_stop_timeout_boolean_false_returns_400(self, client):
+        """Test that stop with boolean False timeout returns 400 (not accepted as int)"""
+        response = client.post('/api/scraper/stop',
+                              json={'retailer': 'verizon', 'timeout': False},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'timeout' in data['error'].lower()
+        assert 'integer' in data['error'].lower()
+
+    def test_api_scraper_restart_timeout_boolean_true_returns_400(self, client):
+        """Test that restart with boolean True timeout returns 400 (not accepted as int)"""
+        response = client.post('/api/scraper/restart',
+                              json={'retailer': 'verizon', 'timeout': True},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'timeout' in data['error'].lower()
+        assert 'integer' in data['error'].lower()
+
+    def test_api_scraper_restart_timeout_boolean_false_returns_400(self, client):
+        """Test that restart with boolean False timeout returns 400 (not accepted as int)"""
+        response = client.post('/api/scraper/restart',
+                              json={'retailer': 'verizon', 'timeout': False},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'timeout' in data['error'].lower()
+        assert 'integer' in data['error'].lower()
+
     def test_api_config_get_returns_200(self, client):
         """Test that GET /api/config returns 200"""
         response = client.get('/api/config')
