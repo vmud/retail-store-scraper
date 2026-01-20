@@ -357,8 +357,8 @@ class ChangeDetector:
 
     def save_change_report(self, report: ChangeReport) -> str:
         """Save change report to history directory"""
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"changes_{timestamp}.json"
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+        filename = f"changes_{self.retailer}_{timestamp}.json"
         filepath = self.history_dir / filename
 
         with open(filepath, 'w', encoding='utf-8') as f:

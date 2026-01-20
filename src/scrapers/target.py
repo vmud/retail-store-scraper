@@ -33,8 +33,8 @@ class TargetStore:
     state: str
     postal_code: str
     country: str
-    latitude: float
-    longitude: float
+    latitude: Optional[float]
+    longitude: Optional[float]
     phone: str
     capabilities: Optional[List[str]]
     format: Optional[str]

@@ -171,15 +171,17 @@ def _extract_services_from_html(soup: BeautifulSoup) -> Optional[List[str]]:
     return services if services else None
 
 
-def _normalize_service_name(service: str) -> str:
+def _normalize_service_name(service: str, strict: bool = False) -> Optional[str]:
     """Normalize service name to canonical form.
 
     Args:
         service: Raw service name from HTML
+        strict: If True, reject unknown services. If False, accept and normalize them.
 
     Returns:
         Normalized service name or None if not a valid service
     """
+    original = service
     service = service.strip().lower()
 
     # Skip if empty or too generic
@@ -193,7 +195,10 @@ def _normalize_service_name(service: str) -> str:
     service = re.sub(r'\s+', ' ', service).strip()
 
     # Skip if it became too short or generic
-    if len(service) < 3 or service in {'and', 'or', 'the', 'a', 'an', 'all', 'offered', 'available'}:
+    generic_terms = {'and', 'or', 'the', 'a', 'an', 'all', 'offered', 'available',
+                     'services', 'specialty', 'shops'}
+    if len(service) < 3 or service in generic_terms:
+        logging.debug(f"Dropping generic service: '{original}'")
         return None
 
     # Map variations to canonical names
@@ -235,14 +240,24 @@ def _normalize_service_name(service: str) -> str:
         if len(key) > len(service) and service in key:
             return canonical
 
-    # If no mapping found, capitalize first letter of each word
-    # This handles rare services we haven't seen before
+    # For unmapped services: normalize and keep in non-strict mode
     if service and len(service) > 2:
         normalized = ' '.join(word.capitalize() for word in service.split())
         # Filter out if it still looks too generic
-        if normalized.lower() not in {'Services', 'Offered', 'Available', 'Specialty', 'Shops'}:
+        if normalized.lower() in {'services', 'offered', 'available', 'specialty', 'shops'}:
+            logging.debug(f"Dropping generic service: '{original}'")
+            return None
+
+        if not strict:
+            # Accept unknown services with normalized capitalization
+            logging.debug(f"Unknown service accepted: '{original}' -> '{normalized}'")
             return normalized
 
+        # In strict mode, log and drop unmapped services
+        logging.debug(f"Dropping unmapped service (strict mode): '{original}'")
+        return None
+
+    logging.debug(f"Dropping invalid service: '{original}'")
     return None
 
 

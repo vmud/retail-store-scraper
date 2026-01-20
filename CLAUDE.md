@@ -8,7 +8,7 @@ Multi-retailer web scraper that collects retail store locations from Verizon, AT
 
 ## Environment Setup
 
-Requires Python 3.8-3.10:
+Requires Python 3.8-3.11:
 ```bash
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt

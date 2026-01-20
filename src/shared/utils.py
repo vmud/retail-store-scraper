@@ -234,8 +234,9 @@ def save_checkpoint(data: Any, filepath: str) -> None:
             with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
 
-            # Atomic rename: either succeeds completely or fails (no partial file)
-            shutil.move(temp_path, path)
+            # Atomic rename: os.replace is atomic on POSIX and Windows
+            # shutil.move is not guaranteed atomic on all filesystems
+            os.replace(temp_path, str(path))
             logging.info(f"Checkpoint saved: {filepath}")
 
         except Exception as e:
@@ -313,6 +314,129 @@ def save_to_json(stores: List[Dict[str, Any]], filepath: str) -> None:
         json.dump(stores, f, indent=2, ensure_ascii=False)
 
     logging.info(f"Saved {len(stores)} stores to JSON: {filepath}")
+
+
+# =============================================================================
+# STORE DATA VALIDATION (#103)
+# =============================================================================
+
+# Required fields that must be present and non-empty
+REQUIRED_STORE_FIELDS = {'store_id', 'name', 'street_address', 'city', 'state'}
+
+# Recommended fields that should be present for data quality
+RECOMMENDED_STORE_FIELDS = {'latitude', 'longitude', 'phone', 'url'}
+
+
+class ValidationResult:
+    """Result of store data validation"""
+
+    def __init__(self, is_valid: bool, errors: List[str], warnings: List[str]):
+        self.is_valid = is_valid
+        self.errors = errors
+        self.warnings = warnings
+
+    def __repr__(self) -> str:
+        return f"ValidationResult(is_valid={self.is_valid}, errors={len(self.errors)}, warnings={len(self.warnings)})"
+
+
+def validate_store_data(store: Dict[str, Any], strict: bool = False) -> ValidationResult:
+    """Validate store data completeness and correctness.
+
+    Args:
+        store: Store data dictionary to validate
+        strict: If True, treat missing recommended fields as errors
+
+    Returns:
+        ValidationResult with is_valid status, errors list, and warnings list
+    """
+    errors = []
+    warnings = []
+
+    # Check required fields
+    for field in REQUIRED_STORE_FIELDS:
+        value = store.get(field)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            errors.append(f"Missing required field: {field}")
+
+    # Check recommended fields
+    for field in RECOMMENDED_STORE_FIELDS:
+        if store.get(field) is None:
+            if strict:
+                errors.append(f"Missing recommended field: {field}")
+            else:
+                warnings.append(f"Missing recommended field: {field}")
+
+    # Validate coordinates if present
+    lat, lng = store.get('latitude'), store.get('longitude')
+    if lat is not None and lng is not None:
+        try:
+            lat_float = float(lat)
+            lng_float = float(lng)
+            if not (-90 <= lat_float <= 90):
+                errors.append(f"Invalid latitude: {lat} (must be between -90 and 90)")
+            if not (-180 <= lng_float <= 180):
+                errors.append(f"Invalid longitude: {lng} (must be between -180 and 180)")
+        except (ValueError, TypeError):
+            errors.append(f"Invalid coordinate format: lat={lat}, lng={lng}")
+
+    # Validate postal code format (US 5-digit or 9-digit)
+    postal_code = store.get('postal_code') or store.get('zip_code')
+    if postal_code:
+        postal_str = str(postal_code).strip()
+        if postal_str and not (len(postal_str) == 5 or len(postal_str) == 10):
+            # 10 chars for "12345-6789" format
+            warnings.append(f"Unusual postal code format: {postal_code}")
+
+    return ValidationResult(len(errors) == 0, errors, warnings)
+
+
+def validate_stores_batch(
+    stores: List[Dict[str, Any]],
+    strict: bool = False,
+    log_issues: bool = True
+) -> Dict[str, Any]:
+    """Validate a batch of stores and return summary.
+
+    Args:
+        stores: List of store data dictionaries
+        strict: If True, treat missing recommended fields as errors
+        log_issues: If True, log validation issues
+
+    Returns:
+        Dictionary with validation summary
+    """
+    total = len(stores)
+    valid_count = 0
+    invalid_stores = []
+    all_errors = []
+    all_warnings = []
+
+    for i, store in enumerate(stores):
+        result = validate_store_data(store, strict=strict)
+        if result.is_valid:
+            valid_count += 1
+        else:
+            store_id = store.get('store_id', f'index_{i}')
+            invalid_stores.append(store_id)
+            all_errors.extend([f"Store {store_id}: {e}" for e in result.errors])
+
+        all_warnings.extend(result.warnings)
+
+    if log_issues:
+        if all_errors:
+            for error in all_errors[:10]:  # Limit logging to first 10
+                logging.warning(error)
+            if len(all_errors) > 10:
+                logging.warning(f"... and {len(all_errors) - 10} more validation errors")
+
+    return {
+        'total': total,
+        'valid': valid_count,
+        'invalid': total - valid_count,
+        'invalid_store_ids': invalid_stores,
+        'error_count': len(all_errors),
+        'warning_count': len(all_warnings),
+    }
 
 
 # =============================================================================

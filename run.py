@@ -35,7 +35,7 @@ from src.shared.utils import (
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
-from src.scrapers import get_available_retailers, get_scraper_module
+from src.scrapers import get_available_retailers, get_enabled_retailers, get_scraper_module
 from src.change_detector import ChangeDetector
 
 
@@ -137,7 +137,7 @@ def setup_parser() -> argparse.ArgumentParser:
     retailer_group.add_argument(
         '--retailer', '-r',
         type=str,
-        choices=get_available_retailers(),
+        choices=get_enabled_retailers(),
         help='Run specific retailer scraper'
     )
     retailer_group.add_argument(
@@ -151,7 +151,7 @@ def setup_parser() -> argparse.ArgumentParser:
         '--exclude', '-e',
         type=str,
         nargs='+',
-        choices=get_available_retailers(),
+        choices=get_enabled_retailers(),
         default=[],
         help='Exclude specific retailers when using --all'
     )
@@ -208,6 +208,11 @@ def setup_parser() -> argparse.ArgumentParser:
         default='us',
         help='Proxy country code for geo-targeting (default: us)'
     )
+    proxy_group.add_argument(
+        '--validate-proxy',
+        action='store_true',
+        help='Validate proxy credentials before starting (makes a test request)'
+    )
 
     # Export options
     export_group = parser.add_argument_group('export options', 'Output format selection')
@@ -239,8 +244,8 @@ def get_retailers_to_run(args) -> List[str]:
     if args.retailer:
         return [args.retailer]
     if args.all:
-        all_retailers = get_available_retailers()
-        return [r for r in all_retailers if r not in args.exclude]
+        enabled_retailers = get_enabled_retailers()
+        return [r for r in enabled_retailers if r not in args.exclude]
     return []
 
 
@@ -285,8 +290,8 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
                                     data = json.load(f)
                                     if isinstance(data, list):
                                         print(f"    {out_file}: {len(data)} stores")
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logging.warning(f"Could not read {out_file}: {e}")
                 else:
                     print("  Outputs: None")
             else:
@@ -597,12 +602,26 @@ def main():
         except Exception as e:
             logging.debug(f"Using default proxy config: {e}")
 
+    # Validate proxy credentials if requested (#107)
+    if args.validate_proxy:
+        proxy_client = get_proxy_client()
+        if proxy_client:
+            print("Validating proxy credentials...")
+            success, message = proxy_client.validate_credentials()
+            if success:
+                print(f"  ✓ {message}")
+            else:
+                print(f"  ✗ {message}")
+                return 1
+        else:
+            print("No proxy configured, skipping validation")
+
     # Get retailers to run
     retailers = get_retailers_to_run(args)
 
     if not retailers:
         print("No retailers specified. Use --retailer <name> or --all")
-        print(f"Available retailers: {', '.join(get_available_retailers())}")
+        print(f"Available retailers: {', '.join(get_enabled_retailers())}")
         return 1
 
     # Set limit for test mode
