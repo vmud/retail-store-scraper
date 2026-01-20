@@ -377,10 +377,11 @@ function createRunItem(retailer, run) {
         statusText = 'Running';
     }
 
-    // SECURITY: Escape retailer and runId for use in onclick handlers to prevent XSS
+    // SECURITY: Escape retailer and runId for use in onclick handlers to prevent XSS (#120)
     // These values come from server data and could potentially contain malicious content
-    const safeRetailer = escapeHtml(retailer).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-    const safeRunId = escapeHtml(runId).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    // Use escapeForJs which properly escapes backslashes before quotes
+    const safeRetailer = escapeForJs(retailer);
+    const safeRunId = escapeForJs(runId);
     const safeStatus = escapeHtml(status);
     const safeStatusClass = escapeHtml(statusClass);
     const safeStatusText = escapeHtml(statusText);
@@ -477,13 +478,32 @@ function parseLogLine(line) {
 
 /**
  * HTML-encode a string to prevent XSS attacks
+ * Uses string replacement for better performance (#112)
  * @param {string} str - The string to encode
  * @returns {string} - The HTML-encoded string
  */
 function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(str).replace(/[&<>"']/g, m => map[m]);
+}
+
+/**
+ * Escape a string for safe use in JavaScript string literals within HTML attributes
+ * Prevents XSS via backslash injection (#120)
+ * @param {string} str - The string to escape
+ * @returns {string} - The escaped string safe for JS onclick handlers
+ */
+function escapeForJs(str) {
+    return String(str)
+        .replace(/\\/g, '\\\\')  // Escape backslashes FIRST
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"');
 }
 
 function displayLogs(parsedLines) {

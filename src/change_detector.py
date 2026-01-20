@@ -229,6 +229,24 @@ class ChangeDetector:
         json_str = json.dumps(data, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
+    def rotate_previous(self) -> bool:
+        """Rotate stores_latest.json to stores_previous.json BEFORE change detection (#122).
+
+        This ensures change detection compares against Run N-1 (not N-2).
+        Must be called before detect_changes() for correct comparison.
+
+        Returns:
+            True if rotation occurred, False if no latest file exists
+        """
+        latest_path = self.output_dir / "stores_latest.json"
+        previous_path = self.output_dir / "stores_previous.json"
+
+        if latest_path.exists():
+            shutil.copy2(latest_path, previous_path)
+            logging.debug(f"[{self.retailer}] Rotated stores_latest.json → stores_previous.json")
+            return True
+        return False
+
     def load_previous_data(self) -> Optional[List[Dict[str, Any]]]:
         """Load previous run's store data"""
         previous_path = self.output_dir / "stores_previous.json"
@@ -347,12 +365,29 @@ class ChangeDetector:
                 }
         return changes
 
+    def save_latest(self, stores: List[Dict[str, Any]]) -> None:
+        """Save stores to stores_latest.json without rotation (#122).
+
+        Use this after calling rotate_previous() + detect_changes() to avoid
+        double rotation.
+
+        Args:
+            stores: List of store dictionaries to save
+        """
+        latest_path = self.output_dir / "stores_latest.json"
+        with open(latest_path, 'w', encoding='utf-8') as f:
+            json.dump(stores, f, indent=2, ensure_ascii=False)
+        logging.info(f"[{self.retailer}] Saved {len(stores)} stores to {latest_path}")
+
     def save_version(self, stores: List[Dict[str, Any]]) -> None:
         """
         Save current data and rotate previous version.
 
         - stores_latest.json -> stores_previous.json
         - Write new stores_latest.json
+
+        Note: If you called rotate_previous() before detect_changes(),
+        use save_latest() instead to avoid double rotation (#122).
         """
         latest_path = self.output_dir / "stores_latest.json"
         previous_path = self.output_dir / "stores_previous.json"

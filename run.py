@@ -385,6 +385,11 @@ async def run_retailer_async(
             logging.info(f"[{retailer}] Running change detection (incremental mode)")
             try:
                 detector = ChangeDetector(retailer)
+
+                # Fix #122: Rotate stores_latest → stores_previous BEFORE detection
+                # This ensures we compare against Run N-1 (not N-2)
+                detector.rotate_previous()
+
                 change_report = detector.detect_changes(stores)
 
                 if change_report.has_changes:
@@ -398,8 +403,8 @@ async def run_retailer_async(
                 # Save fingerprints for next run comparison
                 detector.save_fingerprints(stores)
 
-                # Rotate versions: stores_latest -> stores_previous
-                detector.save_version(stores)
+                # Save new latest (rotation already done, so use save_latest not save_version)
+                detector.save_latest(stores)
             except Exception as change_err:
                 logging.warning(f"[{retailer}] Change detection failed: {change_err}")
 

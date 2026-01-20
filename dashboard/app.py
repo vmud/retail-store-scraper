@@ -22,8 +22,11 @@ load_dotenv(Path(__file__).parent.parent / '.env')
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from functools import wraps
 from flask import Flask, jsonify, request, render_template, send_from_directory, send_file
 from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from src.shared import status, scraper_manager, run_tracker
 from src.shared.export_service import ExportService, ExportFormat
 
@@ -84,6 +87,43 @@ IS_DEVELOPMENT = os.environ.get('FLASK_ENV') == 'development'
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
+
+# Initialize rate limiter (#93)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["60 per minute"],
+    storage_uri="memory://",
+)
+
+
+def require_api_key(f):
+    """Decorator to require API key authentication for mutating endpoints (#92).
+
+    API key authentication is OPTIONAL - if DASHBOARD_API_KEY is not set,
+    requests are allowed without authentication. This maintains backwards
+    compatibility while enabling security for production deployments.
+
+    Set DASHBOARD_API_KEY environment variable to enable authentication.
+    Clients must include X-API-Key header with the correct key.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key_configured = os.environ.get('DASHBOARD_API_KEY')
+        if not api_key_configured:
+            # No API key configured - allow request (backwards compatible)
+            return f(*args, **kwargs)
+
+        # API key is configured - require it
+        provided_key = request.headers.get('X-API-Key')
+        if not provided_key:
+            return jsonify({'error': 'Missing X-API-Key header'}), 401
+        if provided_key != api_key_configured:
+            return jsonify({'error': 'Invalid API key'}), 401
+
+        return f(*args, **kwargs)
+    return decorated
+
 
 # Get singleton scraper manager instance
 _scraper_manager = scraper_manager.get_scraper_manager()
@@ -373,6 +413,8 @@ def _validate_scraper_options(data: dict) -> tuple:
 
 
 @app.route('/api/scraper/start', methods=['POST'])
+@limiter.limit("5 per minute")  # Rate limit scraper starts (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_scraper_start():
     """Start scraper(s)
@@ -432,6 +474,8 @@ def api_scraper_start():
 
 
 @app.route('/api/scraper/stop', methods=['POST'])
+@limiter.limit("10 per minute")  # Rate limit scraper stops (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_scraper_stop():
     """Stop scraper(s)
@@ -471,6 +515,8 @@ def api_scraper_stop():
 
 
 @app.route('/api/scraper/restart', methods=['POST'])
+@limiter.limit("5 per minute")  # Rate limit scraper restarts (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_scraper_restart():
     """Restart scraper(s)
@@ -671,6 +717,8 @@ def api_get_config():
 
 
 @app.route('/api/config', methods=['POST'])
+@limiter.limit("10 per minute")  # Rate limit config updates (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_update_config():
     """Update configuration with validation
