@@ -66,37 +66,57 @@ class TargetStore:
         return result
 
 
-def _check_pause_logic(retailer: str = 'target') -> None:
+def _check_pause_logic(config: dict = None, retailer: str = 'target') -> None:
     """Check if we need to pause based on request count (#71).
 
     Uses standardized random delay ranges for consistency with other scrapers.
+    
+    Args:
+        config: Retailer configuration dict from retailers.yaml (optional for tests)
+        retailer: Retailer name for logging
     """
+    # If no config provided (tests), use hardcoded Python config values
+    if config is None:
+        pause_50_requests = target_config.PAUSE_50_REQUESTS
+        pause_200_requests = target_config.PAUSE_200_REQUESTS
+        pause_50_min = target_config.PAUSE_50_MIN
+        pause_50_max = target_config.PAUSE_50_MAX
+        pause_200_min = target_config.PAUSE_200_MIN
+        pause_200_max = target_config.PAUSE_200_MAX
+    else:
+        # Read from YAML config (preferred)
+        pause_50_requests = config.get('pause_50_requests', target_config.PAUSE_50_REQUESTS)
+        pause_200_requests = config.get('pause_200_requests', target_config.PAUSE_200_REQUESTS)
+        pause_50_min = config.get('pause_50_min', target_config.PAUSE_50_MIN)
+        pause_50_max = config.get('pause_50_max', target_config.PAUSE_50_MAX)
+        pause_200_min = config.get('pause_200_min', target_config.PAUSE_200_MIN)
+        pause_200_max = config.get('pause_200_max', target_config.PAUSE_200_MAX)
+    
     # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    try:
-        if target_config.PAUSE_50_REQUESTS >= 999999 and target_config.PAUSE_200_REQUESTS >= 999999:
-            return
-    except (TypeError, AttributeError):
-        pass  # Config mocked in tests, continue with normal pause logic
+    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
+        return
     
     count = _request_counter.count
 
-    if count % target_config.PAUSE_200_REQUESTS == 0 and count > 0:
+    if count % pause_200_requests == 0 and count > 0:
         # Use random delay range for 200-request pause (#71)
-        pause_time = random.uniform(target_config.PAUSE_200_MIN, target_config.PAUSE_200_MAX)
+        pause_time = random.uniform(pause_200_min, pause_200_max)
         logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
-    elif count % target_config.PAUSE_50_REQUESTS == 0 and count > 0:
+    elif count % pause_50_requests == 0 and count > 0:
         # Use random delay range for 50-request pause (#71)
-        pause_time = random.uniform(target_config.PAUSE_50_MIN, target_config.PAUSE_50_MAX)
+        pause_time = random.uniform(pause_50_min, pause_50_max)
         logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.1f} seconds")
         time.sleep(pause_time)
 
 
-def get_all_store_ids(session: requests.Session, retailer: str = 'target') -> List[Dict[str, Any]]:
+def get_all_store_ids(session: requests.Session, config: dict = None, retailer: str = 'target') -> List[Dict[str, Any]]:
     """Extract all store IDs from Target's sitemap.
 
     Args:
         session: Requests session object
+        config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
 
     Returns:
         List of store dictionaries with store_id, slug, and url
@@ -109,7 +129,7 @@ def get_all_store_ids(session: requests.Session, retailer: str = 'target') -> Li
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(config, retailer)
 
     try:
         # Check if content is already decompressed (starts with XML) or gzipped
@@ -153,12 +173,14 @@ def get_all_store_ids(session: requests.Session, retailer: str = 'target') -> Li
         return []
 
 
-def get_store_details(session: requests.Session, store_id: int, retailer: str = 'target') -> Optional[TargetStore]:
+def get_store_details(session: requests.Session, store_id: int, config: dict = None, retailer: str = 'target') -> Optional[TargetStore]:
     """Fetch detailed store info from Redsky API.
 
     Args:
         session: Requests session object
         store_id: Numeric store ID
+        config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
 
     Returns:
         TargetStore object if successful, None otherwise
@@ -177,7 +199,7 @@ def get_store_details(session: requests.Session, store_id: int, retailer: str = 
         return None
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(config, retailer)
 
     try:
         if response.status_code == 200:
@@ -294,7 +316,7 @@ def run(session, config: dict, **kwargs) -> dict:
                 logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
                 checkpoints_used = True
         
-        store_list = get_all_store_ids(session, retailer_name)
+        store_list = get_all_store_ids(session, config, retailer_name)
         logging.info(f"[{retailer_name}] Found {len(store_list)} store IDs")
         
         if not store_list:
@@ -322,7 +344,7 @@ def run(session, config: dict, **kwargs) -> dict:
         
         for i, store_info in enumerate(remaining_stores, 1):
             store_id = store_info.get('store_id')
-            store_obj = get_store_details(session, store_id, retailer_name)
+            store_obj = get_store_details(session, store_id, config, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_ids.add(store_id)

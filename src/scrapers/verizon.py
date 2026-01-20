@@ -113,30 +113,55 @@ def get_state_url(slug: str) -> str:
     return f"/stores/state/{slug}/"
 
 
-def _check_pause_logic(retailer: str = 'verizon') -> None:
-    """Check if we need to pause based on request count"""
+def _check_pause_logic(yaml_config: dict = None, retailer: str = 'verizon') -> None:
+    """Check if we need to pause based on request count
+    
+    Args:
+        yaml_config: Retailer configuration dict from retailers.yaml (optional for tests)
+        retailer: Retailer name for logging
+    """
+    # If no config provided (tests), use hardcoded Python config values
+    if yaml_config is None:
+        pause_50_requests = config.PAUSE_50_REQUESTS
+        pause_200_requests = config.PAUSE_200_REQUESTS
+        pause_50_min = config.PAUSE_50_MIN
+        pause_50_max = config.PAUSE_50_MAX
+        pause_200_min = config.PAUSE_200_MIN
+        pause_200_max = config.PAUSE_200_MAX
+    else:
+        # Read from YAML config (preferred)
+        pause_50_requests = yaml_config.get('pause_50_requests', config.PAUSE_50_REQUESTS)
+        pause_200_requests = yaml_config.get('pause_200_requests', config.PAUSE_200_REQUESTS)
+        pause_50_min = yaml_config.get('pause_50_min', config.PAUSE_50_MIN)
+        pause_50_max = yaml_config.get('pause_50_max', config.PAUSE_50_MAX)
+        pause_200_min = yaml_config.get('pause_200_min', config.PAUSE_200_MIN)
+        pause_200_max = yaml_config.get('pause_200_max', config.PAUSE_200_MAX)
+    
     # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    try:
-        if config.PAUSE_50_REQUESTS >= 999999 and config.PAUSE_200_REQUESTS >= 999999:
-            return
-    except (TypeError, AttributeError):
-        pass  # Config mocked in tests, continue with normal pause logic
+    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
+        return
     
     count = _request_counter.count
 
-    if count % config.PAUSE_200_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(config.PAUSE_200_MIN, config.PAUSE_200_MAX)
+    if count % pause_200_requests == 0 and count > 0:
+        pause_time = random.uniform(pause_200_min, pause_200_max)
         logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
-    elif count % config.PAUSE_50_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(config.PAUSE_50_MIN, config.PAUSE_50_MAX)
+    elif count % pause_50_requests == 0 and count > 0:
+        pause_time = random.uniform(pause_50_min, pause_50_max)
         logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
 
 
-def _scrape_states_from_html(session: requests.Session, retailer: str = 'verizon') -> List[Dict[str, str]]:
+def _scrape_states_from_html(session: requests.Session, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Scrape state URLs from the main stores page HTML.
-    Returns empty list if scraping fails."""
+    Returns empty list if scraping fails.
+    
+    Args:
+        session: Requests session object
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     url = f"{config.BASE_URL}/stores/"
     logging.info(f"[{retailer}] Fetching states from {url}")
 
@@ -146,7 +171,7 @@ def _scrape_states_from_html(session: requests.Session, retailer: str = 'verizon
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     states = []
@@ -265,12 +290,18 @@ def _generate_states_programmatically(retailer: str = 'verizon') -> List[Dict[st
     return states
 
 
-def get_all_states(session: requests.Session, retailer: str = 'verizon') -> List[Dict[str, str]]:
+def get_all_states(session: requests.Session, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all US state URLs by scraping from the main stores page.
-    Falls back to programmatic generation if scraping fails."""
+    Falls back to programmatic generation if scraping fails.
+    
+    Args:
+        session: Requests session object
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
 
     # Try HTML scraping first
-    states = _scrape_states_from_html(session, retailer)
+    states = _scrape_states_from_html(session, yaml_config, retailer)
 
     # Fallback to programmatic generation if scraping failed or found insufficient states
     if not states or len(states) < 50:
@@ -283,8 +314,16 @@ def get_all_states(session: requests.Session, retailer: str = 'verizon') -> List
     return states
 
 
-def get_cities_for_state(session: requests.Session, state_url: str, state_name: str, retailer: str = 'verizon') -> List[Dict[str, str]]:
-    """Get all city URLs for a given state"""
+def get_cities_for_state(session: requests.Session, state_url: str, state_name: str, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
+    """Get all city URLs for a given state
+    
+    Args:
+        session: Requests session object
+        state_url: URL of the state page
+        state_name: Name of the state
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     logging.info(f"[{retailer}] Fetching cities for state: {state_name}")
 
     response = utils.get_with_retry(session, state_url)
@@ -293,7 +332,7 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     # Extract state slug from URL (e.g., "new-jersey" from "/stores/state/new-jersey/")
     state_slug = state_url.rstrip('/').split('/')[-1].lower()
@@ -373,8 +412,17 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
     return result
 
 
-def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str, retailer: str = 'verizon') -> List[Dict[str, str]]:
-    """Get all store URLs for a given city"""
+def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
+    """Get all store URLs for a given city
+    
+    Args:
+        session: Requests session object
+        city_url: URL of the city page
+        city_name: Name of the city
+        state_name: Name of the state
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     logging.info(f"[{retailer}] Fetching stores for {city_name}, {state_name}")
 
     response = utils.get_with_retry(session, city_url)
@@ -383,7 +431,7 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     stores = []
@@ -623,8 +671,15 @@ def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
     return True
 
 
-def extract_store_details(session: requests.Session, store_url: str, retailer: str = 'verizon') -> Optional[Dict[str, Any]]:
-    """Extract structured store data from JSON-LD on store detail page"""
+def extract_store_details(session: requests.Session, store_url: str, yaml_config: dict = None, retailer: str = 'verizon') -> Optional[Dict[str, Any]]:
+    """Extract structured store data from JSON-LD on store detail page
+    
+    Args:
+        session: Requests session object
+        store_url: URL of the store page
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     logging.debug(f"[{retailer}] Extracting details from {store_url}")
 
     response = utils.get_with_retry(session, store_url)
@@ -633,7 +688,7 @@ def extract_store_details(session: requests.Session, store_url: str, retailer: s
         return None
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -741,15 +796,18 @@ def run(session, config: dict, **kwargs) -> dict:
                 checkpoints_used = True
         
         logging.info(f"[{retailer_name}] Phase 1: Discovering states")
-        all_states = get_all_states(session, retailer_name)
-        logging.info(f"[{retailer_name}] Found {len(all_states)} states")
+        all_states = get_all_states(session, config, retailer_name)
+        
+        # TEMPORARY: Filter for Alabama only (for testing)
+        all_states = [s for s in all_states if 'alabama' in s['url'].lower()]
+        logging.info(f"[{retailer_name}] Filtered to Alabama only: {len(all_states)} state(s)")
         
         logging.info(f"[{retailer_name}] Phase 2-3: Discovering cities and stores")
         all_store_urls = []
         for state in all_states:
-            cities = get_cities_for_state(session, state['url'], state['name'], retailer_name)
+            cities = get_cities_for_state(session, state['url'], state['name'], config, retailer_name)
             for city in cities:
-                store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], retailer_name)
+                store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], config, retailer_name)
                 all_store_urls.extend([s['url'] for s in store_infos])
         
         logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
@@ -771,7 +829,7 @@ def run(session, config: dict, **kwargs) -> dict:
         logging.info(f"[{retailer_name}] Phase 4: Extracting store details")
         total_to_process = len(remaining_urls)
         for i, url in enumerate(remaining_urls, 1):
-            store_data = extract_store_details(session, url, retailer_name)
+            store_data = extract_store_details(session, url, config, retailer_name)
             if store_data:
                 stores.append(store_data)
                 completed_urls.add(url)

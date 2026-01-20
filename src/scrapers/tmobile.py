@@ -54,23 +54,42 @@ class TMobileStore:
         return result
 
 
-def _check_pause_logic(retailer: str = 'tmobile') -> None:
-    """Check if we need to pause based on request count"""
+def _check_pause_logic(config: dict = None, retailer: str = 'tmobile') -> None:
+    """Check if we need to pause based on request count
+    
+    Args:
+        config: Retailer configuration dict from retailers.yaml (optional for tests)
+        retailer: Retailer name for logging
+    """
+    # If no config provided (tests), use hardcoded Python config values
+    if config is None:
+        pause_50_requests = tmobile_config.PAUSE_50_REQUESTS
+        pause_200_requests = tmobile_config.PAUSE_200_REQUESTS
+        pause_50_min = tmobile_config.PAUSE_50_MIN
+        pause_50_max = tmobile_config.PAUSE_50_MAX
+        pause_200_min = tmobile_config.PAUSE_200_MIN
+        pause_200_max = tmobile_config.PAUSE_200_MAX
+    else:
+        # Read from YAML config (preferred)
+        pause_50_requests = config.get('pause_50_requests', tmobile_config.PAUSE_50_REQUESTS)
+        pause_200_requests = config.get('pause_200_requests', tmobile_config.PAUSE_200_REQUESTS)
+        pause_50_min = config.get('pause_50_min', tmobile_config.PAUSE_50_MIN)
+        pause_50_max = config.get('pause_50_max', tmobile_config.PAUSE_50_MAX)
+        pause_200_min = config.get('pause_200_min', tmobile_config.PAUSE_200_MIN)
+        pause_200_max = config.get('pause_200_max', tmobile_config.PAUSE_200_MAX)
+    
     # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    try:
-        if tmobile_config.PAUSE_50_REQUESTS >= 999999 and tmobile_config.PAUSE_200_REQUESTS >= 999999:
-            return
-    except (TypeError, AttributeError):
-        pass  # Config mocked in tests, continue with normal pause logic
+    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
+        return
     
     count = _request_counter.count
 
-    if count % tmobile_config.PAUSE_200_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(tmobile_config.PAUSE_200_MIN, tmobile_config.PAUSE_200_MAX)
+    if count % pause_200_requests == 0 and count > 0:
+        pause_time = random.uniform(pause_200_min, pause_200_max)
         logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
-    elif count % tmobile_config.PAUSE_50_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(tmobile_config.PAUSE_50_MIN, tmobile_config.PAUSE_50_MAX)
+    elif count % pause_50_requests == 0 and count > 0:
+        pause_time = random.uniform(pause_50_min, pause_50_max)
         logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
 
@@ -129,8 +148,13 @@ def _extract_store_type_from_dom(soup: BeautifulSoup) -> Optional[str]:
     return None
 
 
-def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmobile') -> List[str]:
+def get_store_urls_from_sitemap(session: requests.Session, config: dict = None, retailer: str = 'tmobile') -> List[str]:
     """Fetch all store URLs from the T-Mobile paginated sitemaps.
+
+    Args:
+        session: Requests session object
+        config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
 
     Returns:
         List of retail store URLs (excludes service pages like business-internet, home-internet)
@@ -151,7 +175,7 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
             continue
 
         _request_counter.increment()
-        _check_pause_logic(retailer)
+        _check_pause_logic(config, retailer)
 
         try:
             # Parse XML
@@ -180,12 +204,14 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
     return all_store_urls
 
 
-def extract_store_details(session: requests.Session, url: str, retailer: str = 'tmobile') -> Optional[TMobileStore]:
+def extract_store_details(session: requests.Session, url: str, config: dict = None, retailer: str = 'tmobile') -> Optional[TMobileStore]:
     """Extract store data from a single T-Mobile store page.
 
     Args:
         session: Requests session object
         url: Store page URL
+        config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
 
     Returns:
         TMobileStore object if successful, None otherwise
@@ -198,7 +224,7 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
         return None
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(config, retailer)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -365,7 +391,7 @@ def run(session, config: dict, **kwargs) -> dict:
                 logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
                 checkpoints_used = True
         
-        store_urls = get_store_urls_from_sitemap(session, retailer_name)
+        store_urls = get_store_urls_from_sitemap(session, config, retailer_name)
         logging.info(f"[{retailer_name}] Found {len(store_urls)} store URLs")
         
         if not store_urls:
@@ -392,7 +418,7 @@ def run(session, config: dict, **kwargs) -> dict:
             logging.info(f"[{retailer_name}] No new stores to process")
         
         for i, url in enumerate(remaining_urls, 1):
-            store_obj = extract_store_details(session, url, retailer_name)
+            store_obj = extract_store_details(session, url, config, retailer_name)
             if store_obj:
                 stores.append(store_obj.to_dict())
                 completed_urls.add(url)
