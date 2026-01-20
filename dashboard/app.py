@@ -89,11 +89,14 @@ IS_DEVELOPMENT = os.environ.get('FLASK_ENV') == 'development'
 csrf = CSRFProtect(app)
 
 # Initialize rate limiter (#93)
+# Note: Rate limiting can be disabled by setting RATELIMIT_ENABLED=False in config
+# This is automatically done in tests via conftest.py
 limiter = Limiter(
     get_remote_address,
     app=app,
     default_limits=["60 per minute"],
     storage_uri="memory://",
+    enabled=lambda: app.config.get('RATELIMIT_ENABLED', True),
 )
 
 

@@ -77,59 +77,77 @@ def test_bug1_stale_process_cleanup():
 def test_bug2_content_type_with_charset():
     """
     Bug 2: Verify that require_json decorator accepts Content-Type with charset
-    
+
     The decorator should accept both:
     - "application/json"
     - "application/json; charset=utf-8"
-    
+
     Previously it only accepted exact match "application/json"
     """
     print("\n" + "=" * 70)
     print("BUG 2: Content-Type with Charset Test")
     print("=" * 70)
-    
-    from dashboard.app import app
-    
-    with app.test_client() as client:
-        # Test 1: Standard Content-Type (should always work)
-        print("\n[Test 1] Testing with 'application/json'...")
-        response = client.post(
-            '/api/scraper/start',
-            json={'retailer': 'invalid_test'},
-            content_type='application/json'
-        )
-        print(f"  Status code: {response.status_code}")
-        assert response.status_code != 415, "Should not return 415 for standard application/json"
-        print("  ✓ Accepted application/json")
-        
-        # Test 2: Content-Type with charset (this was failing before)
-        print("\n[Test 2] Testing with 'application/json; charset=utf-8'...")
-        response = client.post(
-            '/api/scraper/start',
-            json={'retailer': 'invalid_test'},
-            content_type='application/json; charset=utf-8'
-        )
-        print(f"  Status code: {response.status_code}")
-        
-        if response.status_code == 415:
-            print("  ✗ BUG 2 STILL EXISTS: Rejected Content-Type with charset")
-            pytest.fail("Bug 2 not fixed: Content-Type with charset is rejected")
-        else:
-            print("  ✓ Accepted application/json; charset=utf-8")
-            print("  ✓ BUG 2 FIX VERIFIED: Content-Type with charset is properly handled")
-        
-        # Test 3: Invalid Content-Type (should still be rejected)
-        print("\n[Test 3] Testing with 'text/plain' (should be rejected)...")
-        response = client.post(
-            '/api/scraper/start',
-            data='{"retailer": "test"}',
-            content_type='text/plain'
-        )
-        print(f"  Status code: {response.status_code}")
-        assert response.status_code == 415, "Should return 415 for non-JSON Content-Type"
-        print("  ✓ Correctly rejected text/plain")
-        
-        return True
+
+    from dashboard.app import app, limiter
+
+    # Save original config to restore later
+    original_config = {
+        'RATELIMIT_ENABLED': app.config.get('RATELIMIT_ENABLED', True),
+        'WTF_CSRF_ENABLED': app.config.get('WTF_CSRF_ENABLED', True),
+        'TESTING': app.config.get('TESTING', False),
+    }
+
+    try:
+        # Disable rate limiting and CSRF for tests (#93)
+        app.config['RATELIMIT_ENABLED'] = False
+        app.config['WTF_CSRF_ENABLED'] = False
+        app.config['TESTING'] = True
+        # Also reset any existing rate limit state
+        limiter.reset()
+
+        with app.test_client() as client:
+            # Test 1: Standard Content-Type (should always work)
+            print("\n[Test 1] Testing with 'application/json'...")
+            response = client.post(
+                '/api/scraper/start',
+                json={'retailer': 'invalid_test'},
+                content_type='application/json'
+            )
+            print(f"  Status code: {response.status_code}")
+            assert response.status_code != 415, "Should not return 415 for standard application/json"
+            print("  ✓ Accepted application/json")
+
+            # Test 2: Content-Type with charset (this was failing before)
+            print("\n[Test 2] Testing with 'application/json; charset=utf-8'...")
+            response = client.post(
+                '/api/scraper/start',
+                json={'retailer': 'invalid_test'},
+                content_type='application/json; charset=utf-8'
+            )
+            print(f"  Status code: {response.status_code}")
+
+            if response.status_code == 415:
+                print("  ✗ BUG 2 STILL EXISTS: Rejected Content-Type with charset")
+                pytest.fail("Bug 2 not fixed: Content-Type with charset is rejected")
+            else:
+                print("  ✓ Accepted application/json; charset=utf-8")
+                print("  ✓ BUG 2 FIX VERIFIED: Content-Type with charset is properly handled")
+
+            # Test 3: Invalid Content-Type (should still be rejected)
+            print("\n[Test 3] Testing with 'text/plain' (should be rejected)...")
+            response = client.post(
+                '/api/scraper/start',
+                data='{"retailer": "test"}',
+                content_type='text/plain'
+            )
+            print(f"  Status code: {response.status_code}")
+            assert response.status_code == 415, "Should return 415 for non-JSON Content-Type"
+            print("  ✓ Correctly rejected text/plain")
+
+    finally:
+        # Restore original config
+        for key, value in original_config.items():
+            app.config[key] = value
 
 
 def test_both_bugs():
