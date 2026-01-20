@@ -1066,12 +1066,13 @@ def generate_csv_stream(stores_file: Path, fieldnames: list = None):
     import io
     import ijson
 
-    # First pass: get fieldnames from first item if not provided
+    # Get fieldnames from config or use streaming discovery with limits
     if not fieldnames:
+        # Only read first item for fieldnames, don't load all
         with open(stores_file, 'rb') as f:
             for first_item in ijson.items(f, 'item'):
                 fieldnames = list(first_item.keys())
-                break
+                break  # Stop after first item
         if not fieldnames:
             return  # Empty file
 
