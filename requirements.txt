@@ -1,8 +1,8 @@
 # Core dependencies - pinned for reproducibility (#116)
-requests==2.31.0
+requests==2.32.4
 beautifulsoup4==4.12.2
 lxml==5.1.0
-brotli==1.1.0  # Required for Brotli decompression (T-Mobile uses Content-Encoding: br)
+brotli==1.2.0  # Required for Brotli decompression (T-Mobile uses Content-Encoding: br)
 
 # Async support for concurrent scraping
 aiohttp==3.9.1  # Used in tests/uat/protocol.py for async API testing
