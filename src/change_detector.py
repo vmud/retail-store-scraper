@@ -52,10 +52,16 @@ class ChangeDetector:
     # Fields used to identify a store uniquely
     IDENTITY_FIELDS = ['store_id', 'url', 'name', 'street_address']
 
-    # Fields used to detect modifications (excluding identity and timestamp)
+    # Fields used for address-based key disambiguation (stable identity)
+    # These define a store's core identity - location + primary contact
+    # Phone is included because stores at the same address with different
+    # phones are genuinely different stores (e.g., multi-service locations)
+    ADDRESS_IDENTITY_FIELDS = ['name', 'street_address', 'city', 'state', 'zip', 'phone']
+
+    # Fields used to detect modifications (excluding address identity)
+    # These are attributes that can change without changing store identity
     COMPARISON_FIELDS = [
-        'city', 'state', 'zip', 'country',
-        'latitude', 'longitude', 'phone',
+        'country', 'latitude', 'longitude',
         'store_type', 'status'
     ]
 
@@ -70,12 +76,12 @@ class ChangeDetector:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.history_dir.mkdir(parents=True, exist_ok=True)
 
-    def _get_store_key(self, store: Dict[str, Any], fingerprint_suffix: str = "") -> str:
+    def _get_store_key(self, store: Dict[str, Any], identity_suffix: str = "") -> str:
         """Generate a unique key for a store based on identity fields.
 
         Args:
             store: Store dictionary
-            fingerprint_suffix: Optional fingerprint suffix for stable disambiguation
+            identity_suffix: Optional identity hash suffix for stable disambiguation
 
         Returns:
             A unique string key for the store
@@ -93,9 +99,9 @@ class ChangeDetector:
             if store.get('url'):
                 return f"url:{store['url']}"
 
-        # Fall back to address-based key with fingerprint for cross-run stability (#57)
-        # Always include fingerprint suffix for address-based keys to ensure the same
-        # store has the same key across runs, even if collision status changes
+        # Fall back to address-based key with identity hash for cross-run stability (#57)
+        # Always include identity hash suffix for address-based keys to ensure the same
+        # store has the same key across runs, even when comparison fields change
         addr_parts = [
             store.get('name', ''),
             store.get('street_address', ''),
@@ -105,12 +111,13 @@ class ChangeDetector:
         ]
         base_key = f"addr:{'-'.join(p.lower().strip() for p in addr_parts if p)}"
 
-        # Always use fingerprint for address-based keys to prevent cross-run instability
-        # when stores transition from unique to colliding or vice versa (#9 review feedback)
-        if fingerprint_suffix:
-            return f"{base_key}::{fingerprint_suffix}"
-        # If no fingerprint provided, generate it now for stability
-        return f"{base_key}::{self.compute_fingerprint(store)[:8]}"
+        # Always use identity hash (NOT full fingerprint) for address-based keys
+        # This prevents keys from changing when comparison fields (phone, status, etc.) change
+        # while still allowing disambiguation of stores at the same address
+        if identity_suffix:
+            return f"{base_key}::{identity_suffix}"
+        # If no identity hash provided, generate it now for stability
+        return f"{base_key}::{self.compute_identity_hash(store)[:8]}"
 
     def _build_store_index(
         self,
@@ -118,8 +125,9 @@ class ChangeDetector:
     ) -> tuple:
         """Build store index and fingerprint maps with stable key generation (#57).
 
-        Uses deterministic fingerprint-based keys that remain stable across runs,
-        even when collision status changes (#9 review feedback).
+        Uses deterministic identity-hash-based keys that remain stable across runs,
+        even when comparison fields change. The full fingerprint (including comparison
+        fields) is tracked separately for detecting modifications.
 
         Returns:
             Tuple of (stores_by_key dict, fingerprints_by_key dict, collision_count)
@@ -130,37 +138,80 @@ class ChangeDetector:
         seen_keys = {}
 
         for store in stores:
+            # Compute identity hash for stable key generation (address-based stores only)
+            identity_hash = self.compute_identity_hash(store)
+            # Compute full fingerprint for change detection (includes comparison fields)
             fingerprint = self.compute_fingerprint(store)
-            # Keys are now always generated with fingerprints for address-based stores
-            # This ensures cross-run stability regardless of collision status changes
-            key = self._get_store_key(store, fingerprint[:8])
+            
+            # Keys use identity hash to remain stable when comparison fields change
+            key = self._get_store_key(store, identity_hash[:8])
             
             # Track collisions for logging purposes
             if key in seen_keys:
                 collision_count += 1
                 logging.debug(
                     f"Key collision detected: '{key}' appears multiple times. "
-                    f"This suggests stores have identical identity fields and fingerprints."
+                    f"This suggests stores have identical identity fields."
                 )
             
             stores_by_key[key] = store
+            # Store full fingerprint for change detection
             fingerprints_by_key[key] = fingerprint
             seen_keys[key] = True
 
         if collision_count > 0:
             logging.warning(
                 f"[{self.retailer}] {collision_count} true key collision(s) detected "
-                f"(stores with identical identity fields AND fingerprints). "
+                f"(stores with identical identity fields). "
                 f"Consider adding more unique identifiers to store data."
             )
 
         return stores_by_key, fingerprints_by_key, collision_count
 
+    def compute_identity_hash(self, store: Dict[str, Any]) -> str:
+        """Compute a hash of ONLY identity fields for stable key generation.
+        
+        This hash is used for address-based key suffixes and remains stable
+        when comparison fields (phone, status, etc.) change. This prevents
+        false positives in change detection.
+        
+        Args:
+            store: Store dictionary
+            
+        Returns:
+            SHA256 hash of identity fields only
+        """
+        # Only use address identity fields for stable keys
+        data = {k: store.get(k, '') for k in self.ADDRESS_IDENTITY_FIELDS if k in store}
+        
+        # Sort keys for consistent hashing
+        json_str = json.dumps(data, sort_keys=True)
+        return hashlib.sha256(json_str.encode()).hexdigest()
+
     def compute_fingerprint(self, store: Dict[str, Any]) -> str:
-        """Compute a fingerprint hash of a store's key attributes"""
-        # Include identity and comparison fields
-        fields_to_hash = self.IDENTITY_FIELDS + self.COMPARISON_FIELDS
-        data = {k: store.get(k, '') for k in fields_to_hash if k in store}
+        """Compute a fingerprint hash of a store's key attributes.
+        
+        This includes both identity and comparison fields, so it changes
+        when any important field changes. Used for detecting modifications.
+        
+        Args:
+            store: Store dictionary
+            
+        Returns:
+            SHA256 hash of all relevant fields (identity + comparison)
+        """
+        # Include basic identity fields, address identity fields, and comparison fields
+        # This ensures fingerprint captures ALL important store attributes
+        fields_to_hash = self.IDENTITY_FIELDS + self.ADDRESS_IDENTITY_FIELDS + self.COMPARISON_FIELDS
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_fields = []
+        for field in fields_to_hash:
+            if field not in seen:
+                seen.add(field)
+                unique_fields.append(field)
+        
+        data = {k: store.get(k, '') for k in unique_fields if k in store}
 
         # Sort keys for consistent hashing
         json_str = json.dumps(data, sort_keys=True)
