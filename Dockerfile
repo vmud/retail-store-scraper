@@ -4,6 +4,9 @@
 # Build stage - install dependencies
 FROM python:3.11-slim AS builder
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 WORKDIR /app
 
 # Install system dependencies needed for building
@@ -20,6 +23,9 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Runtime stage - minimal image
 FROM python:3.11-slim
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
