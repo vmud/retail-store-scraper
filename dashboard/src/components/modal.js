@@ -323,9 +323,12 @@ function startLivePolling(retailer, runId) {
         }
         
         // Restart interval with new backoff delay using the named function reference
-        // IMPORTANT: Save backoffInterval before calling stopLivePolling() which resets currentPollInterval
-        stopLivePolling();
-        currentPollInterval = backoffInterval; // Restore the calculated backoff interval
+        // IMPORTANT: Don't call stopLivePolling() here as it would reset pollErrors counter
+        // Just clear the interval and restart with backoff - preserve error tracking
+        if (liveLogInterval) {
+          clearInterval(liveLogInterval);
+        }
+        currentPollInterval = backoffInterval;
         liveLogInterval = setInterval(pollFunction, backoffInterval);
       }
       // Handle other errors (network, server errors)
