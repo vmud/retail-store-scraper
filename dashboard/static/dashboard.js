@@ -520,8 +520,6 @@ function escapeForJs(str) {
         .replace(/\t/g, '\\t')   // Escape tabs
         .replace(/'/g, "\\'")
         .replace(/"/g, '\\"');
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"');
     
     // Step 2: HTML-encode for HTML attribute context
     // This prevents XSS when the escaped string is placed in onclick="..."
