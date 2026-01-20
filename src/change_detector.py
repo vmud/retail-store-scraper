@@ -70,12 +70,12 @@ class ChangeDetector:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.history_dir.mkdir(parents=True, exist_ok=True)
 
-    def _get_store_key(self, store: Dict[str, Any], index: int = 0) -> str:
+    def _get_store_key(self, store: Dict[str, Any], fingerprint_suffix: str = "") -> str:
         """Generate a unique key for a store based on identity fields.
 
         Args:
             store: Store dictionary
-            index: Optional index to disambiguate stores with same identity fields
+            fingerprint_suffix: Optional fingerprint suffix for collision disambiguation
 
         Returns:
             A unique string key for the store
@@ -103,9 +103,10 @@ class ChangeDetector:
         ]
         base_key = f"addr:{'-'.join(p.lower().strip() for p in addr_parts if p)}"
 
-        # If index > 0, this is a collision disambiguation
-        if index > 0:
-            return f"{base_key}::{index}"
+        # Use fingerprint suffix for stable collision disambiguation (#9 review feedback)
+        # This ensures keys are stable across runs regardless of input order
+        if fingerprint_suffix:
+            return f"{base_key}::{fingerprint_suffix}"
         return base_key
 
     def _build_store_index(
@@ -114,32 +115,35 @@ class ChangeDetector:
     ) -> tuple:
         """Build store index and fingerprint maps, handling key collisions (#57).
 
+        Uses fingerprint-based disambiguation for stable keys across runs (#9 review feedback).
+        This ensures that the same store always gets the same key regardless of input order.
+
         Returns:
             Tuple of (stores_by_key dict, fingerprints_by_key dict, collision_count)
         """
         stores_by_key = {}
         fingerprints_by_key = {}
         collision_count = 0
-        key_occurrence_count = {}
+        seen_keys = set()
 
         for store in stores:
             base_key = self._get_store_key(store)
+            fingerprint = self.compute_fingerprint(store)
 
             # Check for collision
-            if base_key in stores_by_key:
-                # Increment occurrence count
-                key_occurrence_count[base_key] = key_occurrence_count.get(base_key, 1) + 1
+            if base_key in seen_keys:
                 collision_count += 1
-
-                # Generate new unique key with disambiguation index
-                unique_key = self._get_store_key(store, key_occurrence_count[base_key])
+                # Use first 8 chars of fingerprint for stable disambiguation
+                # This ensures the key is deterministic based on store content, not input order
+                fingerprint_suffix = fingerprint[:8]
+                unique_key = self._get_store_key(store, fingerprint_suffix)
                 logging.debug(f"Key collision detected for '{base_key}', using '{unique_key}'")
             else:
                 unique_key = base_key
-                key_occurrence_count[base_key] = 1
+                seen_keys.add(base_key)
 
             stores_by_key[unique_key] = store
-            fingerprints_by_key[unique_key] = self.compute_fingerprint(store)
+            fingerprints_by_key[unique_key] = fingerprint
 
         if collision_count > 0:
             logging.warning(
@@ -310,11 +314,13 @@ class ChangeDetector:
         return str(filepath)
 
     def save_fingerprints(self, stores: List[Dict[str, Any]]) -> None:
-        """Save fingerprints for current stores"""
-        fingerprints = {
-            self._get_store_key(s): self.compute_fingerprint(s)
-            for s in stores
-        }
+        """Save fingerprints for current stores.
+
+        Uses _build_store_index for consistent collision handling (#2 review feedback).
+        This ensures fingerprints use the same keys as change detection.
+        """
+        # Use _build_store_index for consistent collision handling
+        _, fingerprints, _ = self._build_store_index(stores)
 
         with open(self.fingerprints_path, 'w', encoding='utf-8') as f:
             json.dump({

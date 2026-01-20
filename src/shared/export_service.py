@@ -185,12 +185,15 @@ class ExportService:
         fieldnames: List[str],
         sheet_name: str = "Stores"
     ) -> None:
-        """Save stores to Excel file with formatting."""
+        """Save stores to Excel file with formatting and formula injection protection (#5 review feedback)."""
         if not OPENPYXL_AVAILABLE:
             raise ImportError(
                 "openpyxl is required for Excel export. "
                 "Install it with: pip install openpyxl"
             )
+
+        # Sanitize stores to prevent formula injection (same as CSV)
+        sanitized_stores = [sanitize_store_for_csv(store) for store in stores]
 
         wb = Workbook()
         ws = wb.active
@@ -203,8 +206,8 @@ class ExportService:
             cell.font = header_font
             cell.alignment = Alignment(horizontal='center')
 
-        # Write data rows
-        for row_idx, store in enumerate(stores, start=2):
+        # Write data rows (using sanitized data)
+        for row_idx, store in enumerate(sanitized_stores, start=2):
             for col_idx, field in enumerate(fieldnames, start=1):
                 value = store.get(field, '')
                 ws.cell(row=row_idx, column=col_idx, value=value)
@@ -300,6 +303,8 @@ class ExportService:
         """
         Generate Excel workbook in memory and return as bytes.
 
+        Includes formula injection protection (#5 review feedback).
+
         Args:
             stores: List of store dictionaries
             sheet_name: Name for the worksheet
@@ -319,6 +324,9 @@ class ExportService:
         elif fieldnames is None:
             fieldnames = ExportService.DEFAULT_FIELDS
 
+        # Sanitize stores to prevent formula injection (same as CSV)
+        sanitized_stores = [sanitize_store_for_csv(store) for store in stores]
+
         wb = Workbook()
         ws = wb.active
         ws.title = sheet_name
@@ -330,8 +338,8 @@ class ExportService:
             cell.font = header_font
             cell.alignment = Alignment(horizontal='center')
 
-        # Write data rows
-        for row_idx, store in enumerate(stores, start=2):
+        # Write data rows (using sanitized data)
+        for row_idx, store in enumerate(sanitized_stores, start=2):
             for col_idx, field in enumerate(fieldnames, start=1):
                 value = store.get(field, '')
                 ws.cell(row=row_idx, column=col_idx, value=value)
@@ -363,6 +371,8 @@ class ExportService:
         """
         Generate multi-sheet Excel workbook with one sheet per retailer.
 
+        Includes formula injection protection (#5 review feedback).
+
         Args:
             retailer_data: Dictionary mapping retailer names to store lists
             config: Optional config dict with per-retailer output_fields
@@ -391,6 +401,9 @@ class ExportService:
             if not fieldnames:
                 fieldnames = list(stores[0].keys())
 
+            # Sanitize stores to prevent formula injection (same as CSV)
+            sanitized_stores = [sanitize_store_for_csv(store) for store in stores]
+
             # Create sheet with capitalized retailer name
             sheet_name = retailer.title()[:31]  # Excel sheet names max 31 chars
             ws = wb.create_sheet(title=sheet_name)
@@ -403,8 +416,8 @@ class ExportService:
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal='center')
 
-            # Write data rows
-            for row_idx, store in enumerate(stores, start=2):
+            # Write data rows (using sanitized data)
+            for row_idx, store in enumerate(sanitized_stores, start=2):
                 for col_idx, field in enumerate(fieldnames, start=1):
                     value = store.get(field, '')
                     ws.cell(row=row_idx, column=col_idx, value=value)

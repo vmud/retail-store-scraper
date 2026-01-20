@@ -70,6 +70,7 @@ venv.bak/
 data/
 logs/
 *.log
+.flask_secret
 
 # Checkpoints and output (runtime data)
 data/*/checkpoints/

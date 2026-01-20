@@ -121,8 +121,9 @@ class ScraperManager:
 
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
             logger.debug(f"Could not verify process {pid}: {e}")
-            # If we can't verify, assume PID might have been recycled
-            return False
+            # Fall back to PID-only check - assume process is valid if PID exists (#8 review feedback)
+            # We can't determine either way, so trust the existing PID check
+            return True
 
     def _recover_running_processes(self) -> None:
         """Recover running processes from RunTracker metadata on startup

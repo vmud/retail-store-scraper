@@ -98,11 +98,13 @@ def validate_config_on_startup() -> List[str]:
                 if not isinstance(value, (int, float)) or value < 0:
                     errors.append(f"{prefix}: '{field}' must be a non-negative number")
 
-        # Validate delay order
-        min_delay = retailer_config.get('min_delay', 0)
-        max_delay = retailer_config.get('max_delay', 0)
-        if min_delay > max_delay:
-            errors.append(f"{prefix}: 'min_delay' ({min_delay}) cannot be greater than 'max_delay' ({max_delay})")
+        # Validate delay order only when both are explicitly set (#3 review feedback)
+        # Using defaults causes false positives when only one delay is configured
+        if 'min_delay' in retailer_config and 'max_delay' in retailer_config:
+            min_delay = retailer_config['min_delay']
+            max_delay = retailer_config['max_delay']
+            if min_delay > max_delay:
+                errors.append(f"{prefix}: 'min_delay' ({min_delay}) cannot be greater than 'max_delay' ({max_delay})")
 
     # Validate proxy section if present
     if 'proxy' in config:
@@ -331,6 +333,7 @@ async def run_retailer_async(
     if export_formats is None:
         export_formats = [ExportFormat.JSON, ExportFormat.CSV]
 
+    session = None
     try:
         # Pass CLI proxy settings through to retailer config (#52)
         retailer_config = load_retailer_config(
@@ -427,6 +430,13 @@ async def run_retailer_async(
             'stores': 0,
             'error': str(e)
         }
+    finally:
+        # Close session to prevent resource leak (#4 review feedback)
+        if session is not None:
+            try:
+                session.close()
+            except Exception as close_err:
+                logging.debug(f"[{retailer}] Error closing session: {close_err}")
 
 
 async def run_all_retailers(

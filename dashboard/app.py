@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import secrets
 import sys
 import re
 import uuid
@@ -28,27 +29,58 @@ from src.shared.export_service import ExportService, ExportFormat
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
-# Configure secret key for CSRF protection (#95)
-# In production, FLASK_SECRET_KEY should be set in the environment for session persistence
-# across restarts. If not set, generate a stable key based on a machine identifier.
-_secret_key = os.environ.get('FLASK_SECRET_KEY')
-if not _secret_key:
-    # Generate a stable secret key based on the hostname and a fixed salt
-    # This ensures the key persists across restarts on the same machine
-    # but is still unique per deployment
-    import hashlib
-    import socket
-    machine_id = f"{socket.gethostname()}-retail-store-scraper"
-    _secret_key = hashlib.sha256(machine_id.encode()).hexdigest()
-    logging.warning(
-        "FLASK_SECRET_KEY not set. Using machine-based key. "
-        "Set FLASK_SECRET_KEY environment variable for production deployments."
-    )
-app.config['SECRET_KEY'] = _secret_key
+
+def _get_secret_key() -> str:
+    """Get or generate a persistent secret key for CSRF protection (#95).
+
+    Priority:
+    1. FLASK_SECRET_KEY environment variable (recommended for production)
+    2. Persisted random secret in .flask_secret file (auto-generated)
+
+    The file-based approach ensures sessions persist across restarts
+    while using cryptographically secure random values.
+
+    Returns:
+        A 64-character hex string secret key
+    """
+    # First, check environment variable
+    env_key = os.environ.get('FLASK_SECRET_KEY')
+    if env_key:
+        return env_key
+
+    # Generate and persist a random secret to file
+    secret_file = Path(__file__).parent.parent / '.flask_secret'
+
+    if secret_file.exists():
+        try:
+            stored_secret = secret_file.read_text().strip()
+            if stored_secret and len(stored_secret) >= 32:
+                return stored_secret
+        except (IOError, OSError) as e:
+            logging.warning(f"Could not read .flask_secret file: {e}")
+
+    # Generate new random secret
+    new_secret = secrets.token_hex(32)
+    try:
+        secret_file.write_text(new_secret)
+        # Restrict file permissions (owner read/write only)
+        secret_file.chmod(0o600)
+        logging.info("Generated new secret key and saved to .flask_secret")
+    except (IOError, OSError) as e:
+        logging.warning(
+            f"Could not save secret to .flask_secret: {e}. "
+            f"Sessions will not persist across restarts."
+        )
+
+    return new_secret
+
+
+app.config['SECRET_KEY'] = _get_secret_key()
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit on tokens
 
-# Check if running in production mode (set FLASK_ENV=production)
-IS_PRODUCTION = os.environ.get('FLASK_ENV') == 'production'
+# Check if running in development mode (whitelist approach for security #98)
+# Source files are only served when FLASK_ENV is explicitly set to 'development'
+IS_DEVELOPMENT = os.environ.get('FLASK_ENV') == 'development'
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
@@ -127,10 +159,11 @@ def serve_src(filename):
     In development, Vite serves files directly. This route allows
     Flask to serve source files when running without Vite dev server.
 
-    SECURITY: This endpoint is disabled in production mode (#98)
+    SECURITY: This endpoint is only enabled when FLASK_ENV=development (#98)
+    Uses whitelist approach - disabled by default unless explicitly enabled.
     """
-    # Disable in production to prevent source code exposure
-    if IS_PRODUCTION:
+    # Only enable in development mode (whitelist approach)
+    if not IS_DEVELOPMENT:
         return jsonify({"error": "Not found"}), 404
 
     src_folder = Path(__file__).parent / 'src'
@@ -312,6 +345,11 @@ def _validate_scraper_options(data: dict) -> tuple:
     proxy_country = data.get('proxy_country', 'us')
     if not isinstance(proxy_country, str) or not re.match(r'^[a-z]{2}$', proxy_country.lower()):
         return False, "Field 'proxy_country' must be a 2-letter country code"
+
+    # Validate render_js requires web_scraper_api proxy mode (#7 review feedback)
+    render_js = data.get('render_js', False)
+    if render_js and proxy is not None and proxy != 'web_scraper_api':
+        return False, "--render-js requires proxy mode 'web_scraper_api'"
 
     # Build validated options
     options = {
