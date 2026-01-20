@@ -71,6 +71,50 @@ class TestAPIEndpoints:
         assert 'test' in data['error'].lower()
         assert 'limit' in data['error'].lower()
 
+    def test_api_scraper_start_render_js_without_proxy_returns_400(self, client):
+        """Test that render_js without proxy returns 400"""
+        response = client.post('/api/scraper/start',
+                              json={'retailer': 'verizon', 'render_js': True},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'render' in data['error'].lower()
+        assert 'web_scraper_api' in data['error'].lower()
+
+    def test_api_scraper_start_render_js_with_wrong_proxy_returns_400(self, client):
+        """Test that render_js with non-web_scraper_api proxy returns 400"""
+        response = client.post('/api/scraper/start',
+                              json={'retailer': 'verizon', 'render_js': True, 'proxy': 'residential'},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'render' in data['error'].lower()
+        assert 'web_scraper_api' in data['error'].lower()
+
+    def test_api_scraper_start_limit_boolean_true_returns_400(self, client):
+        """Test that limit with boolean True value returns 400 (not accepted as int)"""
+        response = client.post('/api/scraper/start',
+                              json={'retailer': 'verizon', 'limit': True},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'limit' in data['error'].lower()
+        assert 'integer' in data['error'].lower()
+
+    def test_api_scraper_start_limit_boolean_false_returns_400(self, client):
+        """Test that limit with boolean False value returns 400 (not accepted as int)"""
+        response = client.post('/api/scraper/start',
+                              json={'retailer': 'verizon', 'limit': False},
+                              content_type='application/json')
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'error' in data
+        assert 'limit' in data['error'].lower()
+        assert 'integer' in data['error'].lower()
+
     def test_api_scraper_stop_without_retailer_returns_400(self, client):
         """Test that stop without retailer param returns 400"""
         response = client.post('/api/scraper/stop',

@@ -325,7 +325,8 @@ def _validate_scraper_options(data: dict) -> tuple:
     # Validate limit (#58)
     limit = data.get('limit')
     if limit is not None:
-        if not isinstance(limit, int) or limit < 1:
+        # Explicitly exclude booleans since bool is a subclass of int in Python
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
             return False, "Field 'limit' must be a positive integer"
         if limit > MAX_SCRAPER_LIMIT:
             return False, f"Field 'limit' exceeds maximum allowed value ({MAX_SCRAPER_LIMIT})"
@@ -348,7 +349,7 @@ def _validate_scraper_options(data: dict) -> tuple:
 
     # Validate render_js requires web_scraper_api proxy mode (#7 review feedback)
     render_js = data.get('render_js', False)
-    if render_js and proxy is not None and proxy != 'web_scraper_api':
+    if render_js and proxy != 'web_scraper_api':
         return False, "--render-js requires proxy mode 'web_scraper_api'"
 
     # Validate test + limit conflict (matches CLI validation)
