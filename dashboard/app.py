@@ -274,15 +274,36 @@ def _transform_status_for_frontend(backend_data: dict) -> dict:
         progress_pct = retailer_data.get("overall_progress", 0.0)
         progress_text = f"{completed:,} / {total:,} stores ({progress_pct:.1f}%)" if total > 0 else "No data"
         
+        # Get real stats from run tracker (#72)
+        duration_text = "—"
+        requests_text = "—"
+        latest_run = run_tracker.get_latest_run(retailer_id)
+        if latest_run:
+            run_stats = latest_run.get("stats", {})
+            duration_secs = run_stats.get("duration_seconds", 0)
+            if duration_secs > 0:
+                if duration_secs < 60:
+                    duration_text = f"{duration_secs}s"
+                elif duration_secs < 3600:
+                    duration_text = f"{duration_secs // 60}m {duration_secs % 60}s"
+                else:
+                    hours = duration_secs // 3600
+                    mins = (duration_secs % 3600) // 60
+                    duration_text = f"{hours}h {mins}m"
+
+            requests_made = run_stats.get("requests_made", 0)
+            if requests_made > 0:
+                requests_text = formatNumber(requests_made)
+
         stats = {
             "stat1_value": formatNumber(completed) if total > 0 else "—",
             "stat1_label": "Stores",
-            "stat2_value": "—",
+            "stat2_value": duration_text,
             "stat2_label": "Duration",
-            "stat3_value": "—",
+            "stat3_value": requests_text,
             "stat3_label": "Requests",
         }
-        
+
         retailers[retailer_id] = {
             "status": status_value,
             "progress": {
@@ -745,6 +766,73 @@ def api_get_logs(retailer, run_id):
         return safe_error_response(e, "API request")
 
 
+@app.route('/api/changes/<retailer>')
+def api_get_changes(retailer):
+    """Get latest change report for a retailer (#79)
+
+    Returns the most recent change detection report if available.
+
+    Path params:
+        retailer: Retailer ID (verizon, att, target, etc.)
+
+    Response:
+        {
+            "retailer": "verizon",
+            "has_changes": true,
+            "report": { ... change report data ... }
+        }
+    """
+    try:
+        # Validate retailer name format
+        if not re.match(r'^[a-z][a-z0-9_]*$', retailer):
+            return jsonify({"error": "Invalid retailer name format"}), 400
+
+        config = status.load_retailers_config()
+        if retailer not in config:
+            return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
+
+        history_dir = Path(f'data/{retailer}/history')
+        if not history_dir.exists():
+            return jsonify({
+                "retailer": retailer,
+                "has_changes": False,
+                "report": None,
+                "message": "No change history available"
+            })
+
+        # Find the latest change report
+        change_files = list(history_dir.glob('changes_*.json'))
+        if not change_files:
+            return jsonify({
+                "retailer": retailer,
+                "has_changes": False,
+                "report": None,
+                "message": "No change reports found"
+            })
+
+        # Get most recent by modification time
+        latest = max(change_files, key=lambda p: p.stat().st_mtime)
+
+        with open(latest, 'r', encoding='utf-8') as f:
+            report = json.load(f)
+
+        has_changes = (
+            len(report.get('new_stores', [])) > 0 or
+            len(report.get('closed_stores', [])) > 0 or
+            len(report.get('modified_stores', [])) > 0
+        )
+
+        return jsonify({
+            "retailer": retailer,
+            "has_changes": has_changes,
+            "report": report,
+            "report_file": latest.name
+        })
+
+    except Exception as e:
+        return safe_error_response(e, "API request")
+
+
 @app.route('/api/config', methods=['GET'])
 def api_get_config():
     """Get current configuration"""
@@ -816,12 +904,14 @@ def api_update_config():
                 f.write(content)
             
             temp_path.replace(config_path)
-            
+
             _reload_config()
-            
+
+            # Return success with restart notice (#83)
             return jsonify({
-                "message": "Configuration updated successfully",
-                "backup": str(backup_path)
+                "message": "Configuration saved. Restart running scrapers to apply changes.",
+                "backup": str(backup_path),
+                "requires_restart": True
             })
         except Exception:
             if temp_path.exists():

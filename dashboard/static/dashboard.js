@@ -603,7 +603,13 @@ function updateLogFilterButtons() {
     });
 }
 
-async function startScraper(retailer) {
+/**
+ * Start a scraper for a retailer
+ * @param {string} retailer - Retailer ID
+ * @param {Object} options - Optional settings
+ * @param {boolean} options.resume - Whether to resume from checkpoint (default: false) (#81)
+ */
+async function startScraper(retailer, options = {}) {
     try {
         const response = await fetch('/api/scraper/start', {
             method: 'POST',
@@ -612,7 +618,8 @@ async function startScraper(retailer) {
             },
             body: JSON.stringify({
                 retailer: retailer,
-                resume: true
+                // Default to fresh run, not resume (#81)
+                resume: options.resume ?? false
             })
         });
         
