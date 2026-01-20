@@ -44,8 +44,10 @@ COPY --chown=appuser:appuser . .
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Create data and logs directories with correct ownership
-RUN mkdir -p /app/data /app/logs /app/dashboard && \
+# Create all data directories with subdirectories before USER switch
+RUN mkdir -p /app/data/{att,verizon,target,tmobile,walmart,bestbuy}/{output,checkpoints,runs,history} \
+    /app/logs \
+    /app/dashboard && \
     touch /app/.flask_secret && \
     chown -R appuser:appuser /app/data /app/logs /app/.flask_secret
 
