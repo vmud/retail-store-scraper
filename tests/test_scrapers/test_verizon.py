@@ -1,5 +1,6 @@
 """Unit tests for Verizon scraper."""
 
+import json
 import pytest
 from unittest.mock import Mock, patch
 
@@ -10,6 +11,11 @@ from src.scrapers.verizon import (
     STATE_URL_PATTERNS,
     get_state_url,
     _STATES,
+    extract_store_details,
+    run,
+    get_request_count,
+    reset_request_counter,
+    _check_pause_logic,
 )
 
 
@@ -115,3 +121,288 @@ class TestGetStateUrl:
             url = get_state_url(slug)
             assert url.startswith('/stores/')
             assert url.endswith('/')
+
+
+class TestVerizonRun:
+    """Tests for Verizon run() method."""
+
+    def _make_store_page_response(self, store_id, city='dallas'):
+        """Helper to create store page HTML response with JSON-LD."""
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+<script type="application/ld+json">
+{{
+    "@type": "Store",
+    "name": "Verizon Store {store_id}",
+    "telephone": "(555) 123-4567",
+    "address": {{
+        "streetAddress": "{store_id} Main St",
+        "addressLocality": "{city}",
+        "addressRegion": "TX",
+        "postalCode": "75001",
+        "addressCountry": "US"
+    }},
+    "geo": {{
+        "latitude": "32.7767",
+        "longitude": "-96.7970"
+    }}
+}}
+</script>
+</head>
+</html>'''
+        response = Mock()
+        response.text = html
+        return response
+
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.extract_store_details')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_run_returns_correct_structure(self, mock_reset, mock_extract, mock_states,
+                                           mock_cities, mock_stores, mock_session):
+        """Test that run() returns the expected structure."""
+        mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
+        mock_cities.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/'}]
+        mock_stores.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/store-123/'}]
+        mock_extract.return_value = {
+            'name': 'Test Store',
+            'street_address': '123 Main St',
+            'city': 'Dallas',
+            'state': 'TX',
+            'zip': '75001',
+            'country': 'US',
+            'latitude': '32.77',
+            'longitude': '-96.79',
+            'phone': '(555) 123-4567',
+            'url': 'https://www.verizon.com/stores/texas/dallas/store-123/',
+            'sub_channel': 'COR',
+            'dealer_name': None,
+            'store_location': 'dallas',
+            'retailer_store_number': None,
+            'verizon_uid': '123',
+            'scraped_at': '2025-01-19T12:00:00'
+        }
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='verizon')
+
+        assert isinstance(result, dict)
+        assert 'stores' in result
+        assert 'count' in result
+        assert 'checkpoints_used' in result
+        assert isinstance(result['stores'], list)
+        assert isinstance(result['count'], int)
+        assert isinstance(result['checkpoints_used'], bool)
+
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.extract_store_details')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_run_with_limit(self, mock_reset, mock_extract, mock_states,
+                            mock_cities, mock_stores, mock_session):
+        """Test run() respects limit parameter."""
+        mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
+        mock_cities.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/'}]
+        mock_stores.return_value = [
+            {'city': 'Dallas', 'state': 'Texas', 'url': f'https://www.verizon.com/stores/texas/dallas/store-{i}/'}
+            for i in range(5)
+        ]
+        mock_extract.return_value = {
+            'name': 'Test Store',
+            'street_address': '123 Main St',
+            'city': 'Dallas',
+            'state': 'TX',
+            'zip': '75001',
+            'country': 'US',
+            'latitude': '32.77',
+            'longitude': '-96.79',
+            'phone': '(555) 123-4567',
+            'url': 'https://www.verizon.com/stores/test/',
+            'sub_channel': 'COR',
+            'dealer_name': None,
+            'store_location': 'dallas',
+            'retailer_store_number': None,
+            'verizon_uid': '123',
+            'scraped_at': '2025-01-19T12:00:00'
+        }
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='verizon', limit=2)
+
+        assert result['count'] == 2
+        assert len(result['stores']) == 2
+
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_run_empty_stores(self, mock_reset, mock_states, mock_cities, mock_stores, mock_session):
+        """Test run() with no store URLs returns empty stores."""
+        mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
+        mock_cities.return_value = []
+        mock_stores.return_value = []
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='verizon')
+
+        assert result['stores'] == []
+        assert result['count'] == 0
+        assert result['checkpoints_used'] is False
+
+
+class TestVerizonCheckpoint:
+    """Tests for Verizon checkpoint/resume functionality."""
+
+    @patch('src.scrapers.verizon.utils.load_checkpoint')
+    @patch('src.scrapers.verizon.utils.save_checkpoint')
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_resume_loads_checkpoint(self, mock_reset, mock_states, mock_cities,
+                                      mock_stores, mock_save, mock_load, mock_session):
+        """Test that resume=True loads existing checkpoint."""
+        mock_load.return_value = {
+            'stores': [{'store_id': '123', 'name': 'Existing Store'}],
+            'completed_urls': ['https://www.verizon.com/stores/texas/dallas/store-123/']
+        }
+        # Must have non-empty stores for checkpoints_used to be True
+        mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
+        mock_cities.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/'}]
+        mock_stores.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/store-123/'}]
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='verizon', resume=True)
+
+        mock_load.assert_called_once()
+        assert result['checkpoints_used'] is True
+
+    @patch('src.scrapers.verizon.utils.load_checkpoint')
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_no_resume_starts_fresh(self, mock_reset, mock_states, mock_cities,
+                                     mock_stores, mock_load, mock_session):
+        """Test that resume=False does not load checkpoint."""
+        mock_states.return_value = []
+        mock_cities.return_value = []
+        mock_stores.return_value = []
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='verizon', resume=False)
+
+        mock_load.assert_not_called()
+        assert result['checkpoints_used'] is False
+
+
+class TestVerizonRateLimiting:
+    """Tests for Verizon rate limiting and pause logic."""
+
+    def test_request_counter_reset(self):
+        """Test that request counter resets properly."""
+        reset_request_counter()
+        assert get_request_count() == 0
+
+    @patch('src.scrapers.verizon.time.sleep')
+    @patch('src.scrapers.verizon.random.uniform')
+    def test_pause_at_50_requests(self, mock_uniform, mock_sleep):
+        """Test that pause triggers at 50 request threshold."""
+        mock_uniform.return_value = 15
+        reset_request_counter()
+
+        from src.scrapers.verizon import _request_counter
+        _request_counter._count = 50
+
+        _check_pause_logic()
+
+        mock_sleep.assert_called_once()
+        mock_uniform.assert_called()
+
+    @patch('src.scrapers.verizon.time.sleep')
+    @patch('src.scrapers.verizon.random.uniform')
+    def test_pause_at_200_requests(self, mock_uniform, mock_sleep):
+        """Test that longer pause triggers at 200 request threshold."""
+        mock_uniform.return_value = 180
+        reset_request_counter()
+
+        from src.scrapers.verizon import _request_counter
+        _request_counter._count = 200
+
+        _check_pause_logic()
+
+        mock_sleep.assert_called_once()
+
+    @patch('src.scrapers.verizon.time.sleep')
+    def test_no_pause_between_thresholds(self, mock_sleep):
+        """Test that no pause occurs between thresholds."""
+        reset_request_counter()
+
+        from src.scrapers.verizon import _request_counter
+        _request_counter._count = 25
+
+        _check_pause_logic()
+
+        mock_sleep.assert_not_called()
+
+
+class TestVerizonErrorHandling:
+    """Tests for Verizon error handling."""
+
+    @patch('src.scrapers.verizon.utils.get_with_retry')
+    @patch('src.scrapers.verizon._request_counter')
+    def test_store_fetch_failure_returns_none(self, mock_counter, mock_get, mock_session):
+        """Test that store page fetch failure returns None."""
+        mock_get.return_value = None
+
+        store = extract_store_details(mock_session, 'https://www.verizon.com/stores/texas/dallas/store-123/')
+
+        assert store is None
+
+    @patch('src.scrapers.verizon.utils.get_with_retry')
+    @patch('src.scrapers.verizon._request_counter')
+    def test_missing_json_ld_returns_none(self, mock_counter, mock_get, mock_session):
+        """Test that missing JSON-LD returns None."""
+        html = '<html><body>No JSON-LD here</body></html>'
+        response = Mock()
+        response.text = html
+        mock_get.return_value = response
+
+        store = extract_store_details(mock_session, 'https://www.verizon.com/stores/texas/dallas/store-123/')
+
+        assert store is None
+
+    @patch('src.scrapers.verizon.utils.get_with_retry')
+    @patch('src.scrapers.verizon._request_counter')
+    def test_wrong_json_ld_type_returns_none(self, mock_counter, mock_get, mock_session):
+        """Test that wrong JSON-LD type returns None."""
+        html = '''<html><head>
+<script type="application/ld+json">{"@type": "Organization", "name": "Verizon"}</script>
+</head></html>'''
+        response = Mock()
+        response.text = html
+        mock_get.return_value = response
+
+        store = extract_store_details(mock_session, 'https://www.verizon.com/stores/texas/dallas/store-123/')
+
+        assert store is None
+
+    @patch('src.scrapers.verizon.utils.get_with_retry')
+    @patch('src.scrapers.verizon._request_counter')
+    def test_invalid_store_data_returns_none(self, mock_counter, mock_get, mock_session):
+        """Test that invalid store data (missing required fields) returns None."""
+        # Store with missing city and state fails validation
+        html = '''<html><head>
+<script type="application/ld+json">
+{
+    "@type": "Store",
+    "name": "Test Store",
+    "address": {}
+}
+</script>
+</head></html>'''
+        response = Mock()
+        response.text = html
+        mock_get.return_value = response
+
+        store = extract_store_details(mock_session, 'https://www.verizon.com/stores/texas/dallas/store-123/')
+
+        assert store is None

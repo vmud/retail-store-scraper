@@ -39,21 +39,54 @@ _proxy_clients: Dict[str, ProxyClient] = {}
 _proxy_clients_lock = threading.Lock()
 
 
-def setup_logging(log_file: str = "logs/scraper.log") -> None:
-    """Setup logging configuration"""
-    # Ensure log directory exists
+def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = 10*1024*1024, backup_count: int = 5) -> None:
+    """Setup logging configuration with rotation (#118).
+
+    This function is idempotent - calling it multiple times will not add
+    duplicate handlers.
+
+    Args:
+        log_file: Path to log file
+        max_bytes: Maximum file size before rotation (default: 10MB)
+        backup_count: Number of backup files to keep (default: 5)
+    """
+    from logging.handlers import RotatingFileHandler
+
+    root_logger = logging.getLogger()
     log_path = Path(log_file)
+
+    # Idempotency check: skip if handler exists with matching configuration
+    for handler in root_logger.handlers[:]:  # Copy list to allow modification during iteration
+        if isinstance(handler, RotatingFileHandler) and handler.baseFilename == str(log_path.absolute()):
+            # Check if configuration matches
+            if handler.maxBytes == max_bytes and handler.backupCount == backup_count:
+                return  # Already configured correctly
+            # Configuration mismatch - remove old handler to reconfigure
+            root_logger.removeHandler(handler)
+            handler.close()
+
+    # Ensure log directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
+    # Configure logging with rotating file handler (#118)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    # Create rotating file handler
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count
     )
+    file_handler.setFormatter(formatter)
+
+    # Create console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    # Configure root logger
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 
 
 def get_headers(user_agent: str = None, base_url: str = None) -> Dict[str, str]:
@@ -493,6 +526,18 @@ def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any
     return config
 
 
+def _apply_cli_settings(
+    base_config: Dict[str, Any],
+    cli_settings: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Apply CLI proxy settings without mutating base config."""
+    if not cli_settings:
+        return base_config
+    updated_config = dict(base_config)
+    updated_config.update(cli_settings)
+    return updated_config
+
+
 def get_retailer_proxy_config(
     retailer: str,
     yaml_path: str = "config/retailers.yaml",
@@ -519,7 +564,11 @@ def get_retailer_proxy_config(
         Dict compatible with ProxyConfig.from_dict()
     """
     VALID_MODES = {'direct', 'residential', 'web_scraper_api'}
-    cli_settings = cli_settings or {}
+    cli_settings = {
+        key: value
+        for key, value in (cli_settings or {}).items()
+        if value is not None
+    }
 
     if cli_override:
         if cli_override not in VALID_MODES:
@@ -527,8 +576,8 @@ def get_retailer_proxy_config(
             return _build_proxy_config_dict(mode='direct')
         logging.info(f"[{retailer}] Using CLI override proxy mode: {cli_override}")
         # Include all CLI settings in the config (#52)
-        config = _build_proxy_config_dict(mode=cli_override, **cli_settings)
-        return config
+        config = _build_proxy_config_dict(mode=cli_override)
+        return _apply_cli_settings(config, cli_settings)
     
     try:
         with open(yaml_path, 'r', encoding='utf-8') as f:
@@ -553,7 +602,7 @@ def get_retailer_proxy_config(
             merged_config['mode'] = 'direct'
         else:
             logging.info(f"[{retailer}] Using retailer-specific proxy mode: {mode}")
-        return merged_config
+        return _apply_cli_settings(merged_config, cli_settings)
     
     if 'proxy' in config:
         proxy_config = _build_proxy_config_from_yaml(config['proxy'])
@@ -563,7 +612,7 @@ def get_retailer_proxy_config(
             proxy_config['mode'] = 'direct'
         else:
             logging.info(f"[{retailer}] Using global YAML proxy mode: {mode}")
-        return proxy_config
+        return _apply_cli_settings(proxy_config, cli_settings)
     
     env_mode = os.getenv('PROXY_MODE')
     if env_mode:
@@ -571,10 +620,11 @@ def get_retailer_proxy_config(
             logging.warning(f"[{retailer}] Invalid environment proxy mode '{env_mode}', falling back to direct")
             return _build_proxy_config_dict(mode='direct')
         logging.info(f"[{retailer}] Using environment variable proxy mode: {env_mode}")
-        return _build_proxy_config_dict(mode=env_mode)
+        env_config = _build_proxy_config_dict(mode=env_mode)
+        return _apply_cli_settings(env_config, cli_settings)
     
     logging.info(f"[{retailer}] Using default proxy mode: direct")
-    return {'mode': 'direct'}
+    return _apply_cli_settings({'mode': 'direct'}, cli_settings)
 
 
 def load_retailer_config(

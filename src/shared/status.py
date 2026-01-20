@@ -22,20 +22,31 @@ def load_retailers_config() -> Dict[str, Any]:
 
 
 def get_checkpoint_path(retailer: str, checkpoint_type: str) -> Path:
-    """Get checkpoint file path for a retailer
-    
+    """Get checkpoint file path for a retailer (#68)
+
+    Uses new naming convention (stores_latest.*) with fallback to legacy names
+    for backwards compatibility with existing data.
+
     Args:
         retailer: Retailer name (verizon, att, etc.)
         checkpoint_type: Type of checkpoint (states, cities, store_urls, sitemap_urls, output_csv, output_json)
-    
+
     Returns:
         Path to checkpoint file
     """
     base_path = Path(f"data/{retailer}")
-    
+
     if checkpoint_type == "output_csv":
+        # Try new filename first, fall back to legacy (#68)
+        new_path = base_path / "output" / "stores_latest.csv"
+        if new_path.exists():
+            return new_path
         return base_path / "output" / f"{retailer}_stores.csv"
     if checkpoint_type == "output_json":
+        # Try new filename first, fall back to legacy (#68)
+        new_path = base_path / "output" / "stores_latest.json"
+        if new_path.exists():
+            return new_path
         return base_path / "output" / f"{retailer}_stores.json"
     return base_path / "checkpoints" / f"{checkpoint_type}.json"
 

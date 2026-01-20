@@ -58,7 +58,13 @@
       "Bash(lsof:*)",
       "mcp__kapture__dom",
       "Bash(kill:*)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(git merge:*)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --all --oneline)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper tag)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper branch -a)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --all --grep=\"Sprint 4\" --oneline)",
+      "Bash(pip install:*)"
     ]
   }
 }

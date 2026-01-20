@@ -349,6 +349,7 @@ async function loadRunHistory(retailer) {
         }
         
         listContainer.innerHTML = data.runs.map(run => createRunItem(retailer, run)).join('');
+        bindRunHistoryLogButtons(listContainer);
     } catch (error) {
         console.error('Error loading run history:', error);
         listContainer.innerHTML = `<div class="run-history-empty">Failed to load run history</div>`;
@@ -377,10 +378,10 @@ function createRunItem(retailer, run) {
         statusText = 'Running';
     }
 
-    // SECURITY: Escape retailer and runId for use in onclick handlers to prevent XSS
-    // These values come from server data and could potentially contain malicious content
-    const safeRetailer = escapeHtml(retailer).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-    const safeRunId = escapeHtml(runId).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    // SECURITY: Store server data in data-* attributes and bind clicks separately.
+    // This avoids inline JS and prevents attribute breakout.
+    const safeRetailerAttr = escapeHtml(retailer);
+    const safeRunIdAttr = escapeHtml(runId);
     const safeStatus = escapeHtml(status);
     const safeStatusClass = escapeHtml(statusClass);
     const safeStatusText = escapeHtml(statusText);
@@ -398,12 +399,23 @@ function createRunItem(retailer, run) {
                 Stores: ${formatNumber(stores)}
             </div>
             <div class="run-item-actions">
-                <button class="btn-view-logs" onclick="openLogViewer('${safeRetailer}', '${safeRunId}')">
+                <button class="btn-view-logs" data-retailer="${safeRetailerAttr}" data-run-id="${safeRunIdAttr}">
                     View Logs
                 </button>
             </div>
         </div>
     `;
+}
+
+function bindRunHistoryLogButtons(listContainer) {
+    const buttons = listContainer.querySelectorAll('.btn-view-logs');
+    buttons.forEach(button => {
+        button.addEventListener('click', () => {
+            const retailer = button.dataset.retailer;
+            const runId = button.dataset.runId;
+            openLogViewer(retailer, runId);
+        });
+    });
 }
 
 function openLogViewer(retailer, runId) {
@@ -477,15 +489,42 @@ function parseLogLine(line) {
 
 /**
  * HTML-encode a string to prevent XSS attacks
+ * Uses string replacement for better performance (#112)
  * @param {string} str - The string to encode
  * @returns {string} - The HTML-encoded string
  */
 function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(str).replace(/[&<>"']/g, m => map[m]);
 }
 
+/**
+ * Escape a string for safe use in JavaScript string literals within HTML attributes
+ * Prevents XSS via backslash injection and HTML context escaping (#120)
+ * @param {string} str - The string to escape
+ * @returns {string} - The escaped string safe for JS onclick handlers
+ */
+function escapeForJs(str) {
+    // Step 1: Escape for JavaScript string literal context
+    const jsEscaped = String(str)
+    const jsEscaped = String(str)
+        .replace(/\\/g, '\\\\')  // Escape backslashes FIRST
+        .replace(/\n/g, '\\n')   // Escape newlines
+        .replace(/\r/g, '\\r')   // Escape carriage returns
+        .replace(/\t/g, '\\t')   // Escape tabs
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"');
+    
+    // Step 2: HTML-encode for HTML attribute context
+    // This prevents XSS when the escaped string is placed in onclick="..."
+    return escapeHtml(jsEscaped);
+}
 function displayLogs(parsedLines) {
     const logContainer = document.getElementById('log-content');
     
@@ -583,7 +622,13 @@ function updateLogFilterButtons() {
     });
 }
 
-async function startScraper(retailer) {
+/**
+ * Start a scraper for a retailer
+ * @param {string} retailer - Retailer ID
+ * @param {Object} options - Optional settings
+ * @param {boolean} options.resume - Whether to resume from checkpoint (default: false) (#81)
+ */
+async function startScraper(retailer, options = {}) {
     try {
         const response = await fetch('/api/scraper/start', {
             method: 'POST',
@@ -592,7 +637,8 @@ async function startScraper(retailer) {
             },
             body: JSON.stringify({
                 retailer: retailer,
-                resume: true
+                // Default to fresh run, not resume (#81)
+                resume: options.resume ?? false
             })
         });
         
@@ -770,20 +816,61 @@ async function saveConfig() {
     }
 }
 
+/**
+ * Validate YAML configuration syntax using js-yaml (#110)
+ * @param {string} content - YAML content to validate
+ * @returns {string|null} - Error message or null if valid
+ */
 function validateConfigSyntax(content) {
     if (!content || content.trim().length === 0) {
         return 'Configuration cannot be empty';
     }
-    
+
+    // Use js-yaml for proper YAML parsing (#110)
+    try {
+        // Check if jsyaml is available (loaded from CDN)
+        if (typeof jsyaml !== 'undefined') {
+            const parsed = jsyaml.load(content);
+
+            if (!parsed || typeof parsed !== 'object') {
+                return 'Configuration must be a valid YAML object';
+            }
+
+            if (!parsed.retailers) {
+                return 'Configuration must contain "retailers:" section';
+            }
+
+            if (typeof parsed.retailers !== 'object' || Array.isArray(parsed.retailers)) {
+                return '"retailers:" must be a dictionary/object';
+            }
+
+            // Validate each retailer has required fields
+            for (const [retailerName, retailerConfig] of Object.entries(parsed.retailers)) {
+                if (!retailerConfig || typeof retailerConfig !== 'object') {
+                    return `Retailer '${retailerName}' must have a configuration object`;
+                }
+                if (typeof retailerConfig.enabled !== 'boolean') {
+                    return `Retailer '${retailerName}' must have 'enabled: true/false'`;
+                }
+            }
+
+            return null; // Valid
+        }
+    } catch (e) {
+        // js-yaml parse error
+        return `YAML syntax error: ${e.message}`;
+    }
+
+    // Fallback validation if jsyaml not loaded
     if (!content.includes('retailers:')) {
         return 'Configuration must contain "retailers:" key';
     }
-    
+
     const lines = content.split('\n').filter(line => line.trim() && !line.trim().startsWith('#'));
     if (lines.length < 3) {
         return 'Configuration appears to be incomplete';
     }
-    
+
     return null;
 }
 

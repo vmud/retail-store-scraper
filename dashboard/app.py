@@ -22,10 +22,13 @@ load_dotenv(Path(__file__).parent.parent / '.env')
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flask import Flask, jsonify, request, render_template, send_from_directory, send_file
+from functools import wraps
+from flask import Flask, jsonify, request, render_template, send_from_directory, send_file, Response, stream_with_context
 from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from src.shared import status, scraper_manager, run_tracker
-from src.shared.export_service import ExportService, ExportFormat
+from src.shared.export_service import ExportService, ExportFormat, sanitize_csv_value
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -84,6 +87,47 @@ IS_DEVELOPMENT = os.environ.get('FLASK_ENV') == 'development'
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
+
+# Initialize rate limiter (#93)
+# Note: Rate limiting can be disabled by setting RATELIMIT_ENABLED=False in config
+# This is automatically done in tests via conftest.py
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["60 per minute"],
+    storage_uri="memory://",
+    enabled=lambda: app.config.get('RATELIMIT_ENABLED', True),
+)
+
+
+def require_api_key(f):
+    """Decorator to require API key authentication for mutating endpoints (#92).
+
+    API key authentication is OPTIONAL - if DASHBOARD_API_KEY is not set,
+    requests are allowed without authentication. This maintains backwards
+    compatibility while enabling security for production deployments.
+
+    Set DASHBOARD_API_KEY environment variable to enable authentication.
+    Clients must include X-API-Key header with the correct key.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key_configured = os.environ.get('DASHBOARD_API_KEY')
+        if not api_key_configured:
+            # No API key configured - allow request (backwards compatible)
+            return f(*args, **kwargs)
+
+        # API key is configured - require it
+        provided_key = request.headers.get('X-API-Key')
+        if not provided_key:
+            return jsonify({'error': 'Missing X-API-Key header'}), 401
+        # Use constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(provided_key, api_key_configured):
+            return jsonify({'error': 'Invalid API key'}), 401
+
+        return f(*args, **kwargs)
+    return decorated
+
 
 # Get singleton scraper manager instance
 _scraper_manager = scraper_manager.get_scraper_manager()
@@ -234,15 +278,36 @@ def _transform_status_for_frontend(backend_data: dict) -> dict:
         progress_pct = retailer_data.get("overall_progress", 0.0)
         progress_text = f"{completed:,} / {total:,} stores ({progress_pct:.1f}%)" if total > 0 else "No data"
         
+        # Get real stats from run tracker (#72)
+        duration_text = "—"
+        requests_text = "—"
+        latest_run = run_tracker.get_latest_run(retailer_id)
+        if latest_run:
+            run_stats = latest_run.get("stats", {})
+            duration_secs = run_stats.get("duration_seconds", 0)
+            if duration_secs > 0:
+                if duration_secs < 60:
+                    duration_text = f"{duration_secs}s"
+                elif duration_secs < 3600:
+                    duration_text = f"{duration_secs // 60}m {duration_secs % 60}s"
+                else:
+                    hours = duration_secs // 3600
+                    mins = (duration_secs % 3600) // 60
+                    duration_text = f"{hours}h {mins}m"
+
+            requests_made = run_stats.get("requests_made", 0)
+            if requests_made > 0:
+                requests_text = formatNumber(requests_made)
+
         stats = {
             "stat1_value": formatNumber(completed) if total > 0 else "—",
             "stat1_label": "Stores",
-            "stat2_value": "—",
+            "stat2_value": duration_text,
             "stat2_label": "Duration",
-            "stat3_value": "—",
+            "stat3_value": requests_text,
             "stat3_label": "Requests",
         }
-        
+
         retailers[retailer_id] = {
             "status": status_value,
             "progress": {
@@ -373,6 +438,8 @@ def _validate_scraper_options(data: dict) -> tuple:
 
 
 @app.route('/api/scraper/start', methods=['POST'])
+@limiter.limit("5 per minute")  # Rate limit scraper starts (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_scraper_start():
     """Start scraper(s)
@@ -432,6 +499,8 @@ def api_scraper_start():
 
 
 @app.route('/api/scraper/stop', methods=['POST'])
+@limiter.limit("10 per minute")  # Rate limit scraper stops (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_scraper_stop():
     """Stop scraper(s)
@@ -471,6 +540,8 @@ def api_scraper_stop():
 
 
 @app.route('/api/scraper/restart', methods=['POST'])
+@limiter.limit("5 per minute")  # Rate limit scraper restarts (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_scraper_restart():
     """Restart scraper(s)
@@ -567,6 +638,50 @@ MAX_LOG_TAIL = 10000
 MAX_LOG_OFFSET = 1000000  # 1 million lines
 
 
+def read_log_tail(filepath: Path, lines: int = 200) -> tuple:
+    """Read last N lines efficiently without loading entire file (#70).
+
+    Args:
+        filepath: Path to log file
+        lines: Number of lines to read from end
+
+    Returns:
+        Tuple of (list of lines, total line count estimate)
+    """
+    with open(filepath, 'rb') as f:
+        # Get file size
+        f.seek(0, 2)
+        file_size = f.tell()
+
+        if file_size == 0:
+            return [], 0
+
+        # Read in blocks from the end
+        block_size = 8192
+        blocks = []
+        remaining_size = file_size
+
+        # Estimate: read enough to get requested lines (assuming ~100 bytes/line avg)
+        bytes_needed = lines * 200
+
+        while remaining_size > 0 and sum(len(b) for b in blocks) < bytes_needed:
+            read_size = min(block_size, remaining_size)
+            remaining_size -= read_size
+            f.seek(remaining_size)
+            blocks.append(f.read(read_size))
+
+        # Combine and decode
+        content = b''.join(reversed(blocks)).decode('utf-8', errors='replace')
+        all_lines = content.splitlines(keepends=True)
+
+        # Estimate total lines (rough approximation based on file size / avg line length)
+        avg_line_len = len(content) / max(len(all_lines), 1) if all_lines else 100
+        estimated_total = int(file_size / avg_line_len)
+
+        # Return last N lines
+        return all_lines[-lines:], estimated_total
+
+
 @app.route('/api/logs/<retailer>/<run_id>')
 def api_get_logs(retailer, run_id):
     """Get logs for a specific run
@@ -624,18 +739,23 @@ def api_get_logs(retailer, run_id):
         offset = max(offset, 0)
         offset = min(offset, MAX_LOG_OFFSET)
 
-        with open(log_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        # Use efficient tail reading when offset is 0 and tail is specified (#70)
+        if offset == 0 and tail is not None:
+            lines, total_lines = read_log_tail(log_file, tail)
+        else:
+            # Fall back to full read for offset-based queries
+            with open(log_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
 
-        total_lines = len(lines)
+            total_lines = len(lines)
 
-        # Apply offset first (for incremental fetching)
-        if offset > 0:
-            lines = lines[offset:]
+            # Apply offset first (for incremental fetching)
+            if offset > 0:
+                lines = lines[offset:]
 
-        # Then apply tail (for initial load)
-        if tail:
-            lines = lines[-tail:]
+            # Then apply tail (for initial load)
+            if tail:
+                lines = lines[-tail:]
 
         return jsonify({
             "retailer": retailer,
@@ -646,6 +766,73 @@ def api_get_logs(retailer, run_id):
             "is_active": is_active,
             "content": ''.join(lines)
         })
+    except Exception as e:
+        return safe_error_response(e, "API request")
+
+
+@app.route('/api/changes/<retailer>')
+def api_get_changes(retailer):
+    """Get latest change report for a retailer (#79)
+
+    Returns the most recent change detection report if available.
+
+    Path params:
+        retailer: Retailer ID (verizon, att, target, etc.)
+
+    Response:
+        {
+            "retailer": "verizon",
+            "has_changes": true,
+            "report": { ... change report data ... }
+        }
+    """
+    try:
+        # Validate retailer name format
+        if not re.match(r'^[a-z][a-z0-9_]*$', retailer):
+            return jsonify({"error": "Invalid retailer name format"}), 400
+
+        config = status.load_retailers_config()
+        if retailer not in config:
+            return jsonify({"error": f"Unknown retailer: {retailer}"}), 404
+
+        history_dir = Path(f'data/{retailer}/history')
+        if not history_dir.exists():
+            return jsonify({
+                "retailer": retailer,
+                "has_changes": False,
+                "report": None,
+                "message": "No change history available"
+            })
+
+        # Find the latest change report
+        change_files = list(history_dir.glob('changes_*.json'))
+        if not change_files:
+            return jsonify({
+                "retailer": retailer,
+                "has_changes": False,
+                "report": None,
+                "message": "No change reports found"
+            })
+
+        # Get most recent by modification time
+        latest = max(change_files, key=lambda p: p.stat().st_mtime)
+
+        with open(latest, 'r', encoding='utf-8') as f:
+            report = json.load(f)
+
+        has_changes = (
+            len(report.get('new_stores', [])) > 0 or
+            len(report.get('closed_stores', [])) > 0 or
+            len(report.get('modified_stores', [])) > 0
+        )
+
+        return jsonify({
+            "retailer": retailer,
+            "has_changes": has_changes,
+            "report": report,
+            "report_file": latest.name
+        })
+
     except Exception as e:
         return safe_error_response(e, "API request")
 
@@ -671,6 +858,8 @@ def api_get_config():
 
 
 @app.route('/api/config', methods=['POST'])
+@limiter.limit("10 per minute")  # Rate limit config updates (#93)
+@require_api_key  # API key auth for mutating endpoints (#92)
 @require_json
 def api_update_config():
     """Update configuration with validation
@@ -719,12 +908,14 @@ def api_update_config():
                 f.write(content)
             
             temp_path.replace(config_path)
-            
+
             _reload_config()
-            
+
+            # Return success with restart notice (#83)
             return jsonify({
-                "message": "Configuration updated successfully",
-                "backup": str(backup_path)
+                "message": "Configuration saved. Restart running scrapers to apply changes.",
+                "backup": str(backup_path),
+                "requires_restart": True
             })
         except Exception:
             if temp_path.exists():
@@ -855,6 +1046,92 @@ FILE_EXTENSIONS = {
     'geojson': 'geojson'
 }
 
+# Threshold for using streaming exports (50MB file size) (#74)
+STREAMING_THRESHOLD = 50 * 1024 * 1024
+
+
+def generate_csv_stream(stores_file: Path, fieldnames: list = None):
+    """Generate CSV content as a stream for large files (#74).
+
+    Uses ijson for memory-efficient streaming of large JSON files.
+
+    Args:
+        stores_file: Path to JSON file containing stores
+        fieldnames: Optional list of fields to include
+
+    Yields:
+        CSV lines as strings
+    """
+    import csv
+    import io
+    import ijson
+
+    # Get fieldnames from config or use streaming discovery with limits
+    if not fieldnames:
+        # Only read first item for fieldnames, don't load all
+        with open(stores_file, 'rb') as f:
+            for first_item in ijson.items(f, 'item'):
+                fieldnames = list(first_item.keys())
+                break  # Stop after first item
+        if not fieldnames:
+            return  # Empty file
+
+    # Yield header
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+    yield output.getvalue()
+
+    # Stream items using ijson (memory-efficient)
+    chunk = []
+    chunk_size = 100
+    with open(stores_file, 'rb') as f:
+        for store in ijson.items(f, 'item'):
+            # Sanitize CSV values using shared sanitizer to prevent formula injection
+            sanitized = {k: sanitize_csv_value(v) for k, v in store.items()}
+            chunk.append(sanitized)
+
+            if len(chunk) >= chunk_size:
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writerows(chunk)
+                yield output.getvalue()
+                chunk = []
+
+    # Yield remaining items
+    if chunk:
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writerows(chunk)
+        yield output.getvalue()
+
+
+def generate_json_stream(stores_file: Path):
+    """Generate JSON content as a stream for large files.
+
+    Uses ijson for memory-efficient streaming of large JSON files.
+
+    Args:
+        stores_file: Path to JSON file containing stores
+
+    Yields:
+        JSON chunks as strings
+    """
+    import ijson
+
+    yield '[\n'
+    
+    first_item = True
+    with open(stores_file, 'rb') as f:
+        for store in ijson.items(f, 'item'):
+            if not first_item:
+                yield ',\n'
+            else:
+                first_item = False
+            yield json.dumps(store, indent=2, ensure_ascii=False)
+    
+    yield '\n]'
+
 
 @app.route('/api/export/<retailer>/<export_format>')
 def api_export_retailer(retailer, export_format):
@@ -885,9 +1162,6 @@ def api_export_retailer(retailer, export_format):
         if not stores_file.exists():
             return jsonify({"error": f"No data found for {retailer}"}), 404
 
-        with open(stores_file, 'r', encoding='utf-8') as f:
-            stores = json.load(f)
-
         # Get retailer config for field mapping
         retailer_config = config.get(retailer, {})
 
@@ -895,6 +1169,31 @@ def api_export_retailer(retailer, export_format):
         timestamp = datetime.now().strftime("%Y-%m-%d")
         ext = FILE_EXTENSIONS.get(export_format, export_format)
         filename = f"{retailer}_stores_{timestamp}.{ext}"
+
+        # Check file size for streaming decision (#74)
+        file_size = stores_file.stat().st_size
+
+        # Use streaming for large files (#74)
+        if file_size > STREAMING_THRESHOLD:
+            if export_format == 'csv':
+                fieldnames = retailer_config.get('output_fields')
+                return Response(
+                    stream_with_context(generate_csv_stream(stores_file, fieldnames)),
+                    mimetype='text/csv',
+                    headers={'Content-Disposition': f'attachment; filename={filename}'}
+                )
+            elif export_format == 'json':
+                return Response(
+                    stream_with_context(generate_json_stream(stores_file)),
+                    mimetype='application/json',
+                    headers={'Content-Disposition': f'attachment; filename={filename}'}
+                )
+            # Note: Excel and GeoJSON formats require full dataset in memory
+            # (Excel workbook generation, GeoJSON wrapping). Fall through to in-memory export.
+
+        # Standard in-memory export for smaller files or Excel/GeoJSON
+        with open(stores_file, 'r', encoding='utf-8') as f:
+            stores = json.load(f)
 
         # Generate export based on format
         if export_format == 'json':

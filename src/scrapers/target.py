@@ -67,16 +67,22 @@ class TargetStore:
 
 
 def _check_pause_logic() -> None:
-    """Check if we need to pause based on request count"""
+    """Check if we need to pause based on request count (#71).
+
+    Uses standardized random delay ranges for consistency with other scrapers.
+    """
     count = _request_counter.count
 
     if count % target_config.PAUSE_200_REQUESTS == 0 and count > 0:
+        # Use random delay range for 200-request pause (#71)
         pause_time = random.uniform(target_config.PAUSE_200_MIN, target_config.PAUSE_200_MAX)
         logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
-    elif count % target_config.PAUSE_50_THRESHOLD == 0 and count > 0:
-        logging.info(f"Pause after {count} requests: {target_config.PAUSE_50_DELAY} seconds")
-        time.sleep(target_config.PAUSE_50_DELAY)
+    elif count % target_config.PAUSE_50_REQUESTS == 0 and count > 0:
+        # Use random delay range for 50-request pause (#71)
+        pause_time = random.uniform(target_config.PAUSE_50_MIN, target_config.PAUSE_50_MAX)
+        logging.info(f"Pause after {count} requests: {pause_time:.1f} seconds")
+        time.sleep(pause_time)
 
 
 def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
@@ -223,39 +229,6 @@ def get_store_details(session: requests.Session, store_id: int) -> Optional[Targ
     except Exception as e:
         logging.warning(f"Unexpected error processing store_id={store_id}: {e}")
         return None
-
-
-def scrape_all_stores(session: requests.Session, store_ids: List[Dict[str, Any]], resume: bool = False) -> List[TargetStore]:
-    """Main scraping function with rate limiting.
-
-    Args:
-        session: Requests session object
-        store_ids: List of store dictionaries from get_all_store_ids()
-        resume: Whether to resume from checkpoint
-
-    Returns:
-        List of TargetStore objects
-    """
-    logging.info(f"Starting to scrape {len(store_ids)} stores")
-
-    all_store_data = []
-
-    for i, store in enumerate(store_ids, 1):
-        store_id = store["store_id"]
-
-        details = get_store_details(session, store_id)
-        if details:
-            all_store_data.append(details)
-
-        # Progress logging and rate limiting
-        if i % 50 == 0:
-            logging.info(f"Processed {i}/{len(store_ids)} stores ({i*100/len(store_ids):.1f}%)...")
-            time.sleep(target_config.PAUSE_50_DELAY)
-        else:
-            time.sleep(target_config.MIN_DELAY)
-
-    logging.info(f"Completed scraping {len(all_store_data)} stores")
-    return all_store_data
 
 
 def get_request_count() -> int:

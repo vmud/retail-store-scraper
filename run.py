@@ -205,7 +205,7 @@ def setup_parser() -> argparse.ArgumentParser:
     proxy_group.add_argument(
         '--proxy-country',
         type=str,
-        default='us',
+        default=None,
         help='Proxy country code for geo-targeting (default: us)'
     )
     proxy_group.add_argument(
@@ -385,6 +385,11 @@ async def run_retailer_async(
             logging.info(f"[{retailer}] Running change detection (incremental mode)")
             try:
                 detector = ChangeDetector(retailer)
+
+                # Fix #122: Rotate stores_latest → stores_previous BEFORE detection
+                # This ensures we compare against Run N-1 (not N-2)
+                detector.rotate_previous()
+
                 change_report = detector.detect_changes(stores)
 
                 if change_report.has_changes:
@@ -398,8 +403,8 @@ async def run_retailer_async(
                 # Save fingerprints for next run comparison
                 detector.save_fingerprints(stores)
 
-                # Rotate versions: stores_latest -> stores_previous
-                detector.save_version(stores)
+                # Save new latest (rotation already done, so use save_latest not save_version)
+                detector.save_latest(stores)
             except Exception as change_err:
                 logging.warning(f"[{retailer}] Change detection failed: {change_err}")
 
@@ -493,11 +498,35 @@ async def run_all_retailers(
     return summary
 
 
-def validate_cli_options(args) -> List[str]:
+def _get_yaml_proxy_mode(config: dict, retailer: Optional[str] = None) -> Optional[str]:
+    """Resolve proxy mode from YAML config for a retailer or global."""
+    if not config:
+        return None
+    global_mode = config.get('proxy', {}).get('mode')
+    if retailer:
+        retailer_proxy = config.get('retailers', {}).get(retailer, {}).get('proxy')
+        if isinstance(retailer_proxy, dict):
+            return retailer_proxy.get('mode', global_mode)
+    return global_mode
+
+
+def _get_target_retailers(args) -> List[str]:
+    """Return retailers targeted by CLI args."""
+    retailer = getattr(args, 'retailer', None)
+    if retailer:
+        return [retailer]
+    if getattr(args, 'all', False):
+        excluded = set(getattr(args, 'exclude', []) or [])
+        return [name for name in get_enabled_retailers() if name not in excluded]
+    return []
+
+
+def validate_cli_options(args, config: dict = None) -> List[str]:
     """Validate CLI options for conflicts (#106).
 
     Args:
         args: Parsed command line arguments
+        config: Loaded YAML configuration (optional, for proxy mode check)
 
     Returns:
         List of validation errors (empty if options are valid)
@@ -508,15 +537,33 @@ def validate_cli_options(args) -> List[str]:
     if args.test and args.limit:
         errors.append("Cannot use --test with --limit (--test already sets limit to 10)")
 
-    if args.render_js and args.proxy != 'web_scraper_api':
-        errors.append("--render-js requires --proxy web_scraper_api")
+    # --render-js requires web_scraper_api proxy mode (CLI or YAML config)
+    if args.render_js:
+        if args.proxy and args.proxy != 'web_scraper_api':
+            errors.append("--render-js requires --proxy web_scraper_api (or proxy.mode: web_scraper_api in config for selected retailers)")
+        else:
+            yaml_proxy_modes = set()
+            if config:
+                target_retailers = _get_target_retailers(args)
+                if target_retailers:
+                    for retailer in target_retailers:
+                        mode = _get_yaml_proxy_mode(config, retailer)
+                        if mode:
+                            yaml_proxy_modes.add(mode)
+                else:
+                    mode = _get_yaml_proxy_mode(config, None)
+                    if mode:
+                        yaml_proxy_modes.add(mode)
+            # Allow if CLI specifies web_scraper_api OR YAML config has web_scraper_api
+            if args.proxy != 'web_scraper_api' and 'web_scraper_api' not in yaml_proxy_modes:
+                errors.append("--render-js requires --proxy web_scraper_api (or proxy.mode: web_scraper_api in config for selected retailers)")
 
     # Validate limit range
     if args.limit is not None and args.limit < 1:
         errors.append("--limit must be a positive integer")
 
     # Validate exclude requires --all
-    if args.exclude and not args.all:
+    if getattr(args, 'exclude', None) and not getattr(args, 'all', False):
         errors.append("--exclude can only be used with --all")
 
     return errors
@@ -546,8 +593,12 @@ def main():
             print(f"  - {error}")
         return 1
 
+    # Load config for CLI validation (need to check YAML proxy mode for --render-js)
+    with open("config/retailers.yaml", 'r', encoding='utf-8') as f:
+        loaded_config = yaml.safe_load(f) or {}
+
     # Validate CLI options (#106)
-    cli_errors = validate_cli_options(args)
+    cli_errors = validate_cli_options(args, loaded_config)
     if cli_errors:
         print("Invalid command line options:")
         for error in cli_errors:
@@ -587,12 +638,14 @@ def main():
         # Build proxy config from CLI args
         proxy_config = {
             'mode': args.proxy,
-            'country_code': args.proxy_country,
             'render_js': args.render_js,
         }
+        if args.proxy_country:
+            proxy_config['country_code'] = args.proxy_country
 
         get_proxy_client(proxy_config)
-        logging.info(f"Proxy mode: {args.proxy} (country: {args.proxy_country})")
+        proxy_country = args.proxy_country or "us"
+        logging.info(f"Proxy mode: {args.proxy} (country: {proxy_country})")
         if args.render_js:
             logging.info("JavaScript rendering enabled")
     else:
@@ -646,12 +699,14 @@ def main():
 
     # Get CLI proxy override and settings (#52)
     cli_proxy_override = args.proxy if args.proxy else None
-    cli_proxy_settings = None
-    if cli_proxy_override:
-        cli_proxy_settings = {
-            'country_code': args.proxy_country,
-            'render_js': args.render_js,
-        }
+    # Pass proxy settings if CLI override OR if render_js is set (can use YAML proxy)
+    cli_proxy_settings = {}
+    if args.proxy_country:
+        cli_proxy_settings['country_code'] = args.proxy_country
+    if args.render_js:
+        cli_proxy_settings['render_js'] = True
+    if not cli_proxy_settings and not cli_proxy_override:
+        cli_proxy_settings = None
 
     # Run scrapers
     try:

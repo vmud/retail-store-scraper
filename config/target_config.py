@@ -40,13 +40,21 @@ def get_headers(user_agent=None):
 
 # Rate limiting (from spec: 0.1s between requests, 1s pause every 50)
 MIN_DELAY = 0.1  # 100ms between requests
-PAUSE_50_DELAY = 1.0  # 1 second pause every 50 requests
-PAUSE_50_THRESHOLD = 50
+MAX_DELAY = 0.5  # 500ms max delay for random variation
 
-# Pause thresholds (similar to other scrapers for consistency)
-PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
+# Pause thresholds - standardized naming (#75)
+PAUSE_50_REQUESTS = 50  # Renamed from PAUSE_50_THRESHOLD for consistency
+PAUSE_50_MIN = 1.0  # Minimum pause duration (seconds) after 50 requests
+PAUSE_50_MAX = 2.0  # Maximum pause duration (seconds) after 50 requests
+
+# Longer pause after 200 requests (similar to other scrapers for consistency)
+PAUSE_200_REQUESTS = 200
 PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
 PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+
+# Legacy alias for backwards compatibility (#75)
+PAUSE_50_THRESHOLD = PAUSE_50_REQUESTS
+PAUSE_50_DELAY = PAUSE_50_MIN  # Legacy single-value delay
 
 # Retry settings
 MAX_RETRIES = 3

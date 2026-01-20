@@ -4,12 +4,17 @@ import gzip
 import json
 import pytest
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
 from src.scrapers.target import (
     TargetStore,
     get_all_store_ids,
     get_store_details,
+    run,
+    get_request_count,
+    reset_request_counter,
+    _check_pause_logic,
 )
 
 
@@ -271,3 +276,304 @@ class TestGetStoreDetails:
         assert store.longitude is None
         assert store.capabilities is None
         assert store.format is None
+
+
+class TestTargetRun:
+    """Tests for Target run() method."""
+
+    def _make_sitemap_response(self, store_ids):
+        """Helper to create sitemap response with given store IDs."""
+        urls = '\n'.join(
+            f'<url><loc>https://www.target.com/sl/store-{sid}/{sid}</loc></url>'
+            for sid in store_ids
+        )
+        xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'''
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        return response
+
+    def _make_api_response(self, store_id):
+        """Helper to create API response for a store."""
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "data": {
+                "store": {
+                    "store_id": store_id,
+                    "location_name": f"Store {store_id}",
+                    "status": "Open",
+                    "mailing_address": {
+                        "address_line1": f"{store_id} Main St",
+                        "city": "Test City",
+                        "region": "CA",
+                        "postal_code": "90001",
+                        "country": "USA"
+                    },
+                    "geographic_specifications": {"latitude": 34.0, "longitude": -118.0},
+                    "physical_specifications": {},
+                    "main_voice_phone_number": "(555) 123-4567",
+                    "capabilities": []
+                }
+            }
+        }
+        return response
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_session):
+        """Test that run() returns the expected structure."""
+        mock_get.side_effect = [
+            self._make_sitemap_response([1001]),
+            self._make_api_response(1001)
+        ]
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target')
+
+        assert isinstance(result, dict)
+        assert 'stores' in result
+        assert 'count' in result
+        assert 'checkpoints_used' in result
+        assert isinstance(result['stores'], list)
+        assert isinstance(result['count'], int)
+        assert isinstance(result['checkpoints_used'], bool)
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_run_with_limit(self, mock_counter, mock_get, mock_session):
+        """Test run() respects limit parameter."""
+        mock_get.side_effect = [
+            self._make_sitemap_response([1001, 1002, 1003, 1004, 1005]),
+            self._make_api_response(1001),
+            self._make_api_response(1002),
+        ]
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target', limit=2)
+
+        assert result['count'] == 2
+        assert len(result['stores']) == 2
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_session):
+        """Test run() with empty sitemap returns empty stores."""
+        xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        mock_get.return_value = response
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target')
+
+        assert result['stores'] == []
+        assert result['count'] == 0
+        assert result['checkpoints_used'] is False
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_session):
+        """Test that count matches the actual number of stores."""
+        mock_get.side_effect = [
+            self._make_sitemap_response([1001, 1002, 1003]),
+            self._make_api_response(1001),
+            self._make_api_response(1002),
+            self._make_api_response(1003),
+        ]
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target')
+
+        assert result['count'] == len(result['stores'])
+
+
+class TestTargetCheckpoint:
+    """Tests for Target checkpoint/resume functionality."""
+
+    @patch('src.scrapers.target.utils.load_checkpoint')
+    @patch('src.scrapers.target.utils.save_checkpoint')
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_session):
+        """Test that resume=True loads existing checkpoint."""
+        mock_load.return_value = {
+            'stores': [{'store_id': '1001', 'name': 'Existing Store'}],
+            'completed_ids': [1001]
+        }
+        # Sitemap with URLs (must be non-empty for checkpoints_used to be True)
+        xml = '''<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://www.target.com/sl/store/1001</loc></url>
+        </urlset>'''
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        mock_get.return_value = response
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target', resume=True)
+
+        mock_load.assert_called_once()
+        assert result['checkpoints_used'] is True
+
+    @patch('src.scrapers.target.utils.load_checkpoint')
+    @patch('src.scrapers.target.utils.save_checkpoint')
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_resume_skips_completed_stores(self, mock_counter, mock_get, mock_save, mock_load, mock_session):
+        """Test that resumed run skips already completed stores."""
+        mock_load.return_value = {
+            'stores': [{'store_id': '1001', 'name': 'Store 1'}],
+            'completed_ids': [1001]
+        }
+
+        # Sitemap has stores 1001 (completed) and 1002 (new)
+        urls = '''<url><loc>https://www.target.com/sl/store/1001</loc></url>
+                  <url><loc>https://www.target.com/sl/store/1002</loc></url>'''
+        xml = f'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'
+        sitemap_response = Mock()
+        sitemap_response.content = xml.encode('utf-8')
+
+        api_response = Mock()
+        api_response.status_code = 200
+        api_response.json.return_value = {
+            "data": {"store": {"store_id": 1002, "location_name": "Store 2", "status": "Open",
+                               "mailing_address": {"address_line1": "2 Main", "city": "City", "region": "CA", "postal_code": "90001"},
+                               "geographic_specifications": {}, "physical_specifications": {},
+                               "main_voice_phone_number": "", "capabilities": []}}
+        }
+        mock_get.side_effect = [sitemap_response, api_response]
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target', resume=True)
+
+        # Should have 2 stores total (1 from checkpoint + 1 new)
+        assert result['count'] == 2
+
+    @patch('src.scrapers.target.utils.load_checkpoint')
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_session):
+        """Test that resume=False does not load checkpoint."""
+        xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        mock_get.return_value = response
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target', resume=False)
+
+        mock_load.assert_not_called()
+        assert result['checkpoints_used'] is False
+
+
+class TestTargetRateLimiting:
+    """Tests for Target rate limiting and pause logic."""
+
+    def test_request_counter_reset(self):
+        """Test that request counter resets properly."""
+        reset_request_counter()
+        assert get_request_count() == 0
+
+    @patch('src.scrapers.target.time.sleep')
+    @patch('src.scrapers.target.random.uniform')
+    def test_pause_at_50_requests(self, mock_uniform, mock_sleep):
+        """Test that pause triggers at 50 request threshold."""
+        mock_uniform.return_value = 1.5
+        reset_request_counter()
+
+        # Simulate 50 requests
+        from src.scrapers.target import _request_counter
+        _request_counter._count = 50
+
+        _check_pause_logic()
+
+        mock_sleep.assert_called_once()
+        mock_uniform.assert_called()
+
+    @patch('src.scrapers.target.time.sleep')
+    @patch('src.scrapers.target.random.uniform')
+    def test_pause_at_200_requests(self, mock_uniform, mock_sleep):
+        """Test that longer pause triggers at 200 request threshold."""
+        mock_uniform.return_value = 150
+        reset_request_counter()
+
+        from src.scrapers.target import _request_counter
+        _request_counter._count = 200
+
+        _check_pause_logic()
+
+        mock_sleep.assert_called_once()
+        # 200 request pause should use longer delay range
+        call_args = mock_uniform.call_args[0]
+        assert call_args[0] >= 100  # Min should be at least 100s
+
+    @patch('src.scrapers.target.time.sleep')
+    def test_no_pause_between_thresholds(self, mock_sleep):
+        """Test that no pause occurs between thresholds."""
+        reset_request_counter()
+
+        from src.scrapers.target import _request_counter
+        _request_counter._count = 25  # Between 0 and 50
+
+        _check_pause_logic()
+
+        mock_sleep.assert_not_called()
+
+
+class TestTargetErrorHandling:
+    """Tests for Target error handling."""
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_sitemap_fetch_failure_returns_empty(self, mock_counter, mock_get, mock_session):
+        """Test that sitemap fetch failure returns empty list."""
+        mock_get.return_value = None
+
+        stores = get_all_store_ids(mock_session)
+
+        assert stores == []
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_api_error_skips_store(self, mock_counter, mock_get, mock_session):
+        """Test that API error for one store doesn't fail entire run."""
+        xml = '''<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://www.target.com/sl/store/1001</loc></url>
+            <url><loc>https://www.target.com/sl/store/1002</loc></url>
+        </urlset>'''
+        sitemap_response = Mock()
+        sitemap_response.content = xml.encode('utf-8')
+
+        # First store fails, second succeeds
+        api_success = Mock()
+        api_success.status_code = 200
+        api_success.json.return_value = {
+            "data": {"store": {"store_id": 1002, "location_name": "Store 2", "status": "Open",
+                               "mailing_address": {"address_line1": "2 Main", "city": "City", "region": "CA", "postal_code": "90001"},
+                               "geographic_specifications": {}, "physical_specifications": {},
+                               "main_voice_phone_number": "", "capabilities": []}}
+        }
+        mock_get.side_effect = [sitemap_response, None, api_success]
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='target')
+
+        # Should have 1 store (second one that succeeded)
+        assert result['count'] == 1
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_malformed_xml_returns_empty(self, mock_counter, mock_get, mock_session):
+        """Test that malformed XML returns empty list."""
+        response = Mock()
+        response.content = b'<not valid xml'
+        mock_get.return_value = response
+
+        stores = get_all_store_ids(mock_session)
+
+        assert stores == []
+
+    @patch('src.scrapers.target.utils.get_with_retry')
+    @patch('src.scrapers.target._request_counter')
+    def test_json_decode_error_returns_none(self, mock_counter, mock_get, mock_session):
+        """Test that JSON decode error returns None for store."""
+        response = Mock()
+        response.status_code = 200
+        response.json.side_effect = json.JSONDecodeError("test", "doc", 0)
+        mock_get.return_value = response
+
+        store = get_store_details(mock_session, 1234)
+
+        assert store is None

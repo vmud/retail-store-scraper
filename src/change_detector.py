@@ -12,7 +12,14 @@ import shutil
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Iterator
+
+try:
+    import ijson
+    IJSON_AVAILABLE = True
+except ImportError:
+    IJSON_AVAILABLE = False
+    logging.debug("ijson not available, will use standard JSON loading")
 
 
 @dataclass
@@ -229,13 +236,61 @@ class ChangeDetector:
         json_str = json.dumps(data, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
+    def rotate_previous(self) -> bool:
+        """Rotate stores_latest.json to stores_previous.json BEFORE change detection (#122).
+
+        This ensures change detection compares against Run N-1 (not N-2).
+        Must be called before detect_changes() for correct comparison.
+
+        Returns:
+            True if rotation occurred, False if no latest file exists
+        """
+        latest_path = self.output_dir / "stores_latest.json"
+        previous_path = self.output_dir / "stores_previous.json"
+
+        if latest_path.exists():
+            shutil.copy2(latest_path, previous_path)
+            logging.debug(f"[{self.retailer}] Rotated stores_latest.json → stores_previous.json")
+            return True
+        return False
+
+    def _load_stores_streaming(self, filepath: Path) -> Iterator[Dict[str, Any]]:
+        """Load stores incrementally using ijson for memory efficiency (#65).
+
+        Args:
+            filepath: Path to JSON file containing array of stores
+
+        Yields:
+            Store dictionaries one at a time
+        """
+        if not IJSON_AVAILABLE:
+            # Fallback to standard loading if ijson not available
+            with open(filepath, 'r', encoding='utf-8') as f:
+                stores = json.load(f)
+            yield from stores
+            return
+
+        with open(filepath, 'rb') as f:
+            for store in ijson.items(f, 'item'):
+                yield store
+
     def load_previous_data(self) -> Optional[List[Dict[str, Any]]]:
-        """Load previous run's store data"""
+        """Load previous run's store data.
+
+        For files larger than 50MB, uses streaming parser if available (#65).
+        """
         previous_path = self.output_dir / "stores_previous.json"
         if not previous_path.exists():
             return None
 
         try:
+            file_size = previous_path.stat().st_size
+            # Use streaming for large files (>50MB) if ijson is available
+            if file_size > 50 * 1024 * 1024 and IJSON_AVAILABLE:
+                logging.info(f"[{self.retailer}] Loading previous data with streaming parser (file size: {file_size / 1024 / 1024:.1f}MB)")
+                return list(self._load_stores_streaming(previous_path))
+
+            # Standard loading for smaller files
             with open(previous_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
@@ -347,12 +402,29 @@ class ChangeDetector:
                 }
         return changes
 
+    def save_latest(self, stores: List[Dict[str, Any]]) -> None:
+        """Save stores to stores_latest.json without rotation (#122).
+
+        Use this after calling rotate_previous() + detect_changes() to avoid
+        double rotation.
+
+        Args:
+            stores: List of store dictionaries to save
+        """
+        latest_path = self.output_dir / "stores_latest.json"
+        with open(latest_path, 'w', encoding='utf-8') as f:
+            json.dump(stores, f, indent=2, ensure_ascii=False)
+        logging.info(f"[{self.retailer}] Saved {len(stores)} stores to {latest_path}")
+
     def save_version(self, stores: List[Dict[str, Any]]) -> None:
         """
         Save current data and rotate previous version.
 
         - stores_latest.json -> stores_previous.json
         - Write new stores_latest.json
+
+        Note: If you called rotate_previous() before detect_changes(),
+        use save_latest() instead to avoid double rotation (#122).
         """
         latest_path = self.output_dir / "stores_latest.json"
         previous_path = self.output_dir / "stores_previous.json"
