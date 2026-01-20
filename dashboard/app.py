@@ -1105,6 +1105,33 @@ def generate_csv_stream(stores_file: Path, fieldnames: list = None):
         yield output.getvalue()
 
 
+def generate_json_stream(stores_file: Path):
+    """Generate JSON content as a stream for large files.
+
+    Uses ijson for memory-efficient streaming of large JSON files.
+
+    Args:
+        stores_file: Path to JSON file containing stores
+
+    Yields:
+        JSON chunks as strings
+    """
+    import ijson
+
+    yield '[\n'
+    
+    first_item = True
+    with open(stores_file, 'rb') as f:
+        for store in ijson.items(f, 'item'):
+            if not first_item:
+                yield ',\n'
+            else:
+                first_item = False
+            yield json.dumps(store, indent=2, ensure_ascii=False)
+    
+    yield '\n]'
+
+
 @app.route('/api/export/<retailer>/<export_format>')
 def api_export_retailer(retailer, export_format):
     """Export single retailer data in specified format
@@ -1145,16 +1172,25 @@ def api_export_retailer(retailer, export_format):
         # Check file size for streaming decision (#74)
         file_size = stores_file.stat().st_size
 
-        # Use streaming for large CSV files (#74)
-        if export_format == 'csv' and file_size > STREAMING_THRESHOLD:
-            fieldnames = retailer_config.get('output_fields')
-            return Response(
-                stream_with_context(generate_csv_stream(stores_file, fieldnames)),
-                mimetype='text/csv',
-                headers={'Content-Disposition': f'attachment; filename={filename}'}
-            )
+        # Use streaming for large files (#74)
+        if file_size > STREAMING_THRESHOLD:
+            if export_format == 'csv':
+                fieldnames = retailer_config.get('output_fields')
+                return Response(
+                    stream_with_context(generate_csv_stream(stores_file, fieldnames)),
+                    mimetype='text/csv',
+                    headers={'Content-Disposition': f'attachment; filename={filename}'}
+                )
+            elif export_format == 'json':
+                return Response(
+                    stream_with_context(generate_json_stream(stores_file)),
+                    mimetype='application/json',
+                    headers={'Content-Disposition': f'attachment; filename={filename}'}
+                )
+            # Note: Excel and GeoJSON formats require full dataset in memory
+            # (Excel workbook generation, GeoJSON wrapping). Fall through to in-memory export.
 
-        # Standard in-memory export for smaller files
+        # Standard in-memory export for smaller files or Excel/GeoJSON
         with open(stores_file, 'r', encoding='utf-8') as f:
             stores = json.load(f)
 
