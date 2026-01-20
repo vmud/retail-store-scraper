@@ -303,10 +303,17 @@ class ProxyClient:
         self._request_count = 0
 
         if not self.config.validate():
-            logging.warning("Invalid proxy config, falling back to direct mode")
+            logging.error(f"Invalid proxy config for mode '{self.config.mode.value}' - missing credentials")
+            logging.warning("Falling back to direct mode")
             self.config.mode = ProxyMode.DIRECT
 
         logging.info(f"ProxyClient initialized in {self.config.mode.value} mode")
+        
+        # Log credential status for debugging (without exposing actual credentials)
+        if self.config.mode != ProxyMode.DIRECT:
+            username = self.config.username
+            has_password = bool(self.config.password)
+            logging.debug(f"[{self.config.mode.value}] Using username: {username[:10]}*** (password: {'set' if has_password else 'MISSING'})")
 
     @property
     def session(self) -> requests.Session:
@@ -442,7 +449,14 @@ class ProxyClient:
 
                 # Client errors (4xx except 429) - don't retry
                 if response and 400 <= response.status_code < 500:
-                    logging.warning(f"Client error {response.status_code} for {url}")
+                    # Explicitly log authentication/credential issues
+                    if response.status_code in (401, 403, 407):
+                        if self.config.mode != ProxyMode.DIRECT:
+                            logging.error(f"[{self.config.mode.value}] Authentication/credential error {response.status_code} - verify proxy credentials for {url}")
+                        else:
+                            logging.warning(f"Access denied {response.status_code} for {url}")
+                    else:
+                        logging.warning(f"Client error {response.status_code} for {url}")
                     return response
 
             except requests.exceptions.Timeout:
@@ -482,6 +496,10 @@ class ProxyClient:
         )
 
         elapsed = time.time() - start_time
+        
+        # Check for residential proxy authentication errors
+        if self.config.mode == ProxyMode.RESIDENTIAL and response.status_code == 407:
+            logging.error(f"[residential] Proxy authentication failed (407) - verify OXYLABS_RESIDENTIAL credentials")
 
         return ProxyResponse(
             status_code=response.status_code,
@@ -564,6 +582,11 @@ class ProxyClient:
                     job_id=api_response.get("job_id"),
                     credits_used=api_response.get("credits_used"),
                 )
+        
+        # Handle credential errors explicitly
+        if response.status_code in (401, 403):
+            logging.error(f"[web_scraper_api] Authentication failed ({response.status_code}) - verify OXYLABS_SCRAPER_API credentials")
+            logging.debug(f"Response: {response.text[:200]}")
 
         # Return error response
         return ProxyResponse(
