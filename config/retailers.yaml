@@ -87,6 +87,9 @@ retailers:
     min_delay: 2.0
     max_delay: 5.0
     checkpoint_interval: 10
+    # Parallel workers for store detail extraction (Phase 4)
+    # Higher values = faster but more aggressive (use with residential proxy)
+    parallel_workers: 5
     # Disable long pauses when using residential proxy
     pause_50_requests: 999999
     pause_200_requests: 999999

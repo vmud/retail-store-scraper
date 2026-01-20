@@ -167,6 +167,11 @@ def setup_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Only process new/changed stores (requires previous run)'
     )
+    parser.add_argument(
+        '--refresh-urls',
+        action='store_true',
+        help='Force URL re-discovery (ignore cached store URLs, mainly for Verizon)'
+    )
 
     # Testing options
     parser.add_argument(
@@ -696,6 +701,8 @@ def main():
         logging.info("Resume mode enabled")
     if args.incremental:
         logging.info("Incremental mode enabled")
+    if getattr(args, 'refresh_urls', False):
+        logging.info("Refresh URLs mode enabled (will re-discover all store URLs)")
 
     # Get CLI proxy override and settings (#52)
     cli_proxy_override = args.proxy if args.proxy else None
@@ -710,6 +717,9 @@ def main():
 
     # Run scrapers
     try:
+        # Get refresh_urls flag (convert hyphen to underscore for attribute access)
+        refresh_urls = getattr(args, 'refresh_urls', False)
+        
         if len(retailers) == 1:
             # Single retailer - run directly
             result = asyncio.run(run_retailer_async(
@@ -719,7 +729,8 @@ def main():
                 export_formats=export_formats,
                 resume=args.resume,
                 incremental=args.incremental,
-                limit=limit
+                limit=limit,
+                refresh_urls=refresh_urls
             ))
             print(f"\nResult for {retailers[0]}: {result['status']}")
             if result.get('formats'):
@@ -733,7 +744,8 @@ def main():
                 export_formats=export_formats,
                 resume=args.resume,
                 incremental=args.incremental,
-                limit=limit
+                limit=limit,
+                refresh_urls=refresh_urls
             ))
 
             print("\n" + "=" * 40)

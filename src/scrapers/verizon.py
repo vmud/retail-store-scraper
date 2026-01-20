@@ -4,10 +4,13 @@ import json
 import logging
 import random
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Optional, Any, Set
+from pathlib import Path
+from typing import List, Dict, Optional, Any, Set, Tuple
 from bs4 import BeautifulSoup
 import requests
 
@@ -113,30 +116,55 @@ def get_state_url(slug: str) -> str:
     return f"/stores/state/{slug}/"
 
 
-def _check_pause_logic(retailer: str = 'verizon') -> None:
-    """Check if we need to pause based on request count"""
+def _check_pause_logic(yaml_config: dict = None, retailer: str = 'verizon') -> None:
+    """Check if we need to pause based on request count
+    
+    Args:
+        yaml_config: Retailer configuration dict from retailers.yaml (optional for tests)
+        retailer: Retailer name for logging
+    """
+    # If no config provided (tests), use hardcoded Python config values
+    if yaml_config is None:
+        pause_50_requests = config.PAUSE_50_REQUESTS
+        pause_200_requests = config.PAUSE_200_REQUESTS
+        pause_50_min = config.PAUSE_50_MIN
+        pause_50_max = config.PAUSE_50_MAX
+        pause_200_min = config.PAUSE_200_MIN
+        pause_200_max = config.PAUSE_200_MAX
+    else:
+        # Read from YAML config (preferred)
+        pause_50_requests = yaml_config.get('pause_50_requests', config.PAUSE_50_REQUESTS)
+        pause_200_requests = yaml_config.get('pause_200_requests', config.PAUSE_200_REQUESTS)
+        pause_50_min = yaml_config.get('pause_50_min', config.PAUSE_50_MIN)
+        pause_50_max = yaml_config.get('pause_50_max', config.PAUSE_50_MAX)
+        pause_200_min = yaml_config.get('pause_200_min', config.PAUSE_200_MIN)
+        pause_200_max = yaml_config.get('pause_200_max', config.PAUSE_200_MAX)
+    
     # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    try:
-        if config.PAUSE_50_REQUESTS >= 999999 and config.PAUSE_200_REQUESTS >= 999999:
-            return
-    except (TypeError, AttributeError):
-        pass  # Config mocked in tests, continue with normal pause logic
+    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
+        return
     
     count = _request_counter.count
 
-    if count % config.PAUSE_200_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(config.PAUSE_200_MIN, config.PAUSE_200_MAX)
+    if count % pause_200_requests == 0 and count > 0:
+        pause_time = random.uniform(pause_200_min, pause_200_max)
         logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
-    elif count % config.PAUSE_50_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(config.PAUSE_50_MIN, config.PAUSE_50_MAX)
+    elif count % pause_50_requests == 0 and count > 0:
+        pause_time = random.uniform(pause_50_min, pause_50_max)
         logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
 
 
-def _scrape_states_from_html(session: requests.Session, retailer: str = 'verizon') -> List[Dict[str, str]]:
+def _scrape_states_from_html(session: requests.Session, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Scrape state URLs from the main stores page HTML.
-    Returns empty list if scraping fails."""
+    Returns empty list if scraping fails.
+    
+    Args:
+        session: Requests session object
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     url = f"{config.BASE_URL}/stores/"
     logging.info(f"[{retailer}] Fetching states from {url}")
 
@@ -146,7 +174,7 @@ def _scrape_states_from_html(session: requests.Session, retailer: str = 'verizon
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     states = []
@@ -265,12 +293,18 @@ def _generate_states_programmatically(retailer: str = 'verizon') -> List[Dict[st
     return states
 
 
-def get_all_states(session: requests.Session, retailer: str = 'verizon') -> List[Dict[str, str]]:
+def get_all_states(session: requests.Session, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all US state URLs by scraping from the main stores page.
-    Falls back to programmatic generation if scraping fails."""
+    Falls back to programmatic generation if scraping fails.
+    
+    Args:
+        session: Requests session object
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
 
     # Try HTML scraping first
-    states = _scrape_states_from_html(session, retailer)
+    states = _scrape_states_from_html(session, yaml_config, retailer)
 
     # Fallback to programmatic generation if scraping failed or found insufficient states
     if not states or len(states) < 50:
@@ -283,8 +317,16 @@ def get_all_states(session: requests.Session, retailer: str = 'verizon') -> List
     return states
 
 
-def get_cities_for_state(session: requests.Session, state_url: str, state_name: str, retailer: str = 'verizon') -> List[Dict[str, str]]:
-    """Get all city URLs for a given state"""
+def get_cities_for_state(session: requests.Session, state_url: str, state_name: str, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
+    """Get all city URLs for a given state
+    
+    Args:
+        session: Requests session object
+        state_url: URL of the state page
+        state_name: Name of the state
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     logging.info(f"[{retailer}] Fetching cities for state: {state_name}")
 
     response = utils.get_with_retry(session, state_url)
@@ -293,7 +335,7 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     # Extract state slug from URL (e.g., "new-jersey" from "/stores/state/new-jersey/")
     state_slug = state_url.rstrip('/').split('/')[-1].lower()
@@ -373,8 +415,17 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
     return result
 
 
-def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str, retailer: str = 'verizon') -> List[Dict[str, str]]:
-    """Get all store URLs for a given city"""
+def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
+    """Get all store URLs for a given city
+    
+    Args:
+        session: Requests session object
+        city_url: URL of the city page
+        city_name: Name of the city
+        state_name: Name of the state
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     logging.info(f"[{retailer}] Fetching stores for {city_name}, {state_name}")
 
     response = utils.get_with_retry(session, city_url)
@@ -383,7 +434,7 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     stores = []
@@ -623,8 +674,15 @@ def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
     return True
 
 
-def extract_store_details(session: requests.Session, store_url: str, retailer: str = 'verizon') -> Optional[Dict[str, Any]]:
-    """Extract structured store data from JSON-LD on store detail page"""
+def extract_store_details(session: requests.Session, store_url: str, yaml_config: dict = None, retailer: str = 'verizon') -> Optional[Dict[str, Any]]:
+    """Extract structured store data from JSON-LD on store detail page
+    
+    Args:
+        session: Requests session object
+        store_url: URL of the store page
+        yaml_config: Retailer configuration dict from retailers.yaml (optional)
+        retailer: Retailer name for logging
+    """
     logging.debug(f"[{retailer}] Extracting details from {store_url}")
 
     response = utils.get_with_retry(session, store_url)
@@ -633,7 +691,7 @@ def extract_store_details(session: requests.Session, store_url: str, retailer: s
         return None
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    _check_pause_logic(yaml_config, retailer)
 
     soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -693,8 +751,118 @@ def get_request_count() -> int:
     return _request_counter.count
 
 
+# =============================================================================
+# URL CACHING - Skip discovery phases on subsequent runs
+# =============================================================================
+
+# Default cache expiry: 7 days (stores don't change location frequently)
+URL_CACHE_EXPIRY_DAYS = 7
+
+
+def _get_url_cache_path(retailer: str) -> Path:
+    """Get path to store URL cache file."""
+    return Path(f"data/{retailer}/store_urls.json")
+
+
+def _load_cached_urls(retailer: str, max_age_days: int = URL_CACHE_EXPIRY_DAYS) -> Optional[List[str]]:
+    """Load cached store URLs if recent enough.
+    
+    Args:
+        retailer: Retailer name
+        max_age_days: Maximum cache age in days (default: 7)
+    
+    Returns:
+        List of cached URLs if cache is valid, None otherwise
+    """
+    cache_path = _get_url_cache_path(retailer)
+    
+    if not cache_path.exists():
+        logging.info(f"[{retailer}] No URL cache found at {cache_path}")
+        return None
+    
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+        
+        # Check cache freshness
+        discovered_at = cache_data.get('discovered_at')
+        if discovered_at:
+            cache_time = datetime.fromisoformat(discovered_at)
+            age_days = (datetime.now() - cache_time).days
+            
+            if age_days > max_age_days:
+                logging.info(f"[{retailer}] URL cache expired ({age_days} days old, max: {max_age_days})")
+                return None
+            
+            urls = cache_data.get('urls', [])
+            if urls:
+                logging.info(f"[{retailer}] Loaded {len(urls)} URLs from cache ({age_days} days old)")
+                return urls
+        
+        logging.warning(f"[{retailer}] URL cache is invalid or empty")
+        return None
+        
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        logging.warning(f"[{retailer}] Error loading URL cache: {e}")
+        return None
+
+
+def _save_cached_urls(retailer: str, urls: List[str]) -> None:
+    """Save discovered store URLs to cache.
+    
+    Args:
+        retailer: Retailer name
+        urls: List of store URLs to cache
+    """
+    cache_path = _get_url_cache_path(retailer)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    cache_data = {
+        'discovered_at': datetime.now().isoformat(),
+        'store_count': len(urls),
+        'urls': urls
+    }
+    
+    try:
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2)
+        logging.info(f"[{retailer}] Saved {len(urls)} URLs to cache: {cache_path}")
+    except IOError as e:
+        logging.warning(f"[{retailer}] Failed to save URL cache: {e}")
+
+
+# =============================================================================
+# PARALLEL EXTRACTION - Speed up store detail extraction
+# =============================================================================
+
+
+def _extract_single_store(
+    url: str,
+    session,
+    yaml_config: dict,
+    retailer_name: str
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Worker function for parallel store extraction.
+    
+    Args:
+        url: Store URL to extract
+        session: Session to use for requests
+        yaml_config: Retailer configuration
+        retailer_name: Name of retailer for logging
+    
+    Returns:
+        Tuple of (url, store_data) where store_data is None on failure
+    """
+    try:
+        store_data = extract_store_details(session, url, yaml_config, retailer_name)
+        return (url, store_data)
+    except Exception as e:
+        logging.warning(f"[{retailer_name}] Error extracting {url}: {e}")
+        return (url, None)
+
+
 def run(session, config: dict, **kwargs) -> dict:
-    """Standard scraper entry point.
+    """Standard scraper entry point with parallel extraction and URL caching.
     
     Args:
         session: Configured session (requests.Session or ProxyClient)
@@ -703,6 +871,7 @@ def run(session, config: dict, **kwargs) -> dict:
             - resume: bool - Resume from checkpoint
             - limit: int - Max stores to process
             - incremental: bool - Only process changes
+            - refresh_urls: bool - Force URL re-discovery (ignore cache)
     
     Returns:
         dict with keys:
@@ -716,6 +885,7 @@ def run(session, config: dict, **kwargs) -> dict:
     try:
         limit = kwargs.get('limit')
         resume = kwargs.get('resume', False)
+        refresh_urls = kwargs.get('refresh_urls', False)
         
         reset_request_counter()
         
@@ -724,9 +894,15 @@ def run(session, config: dict, **kwargs) -> dict:
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
         logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
         
+        # Get parallel workers count (default: 5 for residential proxy, 1 for direct)
+        default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        parallel_workers = config.get('parallel_workers', default_workers)
+        logging.info(f"[{retailer_name}] Parallel workers: {parallel_workers}")
+        
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
-        # Verizon uses smaller interval (10) due to slower multi-phase crawl
-        checkpoint_interval = config.get('checkpoint_interval', 10)
+        # Increase checkpoint interval when using parallel workers (less frequent saves)
+        base_checkpoint_interval = config.get('checkpoint_interval', 10)
+        checkpoint_interval = base_checkpoint_interval * max(1, parallel_workers) if parallel_workers > 1 else base_checkpoint_interval
         
         stores = []
         completed_urls = set()
@@ -740,19 +916,32 @@ def run(session, config: dict, **kwargs) -> dict:
                 logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
                 checkpoints_used = True
         
-        logging.info(f"[{retailer_name}] Phase 1: Discovering states")
-        all_states = get_all_states(session, retailer_name)
-        logging.info(f"[{retailer_name}] Found {len(all_states)} states")
+        # Try to load cached URLs (skip discovery phases if cache is valid)
+        all_store_urls = None
+        if not refresh_urls:
+            all_store_urls = _load_cached_urls(retailer_name)
         
-        logging.info(f"[{retailer_name}] Phase 2-3: Discovering cities and stores")
-        all_store_urls = []
-        for state in all_states:
-            cities = get_cities_for_state(session, state['url'], state['name'], retailer_name)
-            for city in cities:
-                store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], retailer_name)
-                all_store_urls.extend([s['url'] for s in store_infos])
-        
-        logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
+        if all_store_urls is None:
+            # Cache miss or refresh requested - run full discovery
+            logging.info(f"[{retailer_name}] Phase 1: Discovering states")
+            all_states = get_all_states(session, config, retailer_name)
+            logging.info(f"[{retailer_name}] Found {len(all_states)} states")
+            
+            logging.info(f"[{retailer_name}] Phase 2-3: Discovering cities and stores")
+            all_store_urls = []
+            for state in all_states:
+                cities = get_cities_for_state(session, state['url'], state['name'], config, retailer_name)
+                for city in cities:
+                    store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], config, retailer_name)
+                    all_store_urls.extend([s['url'] for s in store_infos])
+            
+            logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
+            
+            # Cache the discovered URLs for future runs
+            if all_store_urls:
+                _save_cached_urls(retailer_name, all_store_urls)
+        else:
+            logging.info(f"[{retailer_name}] Skipped discovery phases (using cached URLs)")
         
         if not all_store_urls:
             logging.warning(f"[{retailer_name}] No store URLs found")
@@ -768,26 +957,68 @@ def run(session, config: dict, **kwargs) -> dict:
             else:
                 remaining_urls = []
         
-        logging.info(f"[{retailer_name}] Phase 4: Extracting store details")
         total_to_process = len(remaining_urls)
-        for i, url in enumerate(remaining_urls, 1):
-            store_data = extract_store_details(session, url, retailer_name)
-            if store_data:
-                stores.append(store_data)
-                completed_urls.add(url)
+        logging.info(f"[{retailer_name}] Phase 4: Extracting store details ({total_to_process} URLs)")
+        
+        # Use parallel extraction if workers > 1
+        if parallel_workers > 1 and total_to_process > 0:
+            logging.info(f"[{retailer_name}] Using parallel extraction with {parallel_workers} workers")
             
-            # Progress logging every 100 stores
-            if i % 100 == 0:
-                logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
+            # Thread-safe counter for progress
+            processed_count = [0]  # Use list for mutable closure
+            processed_lock = threading.Lock()
             
-            if i % checkpoint_interval == 0:
-                utils.save_checkpoint({
-                    'completed_count': len(stores),
-                    'completed_urls': list(completed_urls),
-                    'stores': stores,
-                    'last_updated': datetime.now().isoformat()
-                }, checkpoint_path)
-                logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
+            with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
+                # Submit all extraction tasks
+                futures = {
+                    executor.submit(_extract_single_store, url, session, config, retailer_name): url
+                    for url in remaining_urls
+                }
+                
+                for future in as_completed(futures):
+                    url, store_data = future.result()
+                    
+                    with processed_lock:
+                        processed_count[0] += 1
+                        current_count = processed_count[0]
+                        
+                        if store_data:
+                            stores.append(store_data)
+                            completed_urls.add(url)
+                        
+                        # Progress logging every 100 stores
+                        if current_count % 100 == 0:
+                            logging.info(f"[{retailer_name}] Progress: {current_count}/{total_to_process} ({current_count/total_to_process*100:.1f}%)")
+                        
+                        # Checkpoint at intervals
+                        if current_count % checkpoint_interval == 0:
+                            utils.save_checkpoint({
+                                'completed_count': len(stores),
+                                'completed_urls': list(completed_urls),
+                                'stores': stores,
+                                'last_updated': datetime.now().isoformat()
+                            }, checkpoint_path)
+                            logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
+        else:
+            # Sequential extraction (original behavior)
+            for i, url in enumerate(remaining_urls, 1):
+                store_data = extract_store_details(session, url, config, retailer_name)
+                if store_data:
+                    stores.append(store_data)
+                    completed_urls.add(url)
+                
+                # Progress logging every 100 stores
+                if i % 100 == 0:
+                    logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
+                
+                if i % checkpoint_interval == 0:
+                    utils.save_checkpoint({
+                        'completed_count': len(stores),
+                        'completed_urls': list(completed_urls),
+                        'stores': stores,
+                        'last_updated': datetime.now().isoformat()
+                    }, checkpoint_path)
+                    logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
         
         if stores:
             utils.save_checkpoint({
