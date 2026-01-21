@@ -217,12 +217,31 @@ retailers:
       - "https://www.t-mobile.com/stores/sitemap1.xml"
       - "https://www.t-mobile.com/stores/sitemap2.xml"
     discovery_method: "sitemap_paginated"
+    # Dual delay profiles for speedup with proxies
+    delays:
+      direct:
+        min_delay: 0.5
+        max_delay: 1.0
+      proxied:
+        min_delay: 0.2
+        max_delay: 0.4
+    # Legacy fields (deprecated, use delays.direct instead)
     min_delay: 0.5
     max_delay: 1.0
     checkpoint_interval: 100
-    # Sitemap-based scraping, straightforward
+    # Parallel workers for store detail extraction
+    # Higher values = faster but more aggressive (use with residential proxy)
+    parallel_workers: 5
+    # Disable long pauses when using residential proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+    # Sitemap-based scraping with residential proxy for speed
     proxy:
-      mode: "direct"
+      mode: "residential"
     output_fields:
       - store_id
       - branch_code

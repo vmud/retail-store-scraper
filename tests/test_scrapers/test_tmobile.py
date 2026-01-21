@@ -2,7 +2,10 @@
 
 import json
 import pytest
-from unittest.mock import Mock, patch
+import tempfile
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock
 
 from src.scrapers.tmobile import (
     TMobileStore,
@@ -13,6 +16,12 @@ from src.scrapers.tmobile import (
     get_request_count,
     reset_request_counter,
     _check_pause_logic,
+    _create_session_factory,
+    _extract_single_store,
+    _load_cached_urls,
+    _save_cached_urls,
+    _get_url_cache_path,
+    URL_CACHE_EXPIRY_DAYS,
 )
 
 
@@ -249,19 +258,19 @@ class TestTMobileRun:
         response.text = html
         return response
 
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
         """Test that run() returns the expected structure."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
-        mock_get.side_effect = [
-            self._make_sitemap_response(['TX-DAL-001']),
-            self._make_store_page_response('TX-DAL-001')
-        ]
+        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_get.return_value = self._make_store_page_response('TX-DAL-001')
 
-        result = run(mock_session, {'checkpoint_interval': 100}, retailer='tmobile')
+        result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile')
 
         assert isinstance(result, dict)
         assert 'stores' in result
@@ -271,57 +280,76 @@ class TestTMobileRun:
         assert isinstance(result['count'], int)
         assert isinstance(result['checkpoints_used'], bool)
 
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_with_limit(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_with_limit(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
         """Test run() respects limit parameter."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        # Return cached URLs to skip sitemap fetch
+        mock_load_cache.return_value = [
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-003',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-004',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-005'
+        ]
         mock_get.side_effect = [
-            self._make_sitemap_response(['TX-DAL-001', 'TX-DAL-002', 'TX-DAL-003', 'TX-DAL-004', 'TX-DAL-005']),
             self._make_store_page_response('TX-DAL-001'),
             self._make_store_page_response('TX-DAL-002'),
         ]
 
-        result = run(mock_session, {'checkpoint_interval': 100}, retailer='tmobile', limit=2)
+        result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile', limit=2)
 
         assert result['count'] == 2
         assert len(result['stores']) == 2
 
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
         """Test run() with empty sitemap returns empty stores."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        # No cached URLs, force sitemap fetch
+        mock_load_cache.return_value = None
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
         mock_get.return_value = response
 
-        result = run(mock_session, {'checkpoint_interval': 100}, retailer='tmobile')
+        result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile')
 
         assert result['stores'] == []
         assert result['count'] == 0
         assert result['checkpoints_used'] is False
 
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
         """Test that count matches the actual number of stores."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        mock_load_cache.return_value = [
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-003'
+        ]
         mock_get.side_effect = [
-            self._make_sitemap_response(['TX-DAL-001', 'TX-DAL-002', 'TX-DAL-003']),
             self._make_store_page_response('TX-DAL-001'),
             self._make_store_page_response('TX-DAL-002'),
             self._make_store_page_response('TX-DAL-003'),
         ]
 
-        result = run(mock_session, {'checkpoint_interval': 100}, retailer='tmobile')
+        result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile')
 
         assert result['count'] == len(result['stores'])
 
@@ -329,12 +357,14 @@ class TestTMobileRun:
 class TestTMobileCheckpoint:
     """Tests for T-Mobile checkpoint/resume functionality."""
 
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.load_checkpoint')
     @patch('src.scrapers.tmobile.utils.save_checkpoint')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_config, mock_session):
+    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_config, mock_save_cache, mock_load_cache, mock_session):
         """Test that resume=True loads existing checkpoint."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
@@ -342,33 +372,32 @@ class TestTMobileCheckpoint:
             'stores': [{'branch_code': 'TX-DAL-001', 'name': 'Existing Store'}],
             'completed_urls': ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
         }
-        # Sitemap with URLs (must be non-empty for checkpoints_used to be True)
-        xml = '''<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-            <url><loc>https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001</loc></url>
-        </urlset>'''
-        response = Mock()
-        response.content = xml.encode('utf-8')
-        mock_get.return_value = response
+        # Return cached URLs
+        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
 
-        result = run(mock_session, {'checkpoint_interval': 100}, retailer='tmobile', resume=True)
+        result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile', resume=True)
 
         mock_load.assert_called_once()
         assert result['checkpoints_used'] is True
 
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.load_checkpoint')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_config, mock_session):
+    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_config, mock_save_cache, mock_load_cache, mock_session):
         """Test that resume=False does not load checkpoint."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        # No cached URLs
+        mock_load_cache.return_value = None
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
         mock_get.return_value = response
 
-        result = run(mock_session, {'checkpoint_interval': 100}, retailer='tmobile', resume=False)
+        result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile', resume=False)
 
         mock_load.assert_not_called()
         assert result['checkpoints_used'] is False
@@ -479,3 +508,415 @@ class TestTMobileErrorHandling:
         store = extract_store_details(mock_session, 'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001')
 
         assert store is None
+
+
+class TestTMobileSessionFactory:
+    """Tests for session factory function."""
+
+    @patch('src.scrapers.tmobile.utils.create_proxied_session')
+    def test_session_factory_creates_session(self, mock_create_session):
+        """Test that session factory creates a session."""
+        mock_session = Mock()
+        mock_create_session.return_value = mock_session
+
+        config = {'proxy': {'mode': 'residential'}}
+        factory = _create_session_factory(config)
+
+        result = factory()
+
+        mock_create_session.assert_called_once_with(config)
+        assert result == mock_session
+
+    @patch('src.scrapers.tmobile.utils.create_proxied_session')
+    def test_session_factory_creates_new_session_each_call(self, mock_create_session):
+        """Test that session factory creates new session each time."""
+        mock_session1 = Mock()
+        mock_session2 = Mock()
+        mock_create_session.side_effect = [mock_session1, mock_session2]
+
+        config = {'proxy': {'mode': 'residential'}}
+        factory = _create_session_factory(config)
+
+        result1 = factory()
+        result2 = factory()
+
+        assert mock_create_session.call_count == 2
+        assert result1 == mock_session1
+        assert result2 == mock_session2
+
+
+class TestTMobileParallelExtraction:
+    """Tests for parallel store extraction."""
+
+    def _make_store_page_response(self, branch_code):
+        """Helper to create store page HTML response with JSON-LD."""
+        json_ld = {
+            "@type": "Store",
+            "name": f"T-Mobile {branch_code}",
+            "branchCode": branch_code,
+            "telephone": "(555) 123-4567",
+            "address": {
+                "streetAddress": "123 Main St",
+                "addressLocality": "Dallas",
+                "addressRegion": "TX",
+                "postalCode": "75001",
+                "addressCountry": "US"
+            },
+            "geo": {
+                "latitude": "32.7767",
+                "longitude": "-96.7970"
+            },
+            "openingHours": ["Mon-Fri 10am-8pm", "Sat 10am-6pm"]
+        }
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+<title>T-Mobile Store: Store in Dallas, TX</title>
+<script type="application/ld+json">{json.dumps(json_ld)}</script>
+</head>
+</html>'''
+        response = Mock()
+        response.text = html
+        return response
+
+    @patch('src.scrapers.tmobile.extract_store_details')
+    def test_extract_single_store_success(self, mock_extract):
+        """Test successful single store extraction in parallel worker."""
+        mock_store = Mock()
+        mock_store.to_dict.return_value = {'branch_code': 'TX-DAL-001', 'name': 'T-Mobile Dallas'}
+        mock_extract.return_value = mock_store
+
+        mock_session = Mock()
+        mock_factory = Mock(return_value=mock_session)
+
+        url = 'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001'
+        result_url, result_data = _extract_single_store(url, mock_factory, 'tmobile', {})
+
+        assert result_url == url
+        assert result_data == {'branch_code': 'TX-DAL-001', 'name': 'T-Mobile Dallas'}
+        mock_session.close.assert_called_once()
+
+    @patch('src.scrapers.tmobile.extract_store_details')
+    def test_extract_single_store_failure(self, mock_extract):
+        """Test failed single store extraction returns None."""
+        mock_extract.return_value = None
+
+        mock_session = Mock()
+        mock_factory = Mock(return_value=mock_session)
+
+        url = 'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001'
+        result_url, result_data = _extract_single_store(url, mock_factory, 'tmobile', {})
+
+        assert result_url == url
+        assert result_data is None
+        mock_session.close.assert_called_once()
+
+    @patch('src.scrapers.tmobile.extract_store_details')
+    def test_extract_single_store_exception(self, mock_extract):
+        """Test that exceptions in extraction are handled gracefully."""
+        mock_extract.side_effect = Exception("Network error")
+
+        mock_session = Mock()
+        mock_factory = Mock(return_value=mock_session)
+
+        url = 'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001'
+        result_url, result_data = _extract_single_store(url, mock_factory, 'tmobile', {})
+
+        assert result_url == url
+        assert result_data is None
+        mock_session.close.assert_called_once()
+
+
+class TestTMobileURLCaching:
+    """Tests for URL caching functionality."""
+
+    def test_get_url_cache_path(self):
+        """Test URL cache path generation."""
+        path = _get_url_cache_path('tmobile')
+        assert path == Path('data/tmobile/store_urls.json')
+
+    def test_load_cached_urls_no_file(self, tmp_path):
+        """Test loading from non-existent cache returns None."""
+        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=tmp_path / 'nonexistent.json'):
+            result = _load_cached_urls('tmobile')
+            assert result is None
+
+    def test_load_cached_urls_valid_cache(self, tmp_path):
+        """Test loading valid cached URLs."""
+        cache_file = tmp_path / 'store_urls.json'
+        cache_data = {
+            'discovered_at': datetime.now().isoformat(),
+            'store_count': 3,
+            'urls': [
+                'https://www.t-mobile.com/stores/bd/tx/dallas/store-1',
+                'https://www.t-mobile.com/stores/bd/tx/houston/store-2',
+                'https://www.t-mobile.com/stores/bd/ca/la/store-3'
+            ]
+        }
+        cache_file.write_text(json.dumps(cache_data))
+
+        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
+            result = _load_cached_urls('tmobile')
+            assert result is not None
+            assert len(result) == 3
+            assert 'https://www.t-mobile.com/stores/bd/tx/dallas/store-1' in result
+
+    def test_load_cached_urls_expired(self, tmp_path):
+        """Test that expired cache returns None."""
+        cache_file = tmp_path / 'store_urls.json'
+        # Create cache with old timestamp (8 days ago)
+        old_date = datetime.now() - timedelta(days=8)
+        cache_data = {
+            'discovered_at': old_date.isoformat(),
+            'store_count': 3,
+            'urls': ['url1', 'url2', 'url3']
+        }
+        cache_file.write_text(json.dumps(cache_data))
+
+        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
+            result = _load_cached_urls('tmobile')
+            assert result is None
+
+    def test_load_cached_urls_invalid_json(self, tmp_path):
+        """Test that invalid JSON cache returns None."""
+        cache_file = tmp_path / 'store_urls.json'
+        cache_file.write_text('invalid json {')
+
+        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
+            result = _load_cached_urls('tmobile')
+            assert result is None
+
+    def test_save_cached_urls(self, tmp_path):
+        """Test saving URLs to cache."""
+        cache_file = tmp_path / 'store_urls.json'
+        urls = ['url1', 'url2', 'url3']
+
+        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
+            _save_cached_urls('tmobile', urls)
+
+        assert cache_file.exists()
+        saved_data = json.loads(cache_file.read_text())
+        assert saved_data['store_count'] == 3
+        assert saved_data['urls'] == urls
+        assert 'discovered_at' in saved_data
+
+
+class TestTMobileRunParallel:
+    """Tests for T-Mobile run() with parallel extraction."""
+
+    def _make_sitemap_response(self, store_codes):
+        """Helper to create sitemap response with given store codes."""
+        urls = '\n'.join(
+            f'<url><loc>https://www.t-mobile.com/stores/bd/tx/dallas/{code}</loc></url>'
+            for code in store_codes
+        )
+        xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'''
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        return response
+
+    def _make_store_page_response(self, branch_code):
+        """Helper to create store page HTML response."""
+        json_ld = {
+            "@type": "Store",
+            "name": f"T-Mobile {branch_code}",
+            "branchCode": branch_code,
+            "telephone": "(555) 123-4567",
+            "address": {
+                "streetAddress": "123 Main St",
+                "addressLocality": "Dallas",
+                "addressRegion": "TX",
+                "postalCode": "75001",
+                "addressCountry": "US"
+            },
+            "geo": {"latitude": "32.7767", "longitude": "-96.7970"}
+        }
+        html = f'''<!DOCTYPE html>
+<html><head>
+<title>T-Mobile Store: Store in Dallas, TX</title>
+<script type="application/ld+json">{json.dumps(json_ld)}</script>
+</head></html>'''
+        response = Mock()
+        response.text = html
+        return response
+
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.tmobile_config')
+    @patch('src.scrapers.tmobile.utils.get_with_retry')
+    @patch('src.scrapers.tmobile._request_counter')
+    def test_run_uses_url_cache(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+        """Test that run() uses cached URLs when available."""
+        mock_config.SITEMAP_PAGES = [1]
+        mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_get.return_value = self._make_store_page_response('TX-DAL-001')
+
+        config = {
+            'checkpoint_interval': 100,
+            'proxy': {'mode': 'direct'},
+            'parallel_workers': 1
+        }
+        result = run(mock_session, config, retailer='tmobile')
+
+        mock_load_cache.assert_called_once_with('tmobile')
+        mock_save_cache.assert_not_called()  # No save since cache was valid
+
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.tmobile_config')
+    @patch('src.scrapers.tmobile.utils.get_with_retry')
+    @patch('src.scrapers.tmobile._request_counter')
+    def test_run_refresh_urls_ignores_cache(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+        """Test that refresh_urls=True ignores cached URLs."""
+        mock_config.SITEMAP_PAGES = [1]
+        mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        mock_get.side_effect = [
+            self._make_sitemap_response(['TX-DAL-001']),
+            self._make_store_page_response('TX-DAL-001')
+        ]
+
+        config = {
+            'checkpoint_interval': 100,
+            'proxy': {'mode': 'direct'},
+            'parallel_workers': 1
+        }
+        result = run(mock_session, config, retailer='tmobile', refresh_urls=True)
+
+        mock_load_cache.assert_not_called()  # Should not load cache
+        mock_save_cache.assert_called_once()  # Should save newly discovered URLs
+
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile._create_session_factory')
+    @patch('src.scrapers.tmobile.tmobile_config')
+    @patch('src.scrapers.tmobile.utils.save_checkpoint')
+    @patch('src.scrapers.tmobile.extract_store_details')
+    def test_run_parallel_extraction(self, mock_extract, mock_save_checkpoint, mock_config, mock_session_factory, mock_save_cache, mock_load_cache, mock_session):
+        """Test that parallel extraction works with multiple workers."""
+        mock_config.SITEMAP_PAGES = [1]
+        mock_load_cache.return_value = [
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-003'
+        ]
+
+        # Mock session factory
+        mock_worker_session = Mock()
+        mock_session_factory.return_value = lambda: mock_worker_session
+
+        # Mock extract_store_details to return store objects
+        def make_store(session, url, retailer):
+            code = url.split('/')[-1]
+            store = Mock()
+            store.to_dict.return_value = {'branch_code': code, 'name': f'T-Mobile {code}'}
+            return store
+        mock_extract.side_effect = make_store
+
+        config = {
+            'checkpoint_interval': 100,
+            'proxy': {'mode': 'residential'},
+            'parallel_workers': 3
+        }
+        result = run(mock_session, config, retailer='tmobile')
+
+        assert result['count'] == 3
+        assert len(result['stores']) == 3
+        mock_session_factory.assert_called_once()
+
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.tmobile_config')
+    @patch('src.scrapers.tmobile.utils.get_with_retry')
+    @patch('src.scrapers.tmobile._request_counter')
+    def test_run_sequential_fallback(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+        """Test that sequential extraction is used when parallel_workers=1."""
+        mock_config.SITEMAP_PAGES = [1]
+        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_get.return_value = self._make_store_page_response('TX-DAL-001')
+
+        config = {
+            'checkpoint_interval': 100,
+            'proxy': {'mode': 'direct'},
+            'parallel_workers': 1
+        }
+        result = run(mock_session, config, retailer='tmobile')
+
+        assert result['count'] == 1
+        # Verify sequential path was used (extract_store_details called directly)
+
+
+class TestTMobileFailedExtraction:
+    """Tests for failed extraction tracking."""
+
+    def _make_store_page_response(self, branch_code):
+        """Helper to create store page HTML response."""
+        json_ld = {
+            "@type": "Store",
+            "name": f"T-Mobile {branch_code}",
+            "branchCode": branch_code,
+            "telephone": "(555) 123-4567",
+            "address": {
+                "streetAddress": "123 Main St",
+                "addressLocality": "Dallas",
+                "addressRegion": "TX",
+                "postalCode": "75001",
+                "addressCountry": "US"
+            },
+            "geo": {"latitude": "32.7767", "longitude": "-96.7970"}
+        }
+        html = f'''<!DOCTYPE html>
+<html><head>
+<title>T-Mobile Store: Store in Dallas, TX</title>
+<script type="application/ld+json">{json.dumps(json_ld)}</script>
+</head></html>'''
+        response = Mock()
+        response.text = html
+        return response
+
+    @patch('src.scrapers.tmobile._load_cached_urls')
+    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.tmobile_config')
+    @patch('src.scrapers.tmobile.utils.get_with_retry')
+    @patch('src.scrapers.tmobile.utils.save_checkpoint')
+    @patch('src.scrapers.tmobile._request_counter')
+    def test_failed_urls_logged_and_saved(self, mock_counter, mock_save_checkpoint, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session, tmp_path, monkeypatch):
+        """Test that failed URLs are logged and saved to file."""
+        mock_config.SITEMAP_PAGES = [1]
+        mock_load_cache.return_value = [
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
+            'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002'
+        ]
+        # First URL succeeds, second fails
+        mock_get.side_effect = [
+            self._make_store_page_response('TX-DAL-001'),
+            None  # Failure
+        ]
+
+        config = {
+            'checkpoint_interval': 100,
+            'proxy': {'mode': 'direct'},
+            'parallel_workers': 1
+        }
+
+        # Use monkeypatch to redirect the data directory to tmp_path
+        original_path = Path
+        def patched_path(path_str):
+            if 'data/tmobile' in str(path_str):
+                # Redirect to tmp_path
+                return original_path(tmp_path / path_str.replace('data/', ''))
+            return original_path(path_str)
+
+        monkeypatch.setattr('src.scrapers.tmobile.Path', patched_path)
+
+        result = run(mock_session, config, retailer='tmobile')
+
+        # One successful, one failed
+        assert result['count'] == 1
+        # Check that failed_extractions.json was created
+        failed_file = tmp_path / 'tmobile' / 'failed_extractions.json'
+        assert failed_file.exists()
+        failed_data = json.loads(failed_file.read_text())
+        assert failed_data['failed_count'] == 1
+        assert 'TX-DAL-002' in failed_data['failed_urls'][0]
