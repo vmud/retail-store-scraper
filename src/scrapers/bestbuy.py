@@ -466,29 +466,48 @@ def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
             if re.match(r'https://stores\.bestbuy\.com/[a-z]{2}\.html$', url):
                 logging.debug(f"Skipping state directory: {url}")
                 continue
-            
+
+            # Skip city index pages (pattern: /xx/city-name.html with no numbers)
+            # City pages have only letters and dashes, store pages have numbers (store ID)
+            if re.match(r'https://stores\.bestbuy\.com/[a-z]{2}/[a-z-]+\.html$', url):
+                logging.debug(f"Skipping city index: {url}")
+                continue
+
+            # Skip subpages (geeksquad, services, etc.)
+            if '/geeksquad.html' in url or '/services' in url:
+                logging.debug(f"Skipping subpage: {url}")
+                continue
+
             # Skip non-store URLs (404 pages, etc.)
             if '/404.html' in url or not url.endswith('.html'):
+                continue
+
+            # Only include URLs with numbers (indicating a store ID in the address)
+            # Store URLs look like: /ut/farmington/360-n-station-pkwy-1887.html
+            if not re.search(r'\d', url):
+                logging.debug(f"Skipping URL without store ID: {url}")
                 continue
 
             if url in seen_urls:
                 continue
             seen_urls.add(url)
 
-            # Extract store ID from URL pattern (last segment before .html)
+            # Extract store ID from URL - typically the last number sequence
             # URLs are like: https://stores.bestbuy.com/ut/farmington/360-n-station-pkwy-1887.html
-            # Store ID is typically in the URL path or can be extracted from page content
-            # For now, use the full URL and extract store ID from page later
             store_id = None
 
-            # Try to extract numeric ID from URL if present
-            # Some URLs might have store ID in them
-            store_id_match = re.search(r'/(\d+)', url)
+            # Try to extract the store ID (last number in URL, usually 3-4 digits)
+            store_id_match = re.search(r'-(\d{3,4})\.html$', url)
             if store_id_match:
                 store_id = store_id_match.group(1)
             else:
-                # Generate a stable hash-based ID from URL for tracking
-                store_id = hashlib.md5(url.encode()).hexdigest()[:6]
+                # Fallback: extract any numeric ID from URL
+                store_id_match = re.search(r'/(\d+)', url)
+                if store_id_match:
+                    store_id = store_id_match.group(1)
+                else:
+                    # Generate a stable hash-based ID from URL for tracking
+                    store_id = hashlib.md5(url.encode()).hexdigest()[:6]
 
             stores.append({
                 "store_id": store_id,

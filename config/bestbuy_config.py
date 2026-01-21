@@ -38,14 +38,14 @@ def get_headers(user_agent=None):
 MIN_DELAY = 0.5  # Minimum delay between requests (seconds) - matches spec's 0.5s
 MAX_DELAY = 1.0  # Maximum delay between requests (seconds)
 
-# Pause thresholds
-PAUSE_50_REQUESTS = 50  # Pause after this many requests
-PAUSE_50_MIN = 30  # Minimum pause duration (seconds)
-PAUSE_50_MAX = 60  # Maximum pause duration (seconds)
+# Pause thresholds (disabled for proxy mode - set to high values)
+PAUSE_50_REQUESTS = 999999  # Effectively disabled
+PAUSE_50_MIN = 0  # No pause
+PAUSE_50_MAX = 0  # No pause
 
-PAUSE_200_REQUESTS = 200  # Longer pause after this many requests
-PAUSE_200_MIN = 120  # Minimum pause duration (seconds) - 2 minutes
-PAUSE_200_MAX = 180  # Maximum pause duration (seconds) - 3 minutes
+PAUSE_200_REQUESTS = 999999  # Effectively disabled
+PAUSE_200_MIN = 0  # No pause
+PAUSE_200_MAX = 0  # No pause
 
 # Retry settings
 MAX_RETRIES = 3
