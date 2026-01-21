@@ -190,7 +190,7 @@ class TestGetStoreUrlsFromSitemap:
 
         urls = get_store_urls_from_sitemap(mock_session)
 
-        assert urls == []
+        assert not urls
 
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
@@ -447,7 +447,7 @@ class TestATTErrorHandling:
 
         urls = get_store_urls_from_sitemap(mock_session)
 
-        assert urls == []
+        assert not urls
 
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
@@ -469,7 +469,7 @@ class TestATTErrorHandling:
 
         urls = get_store_urls_from_sitemap(mock_session)
 
-        assert urls == []
+        assert not urls
 
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')

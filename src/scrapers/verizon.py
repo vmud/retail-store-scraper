@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Core scraping functions for Verizon Store Locator"""
 
 import json

@@ -64,7 +64,30 @@
       "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper tag)",
       "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper branch -a)",
       "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --all --grep=\"Sprint 4\" --oneline)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(pylint:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(tee:*)",
+      "Bash(pkill -f \"python run.py --retailer verizon\")",
+      "Bash(python scripts/retry_failed_att.py:*)",
+      "Bash(python scripts/fix_missing_states.py:*)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --oneline --all -20)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --oneline --all -- config/retailers.yaml)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --oneline --all -- src/scrapers/att.py)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper show 3118ae8 --stat)",
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --all --oneline -- \"data/att/*.json\")",
+      "Bash(find:*)",
+      "Bash(git show:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh run view:*)",
+      "Bash(tail:*)",
+      "Bash(cat:*)",
+      "Bash(pkill:*)",
+      "mcp__kapture__close",
+      "WebFetch(domain:stores.telus.com)",
+      "Bash(du:*)",
+      "Bash(git branch:*)",
+      "Bash(gh pr checks:*)"
     ]
   }
 }

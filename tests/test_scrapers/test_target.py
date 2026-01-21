@@ -161,7 +161,7 @@ class TestGetAllStoreIds:
 
         stores = get_all_store_ids(mock_session)
 
-        assert stores == []
+        assert not stores
 
 
 class TestGetStoreDetails:
@@ -545,7 +545,7 @@ class TestTargetErrorHandling:
 
         stores = get_all_store_ids(mock_session)
 
-        assert stores == []
+        assert not stores
 
     @patch('src.scrapers.target._load_cached_urls')
     @patch('src.scrapers.target._save_cached_urls')
@@ -587,7 +587,7 @@ class TestTargetErrorHandling:
 
         stores = get_all_store_ids(mock_session)
 
-        assert stores == []
+        assert not stores
 
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')

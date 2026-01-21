@@ -98,12 +98,12 @@ class TestParseFormatList:
     def test_parse_empty_string(self):
         """Test parsing empty string returns empty list"""
         result = parse_format_list("")
-        assert result == []
+        assert not result
 
     def test_parse_all_invalid_returns_empty(self):
         """Test parsing all invalid formats returns empty list"""
         result = parse_format_list("invalid,unknown,bad")
-        assert result == []
+        assert not result
 
 
 class TestExportServiceJSON:

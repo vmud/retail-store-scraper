@@ -271,8 +271,7 @@ class ChangeDetector:
             return
 
         with open(filepath, 'rb') as f:
-            for store in ijson.items(f, 'item'):
-                yield store
+            yield from ijson.items(f, 'item')
 
     def load_previous_data(self) -> Optional[List[Dict[str, Any]]]:
         """Load previous run's store data.

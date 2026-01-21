@@ -464,7 +464,7 @@ class TestParallelDiscovery:
         state_name, cities = _fetch_cities_for_state_worker(state, factory, config, 'verizon')
 
         assert state_name == 'Texas'
-        assert cities == []  # Empty list on error
+        assert not cities  # Empty list on error
         mock_session.close.assert_called_once()
 
     @patch('src.scrapers.verizon.get_stores_for_city')

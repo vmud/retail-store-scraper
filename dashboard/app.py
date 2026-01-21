@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 #!/usr/bin/env python3
 """Simple Flask dashboard for monitoring scraper progress"""
 
