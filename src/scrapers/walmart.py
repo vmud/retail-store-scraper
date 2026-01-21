@@ -438,7 +438,7 @@ def run(session, config: dict, **kwargs) -> dict:
     finally:
         # Clean up store extraction session
         # Clean up store extraction session
-        if store_client and hasattr(store_client, 'close'):
+        if 'store_client' in locals() and store_client and hasattr(store_client, 'close'):
             try:
                 store_client.close()
                 logging.debug(f"[{retailer_name}] Closed web_scraper_api session")
