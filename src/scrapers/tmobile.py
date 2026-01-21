@@ -27,6 +27,7 @@ _request_counter = RequestCounter()
 @dataclass
 class TMobileStore:
     """Data model for T-Mobile store information"""
+    store_id: str
     branch_code: str
     name: str
     phone: str

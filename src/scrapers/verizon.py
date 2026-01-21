@@ -896,6 +896,103 @@ def _get_url_cache_path(retailer: str) -> Path:
 
 def _load_cached_urls(retailer: str, max_age_days: int = URL_CACHE_EXPIRY_DAYS) -> Optional[List[str]]:
     """Load cached store URLs if recent enough.
+
+    Args:
+        retailer: Retailer name
+        max_age_days: Maximum cache age in days (default: 7)
+
+    Returns:
+        List of cached URLs if cache is valid, None otherwise
+    """
+    cache_path = _get_url_cache_path(retailer)
+
+    if not cache_path.exists():
+        logging.info(f"[{retailer}] No URL cache found at {cache_path}")
+        return None
+
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+
+        # Check cache freshness
+        discovered_at = cache_data.get('discovered_at')
+        if discovered_at:
+            cache_time = datetime.fromisoformat(discovered_at)
+            age_days = (datetime.now() - cache_time).days
+
+            if age_days > max_age_days:
+                logging.info(f"[{retailer}] URL cache expired ({age_days} days old, max: {max_age_days})")
+                return None
+
+            urls = cache_data.get('urls', [])
+            if urls:
+                logging.info(f"[{retailer}] Loaded {len(urls)} URLs from cache ({age_days} days old)")
+                return urls
+
+        logging.warning(f"[{retailer}] URL cache is invalid or empty")
+        return None
+
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        logging.warning(f"[{retailer}] Error loading URL cache: {e}")
+        return None
+
+
+def _save_cached_urls(retailer: str, urls: List[str]) -> None:
+    """Save discovered store URLs to cache.
+
+    Args:
+        retailer: Retailer name
+        urls: List of store URLs to cache
+    """
+    cache_path = _get_url_cache_path(retailer)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cache_data = {
+        'discovered_at': datetime.now().isoformat(),
+        'store_count': len(urls),
+        'urls': urls
+    }
+
+    try:
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2)
+        logging.info(f"[{retailer}] Saved {len(urls)} URLs to cache: {cache_path}")
+    except IOError as e:
+        logging.warning(f"[{retailer}] Failed to save URL cache: {e}")
+
+
+# =============================================================================
+# PARALLEL EXTRACTION - Speed up store detail extraction
+# =============================================================================
+
+
+def _extract_single_store(
+    url: str,
+    session,
+    yaml_config: dict,
+    retailer_name: str
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Worker function for parallel store extraction.
+
+    Args:
+        url: Store URL to extract
+        session: Session to use for requests
+        yaml_config: Retailer configuration
+        retailer_name: Name of retailer for logging
+
+    Returns:
+        Tuple of (url, store_data) where store_data is None on failure
+    """
+    try:
+        store_data = extract_store_details(session, url, yaml_config, retailer_name)
+        return (url, store_data)
+    except Exception as e:
+        logging.warning(f"[{retailer_name}] Error extracting {url}: {e}")
+        return (url, None)
+
+
+def run(session, config: dict, **kwargs) -> dict:
+    """Standard scraper entry point with parallel extraction and URL caching.
     
     Args:
         retailer: Retailer name
@@ -1048,7 +1145,7 @@ def run(session, config: dict, **kwargs) -> dict:
 
             # Store target slugs for later filtering
             kwargs['_target_slugs'] = target_slugs
-        
+
         reset_request_counter()
         
         # Auto-select delays based on proxy mode for optimal performance
