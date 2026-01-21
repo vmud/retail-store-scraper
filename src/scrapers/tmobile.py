@@ -41,7 +41,6 @@ class TMobileStore:
     url: str
     scraped_at: str
     # Optional fields with defaults (must come after required fields)
-    store_id: str = ""
     store_type: Optional[str] = None
     opening_hours: Optional[List[str]] = None
 

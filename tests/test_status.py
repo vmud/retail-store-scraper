@@ -55,10 +55,10 @@ class TestStatusCalculation:
         for field in expected_fields:
             assert field in global_stats, f"Missing global field: {field}"
     
-    def test_retailer_status_disabled(self):
-        """Test that disabled retailers have enabled=False"""
+    def test_retailer_status_enabled(self):
+        """Test that enabled retailers have enabled=True"""
         status = get_retailer_status('bestbuy')
-        assert status['enabled'] == False
+        assert status['enabled'] == True
     
     def test_retailer_status_progress_range(self):
         """Test that overall_progress is between 0 and 100"""
