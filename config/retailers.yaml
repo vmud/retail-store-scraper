@@ -319,19 +319,44 @@ retailers:
 
   bestbuy:
     name: "Best Buy"
-    enabled: false  # WIP
+    enabled: true
     base_url: "https://www.bestbuy.com"
     sitemap_urls:
       - "https://stores.bestbuy.com/sitemap1.xml"
     discovery_method: "sitemap"
-    batch_size: 50
-    min_delay: 0.5
-    max_delay: 1.0
-    checkpoint_interval: 100
-    # Proxy override: Best Buy has stronger anti-bot, recommend Web Scraper API
+
+    # Performance settings (5x speedup with parallel extraction)
+    parallel_workers: 5
+    extraction_batch_size: 500
+    checkpoint_interval: 25  # More frequent with parallel extraction
+    url_cache_days: 7
+
+    # Dual delay profiles for proxy vs direct mode
+    delays:
+      direct:
+        min_delay: 2.0
+        max_delay: 5.0
+      proxied:
+        min_delay: 0.2
+        max_delay: 0.5
+
+    # Legacy fields (deprecated, use delays.direct instead)
+    min_delay: 2.0
+    max_delay: 5.0
+
+    # Disable pauses for proxy mode (handled by proxy rotation)
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Proxy: Web Scraper API for Akamai bypass with JS rendering
     proxy:
       mode: "web_scraper_api"
       render_js: true
+
     output_fields:
       - store_id
       - name
@@ -347,6 +372,7 @@ retailers:
       - longitude
       - phone
       - services
+      - service_codes
       - hours
       - has_pickup
       - curbside_enabled

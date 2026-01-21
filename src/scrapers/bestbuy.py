@@ -6,15 +6,98 @@ import logging
 import random
 import re
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dataclasses import dataclass, asdict
-from typing import List, Optional, Dict, Any
+from pathlib import Path
+from typing import List, Optional, Dict, Any, Callable, Tuple
 from bs4 import BeautifulSoup
 import requests
 
 from config import bestbuy_config
 from src.shared import utils
 from src.shared.request_counter import RequestCounter
+
+
+# =============================================================================
+# URL CACHING - Skip sitemap fetch on subsequent runs
+# =============================================================================
+
+# Default cache expiry: 7 days (stores don't change location frequently)
+URL_CACHE_EXPIRY_DAYS = 7
+
+
+def _get_url_cache_path(retailer: str) -> Path:
+    """Get path to store URL cache file."""
+    return Path(f"data/{retailer}/store_urls.json")
+
+
+def _load_cached_urls(retailer: str, max_age_days: int = URL_CACHE_EXPIRY_DAYS) -> Optional[List[str]]:
+    """Load cached store URLs if recent enough.
+
+    Args:
+        retailer: Retailer name
+        max_age_days: Maximum cache age in days (default: 7)
+
+    Returns:
+        List of cached URLs if cache is valid, None otherwise
+    """
+    cache_path = _get_url_cache_path(retailer)
+
+    if not cache_path.exists():
+        logging.info(f"[{retailer}] No URL cache found at {cache_path}")
+        return None
+
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+
+        # Check cache freshness
+        discovered_at = cache_data.get('discovered_at')
+        if discovered_at:
+            cache_time = datetime.fromisoformat(discovered_at)
+            age_days = (datetime.now() - cache_time).days
+
+            if age_days > max_age_days:
+                logging.info(f"[{retailer}] URL cache expired ({age_days} days old, max: {max_age_days})")
+                return None
+
+            urls = cache_data.get('urls', [])
+            if urls:
+                logging.info(f"[{retailer}] Loaded {len(urls)} URLs from cache ({age_days} days old)")
+                return urls
+
+        logging.warning(f"[{retailer}] URL cache is invalid or empty")
+        return None
+
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        logging.warning(f"[{retailer}] Error loading URL cache: {e}")
+        return None
+
+
+def _save_cached_urls(retailer: str, urls: List[str]) -> None:
+    """Save discovered store URLs to cache.
+
+    Args:
+        retailer: Retailer name
+        urls: List of store URLs to cache
+    """
+    cache_path = _get_url_cache_path(retailer)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cache_data = {
+        'discovered_at': datetime.now().isoformat(),
+        'store_count': len(urls),
+        'urls': urls
+    }
+
+    try:
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2)
+        logging.info(f"[{retailer}] Saved {len(urls)} URLs to cache: {cache_path}")
+    except IOError as e:
+        logging.warning(f"[{retailer}] Failed to save URL cache: {e}")
 
 
 # Global request counter
@@ -329,17 +412,21 @@ def _looks_like_service_name(text: str) -> bool:
     return False
 
 
-def _check_pause_logic() -> None:
-    """Check if we need to pause based on request count"""
+def _check_pause_logic(retailer: str = 'bestbuy') -> None:
+    """Check if we need to pause based on request count.
+
+    Args:
+        retailer: Retailer name for logging
+    """
     count = _request_counter.count
 
     if count % bestbuy_config.PAUSE_200_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(bestbuy_config.PAUSE_200_MIN, bestbuy_config.PAUSE_200_MAX)
-        logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
     elif count % bestbuy_config.PAUSE_50_REQUESTS == 0 and count > 0:
         pause_time = random.uniform(bestbuy_config.PAUSE_50_MIN, bestbuy_config.PAUSE_50_MAX)
-        logging.info(f"Pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
 
 
@@ -572,8 +659,8 @@ def extract_store_details(session: requests.Session, url: str) -> Optional[BestB
                             service_codes = store_js_data.get('serviceCodes', [])
                         if 'hours' in store_js_data:
                             hours = store_js_data.get('hours', [])
-                except (json.JSONDecodeError, KeyError, AttributeError, ValueError, TypeError):
-                    pass
+                except (json.JSONDecodeError, KeyError, AttributeError, ValueError, TypeError) as e:
+                    logging.debug(f"JS extraction failed for {url}: {type(e).__name__}: {e}")
 
         # Check for pickup/curbside indicators in HTML
         page_text = soup.get_text().lower()
@@ -630,9 +717,101 @@ def get_request_count() -> int:
     return _request_counter.count
 
 
+# =============================================================================
+# PARALLEL EXTRACTION - Speed up store detail extraction
+# =============================================================================
+
+
+def _create_session_factory(retailer_config: dict) -> Callable[[], requests.Session]:
+    """Create a factory function that produces per-worker sessions.
+
+    requests.Session is NOT thread-safe, so each worker thread needs its own
+    session instance. This factory creates new sessions with the same proxy
+    configuration as the original.
+
+    Args:
+        retailer_config: Retailer configuration dict with proxy settings
+
+    Returns:
+        Callable that creates new session instances
+    """
+    def factory():
+        return utils.create_proxied_session(retailer_config)
+    return factory
+
+
+def _extract_single_store_worker(
+    url: str,
+    session_factory: Callable[[], requests.Session],
+    yaml_config: dict,
+    retailer_name: str
+) -> Tuple[str, Optional[Dict[str, Any]], Optional[str]]:
+    """Worker function for parallel store extraction.
+
+    Creates its own session for thread safety and extracts store details
+    from a single URL.
+
+    Args:
+        url: Store URL to extract
+        session_factory: Callable that creates session instances
+        yaml_config: Retailer configuration
+        retailer_name: Name of retailer for logging
+
+    Returns:
+        Tuple of (url, store_data, error_reason) where store_data is None on failure
+    """
+    session = session_factory()
+    try:
+        store_obj = extract_store_details(session, url)
+        if store_obj:
+            return (url, store_obj.to_dict(), None)
+        return (url, None, "No data extracted")
+    except Exception as e:
+        error_msg = f"{type(e).__name__}: {e}"
+        logging.warning(f"[{retailer_name}] Error extracting {url}: {error_msg}")
+        return (url, None, error_msg)
+    finally:
+        # Clean up session resources
+        if hasattr(session, 'close'):
+            session.close()
+
+
+def _save_failed_extractions(
+    retailer: str,
+    failed_urls: List[str],
+    failed_reasons: Dict[str, str]
+) -> None:
+    """Save failed extraction URLs for later retry.
+
+    Args:
+        retailer: Retailer name
+        failed_urls: List of URLs that failed extraction
+        failed_reasons: Dict mapping URL to failure reason
+    """
+    if not failed_urls:
+        return
+
+    failed_path = Path(f"data/{retailer}/failed_extractions.json")
+    failed_path.parent.mkdir(parents=True, exist_ok=True)
+
+    failed_data = {
+        'saved_at': datetime.now().isoformat(),
+        'count': len(failed_urls),
+        'urls': failed_urls,
+        'reasons': failed_reasons
+    }
+
+    try:
+        with open(failed_path, 'w', encoding='utf-8') as f:
+            json.dump(failed_data, f, indent=2)
+        logging.info(f"[{retailer}] Saved {len(failed_urls)} failed URLs to {failed_path}")
+    except IOError as e:
+        logging.warning(f"[{retailer}] Failed to save failed extractions: {e}")
+
+
 def run(session, config: dict, **kwargs) -> dict:
-    """Standard scraper entry point.
-    
+    """Standard scraper entry point with parallel extraction and URL caching.
+
     Args:
         session: Configured session (requests.Session or ProxyClient)
         config: Retailer configuration dict from retailers.yaml
@@ -640,7 +819,8 @@ def run(session, config: dict, **kwargs) -> dict:
             - resume: bool - Resume from checkpoint
             - limit: int - Max stores to process
             - incremental: bool - Only process changes
-    
+            - refresh_urls: bool - Force URL re-discovery (ignore cache)
+
     Returns:
         dict with keys:
             - stores: List[dict] - Scraped store data
@@ -649,83 +829,263 @@ def run(session, config: dict, **kwargs) -> dict:
     """
     retailer_name = kwargs.get('retailer', 'bestbuy')
     logging.info(f"[{retailer_name}] Starting scrape run")
-    
+
     try:
         limit = kwargs.get('limit')
         resume = kwargs.get('resume', False)
-        
+        refresh_urls = kwargs.get('refresh_urls', False)
+
         reset_request_counter()
-        
+
+        # Auto-select delays based on proxy mode for optimal performance
+        proxy_mode = config.get('proxy', {}).get('mode', 'direct')
+        min_delay, max_delay = utils.select_delays(config, proxy_mode)
+        logging.info(f"[{retailer_name}] Using delays: {min_delay:.2f}-{max_delay:.2f}s (mode: {proxy_mode})")
+
+        # Get parallel workers count (default: 5 for proxy modes, 1 for direct)
+        default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        parallel_workers = config.get('parallel_workers', default_workers)
+        logging.info(f"[{retailer_name}] Extraction workers: {parallel_workers}")
+
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
-        checkpoint_interval = config.get('checkpoint_interval', 100)
-        
+        # More frequent checkpoints with parallel extraction (default: 25)
+        base_checkpoint_interval = config.get('checkpoint_interval', 25)
+        checkpoint_interval = base_checkpoint_interval
+
         stores = []
         completed_urls = set()
+        failed_urls = []
+        failed_reasons = {}
         checkpoints_used = False
-        
+
+        # Load checkpoint if resuming
         if resume:
             checkpoint = utils.load_checkpoint(checkpoint_path)
             if checkpoint:
                 stores = checkpoint.get('stores', [])
                 completed_urls = set(checkpoint.get('completed_urls', []))
-                logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
+                # Also load previously failed URLs for retry
+                failed_urls = checkpoint.get('failed_urls', [])
+                failed_reasons = checkpoint.get('failed_reasons', {})
+                logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores, "
+                           f"{len(failed_urls)} failed URLs to retry")
                 checkpoints_used = True
-        
-        store_list = get_all_store_ids(session)
-        logging.info(f"[{retailer_name}] Found {len(store_list)} store URLs")
-        
-        if not store_list:
-            logging.warning(f"[{retailer_name}] No store URLs found in sitemap")
+
+        # Try to load cached URLs (skip sitemap fetch if cache is valid)
+        url_cache_days = config.get('url_cache_days', URL_CACHE_EXPIRY_DAYS)
+        all_store_urls = None
+        if not refresh_urls:
+            all_store_urls = _load_cached_urls(retailer_name, url_cache_days)
+
+        if all_store_urls is None:
+            # Cache miss or refresh requested - fetch from sitemap
+            logging.info(f"[{retailer_name}] Fetching store URLs from sitemap")
+            store_list = get_all_store_ids(session)
+
+            if not store_list:
+                logging.warning(f"[{retailer_name}] No store URLs found in sitemap")
+                return {'stores': [], 'count': 0, 'checkpoints_used': False}
+
+            all_store_urls = [s.get('url') for s in store_list if s.get('url')]
+            logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs in sitemap")
+
+            # Cache the discovered URLs for future runs
+            if all_store_urls:
+                _save_cached_urls(retailer_name, all_store_urls)
+        else:
+            logging.info(f"[{retailer_name}] Using cached URLs (skipped sitemap fetch)")
+
+        if not all_store_urls:
+            logging.warning(f"[{retailer_name}] No store URLs available")
             return {'stores': [], 'count': 0, 'checkpoints_used': False}
-        
-        remaining_stores = [s for s in store_list if s.get('url') not in completed_urls]
-        
+
+        # Filter to remaining URLs (exclude already completed)
+        remaining_urls = [url for url in all_store_urls if url not in completed_urls]
+
+        # Add previously failed URLs to the beginning for retry
+        if failed_urls:
+            # Remove from remaining to avoid duplicates, then prepend
+            failed_set = set(failed_urls)
+            remaining_urls = [url for url in remaining_urls if url not in failed_set]
+            remaining_urls = failed_urls + remaining_urls
+            failed_urls = []  # Clear for this run
+            failed_reasons = {}
+
         if limit:
             logging.info(f"[{retailer_name}] Limited to {limit} stores")
             total_needed = limit - len(stores)
             if total_needed > 0:
-                remaining_stores = remaining_stores[:total_needed]
+                remaining_urls = remaining_urls[:total_needed]
             else:
-                remaining_stores = []
-        
-        total_to_process = len(remaining_stores)
-        for i, store_info in enumerate(remaining_stores, 1):
-            store_url = store_info.get('url')
-            store_obj = extract_store_details(session, store_url)
-            if store_obj:
-                stores.append(store_obj.to_dict())
-                completed_urls.add(store_url)
-            
-            # Progress logging every 100 stores
-            if i % 100 == 0:
-                logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
-            
-            if i % checkpoint_interval == 0:
-                utils.save_checkpoint({
-                    'completed_count': len(stores),
-                    'completed_urls': list(completed_urls),
-                    'stores': stores,
-                    'last_updated': datetime.now().isoformat()
-                }, checkpoint_path)
-                logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
-        
+                remaining_urls = []
+
+        total_to_process = len(remaining_urls)
+        if total_to_process == 0:
+            logging.info(f"[{retailer_name}] No stores to process (all completed or limit reached)")
+            return {
+                'stores': stores,
+                'count': len(stores),
+                'checkpoints_used': checkpoints_used
+            }
+
+        logging.info(f"[{retailer_name}] Extracting store details ({total_to_process} URLs)")
+
+        # Track extraction statistics
+        start_time = time.time()
+
+        # Use parallel extraction if workers > 1
+        if parallel_workers > 1 and total_to_process > 0:
+            logging.info(f"[{retailer_name}] Using parallel extraction with {parallel_workers} workers")
+
+            # Create session factory for thread-safe session creation
+            session_factory = _create_session_factory(config)
+
+            # Thread-safe counters for progress
+            processed_count = [0]
+            successful_count = [0]
+            processed_lock = threading.Lock()
+
+            with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
+                # Process in batches to limit memory usage
+                batch_size = config.get('extraction_batch_size', 500)
+
+                for batch_start in range(0, len(remaining_urls), batch_size):
+                    batch_urls = remaining_urls[batch_start:batch_start + batch_size]
+                    futures = {
+                        executor.submit(
+                            _extract_single_store_worker,
+                            url,
+                            session_factory,
+                            config,
+                            retailer_name
+                        ): url
+                        for url in batch_urls
+                    }
+
+                    for future in as_completed(futures):
+                        url, store_data, error_reason = future.result()
+
+                        with processed_lock:
+                            processed_count[0] += 1
+                            current_count = processed_count[0]
+
+                            if store_data:
+                                stores.append(store_data)
+                                completed_urls.add(url)
+                                successful_count[0] += 1
+                            else:
+                                failed_urls.append(url)
+                                if error_reason:
+                                    failed_reasons[url] = error_reason
+
+                            # Progress logging every 25 stores
+                            if current_count % 25 == 0:
+                                success_rate = (successful_count[0] / current_count * 100) if current_count > 0 else 0
+                                logging.info(
+                                    f"[{retailer_name}] Progress: {current_count}/{total_to_process} "
+                                    f"({current_count/total_to_process*100:.1f}%) - "
+                                    f"{successful_count[0]} stores extracted ({success_rate:.1f}% success)"
+                                )
+
+                            # Checkpoint at intervals
+                            if current_count % checkpoint_interval == 0:
+                                elapsed = time.time() - start_time
+                                avg_time = elapsed / current_count if current_count > 0 else 0
+                                utils.save_checkpoint({
+                                    'completed_count': len(stores),
+                                    'completed_urls': list(completed_urls),
+                                    'failed_urls': failed_urls,
+                                    'failed_reasons': failed_reasons,
+                                    'stores': stores,
+                                    'extraction_stats': {
+                                        'success_rate': successful_count[0] / current_count if current_count > 0 else 0,
+                                        'avg_time_per_store': avg_time,
+                                        'total_requests': get_request_count()
+                                    },
+                                    'last_updated': datetime.now().isoformat(),
+                                    'scraper_version': '2.0'
+                                }, checkpoint_path)
+                                logging.debug(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores")
+        else:
+            # Sequential extraction (for direct mode or single store)
+            logging.info(f"[{retailer_name}] Using sequential extraction")
+            for i, store_url in enumerate(remaining_urls, 1):
+                store_obj = extract_store_details(session, store_url)
+                if store_obj:
+                    stores.append(store_obj.to_dict())
+                    completed_urls.add(store_url)
+                else:
+                    failed_urls.append(store_url)
+                    failed_reasons[store_url] = "Extraction returned None"
+
+                # Progress logging every 25 stores
+                if i % 25 == 0:
+                    success_rate = (len(stores) / i * 100) if i > 0 else 0
+                    logging.info(
+                        f"[{retailer_name}] Progress: {i}/{total_to_process} "
+                        f"({i/total_to_process*100:.1f}%) - "
+                        f"{len(stores)} stores extracted ({success_rate:.1f}% success)"
+                    )
+
+                # Checkpoint at intervals
+                if i % checkpoint_interval == 0:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / i if i > 0 else 0
+                    utils.save_checkpoint({
+                        'completed_count': len(stores),
+                        'completed_urls': list(completed_urls),
+                        'failed_urls': failed_urls,
+                        'failed_reasons': failed_reasons,
+                        'stores': stores,
+                        'extraction_stats': {
+                            'success_rate': len(stores) / i if i > 0 else 0,
+                            'avg_time_per_store': avg_time,
+                            'total_requests': get_request_count()
+                        },
+                        'last_updated': datetime.now().isoformat(),
+                        'scraper_version': '2.0'
+                    }, checkpoint_path)
+                    logging.debug(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores")
+
+        # Final checkpoint and statistics
+        elapsed = time.time() - start_time
+        avg_time = elapsed / total_to_process if total_to_process > 0 else 0
+        success_rate = (len(stores) / (len(stores) + len(failed_urls)) * 100) if (len(stores) + len(failed_urls)) > 0 else 0
+
         if stores:
             utils.save_checkpoint({
                 'completed_count': len(stores),
                 'completed_urls': list(completed_urls),
+                'failed_urls': failed_urls,
+                'failed_reasons': failed_reasons,
                 'stores': stores,
-                'last_updated': datetime.now().isoformat()
+                'extraction_stats': {
+                    'success_rate': success_rate / 100,
+                    'avg_time_per_store': avg_time,
+                    'total_requests': get_request_count()
+                },
+                'last_updated': datetime.now().isoformat(),
+                'scraper_version': '2.0'
             }, checkpoint_path)
-            logging.info(f"[{retailer_name}] Final checkpoint saved: {len(stores)} stores total")
-        
-        logging.info(f"[{retailer_name}] Completed: {len(stores)} stores successfully scraped")
-        
+            logging.info(f"[{retailer_name}] Final checkpoint saved: {len(stores)} stores")
+
+        # Save failed extractions for later analysis
+        if failed_urls:
+            _save_failed_extractions(retailer_name, failed_urls, failed_reasons)
+
+        logging.info(
+            f"[{retailer_name}] Completed: {len(stores)} stores scraped "
+            f"({success_rate:.1f}% success rate), "
+            f"{len(failed_urls)} failed, "
+            f"{elapsed:.1f}s total ({avg_time:.2f}s/store)"
+        )
+
         return {
             'stores': stores,
             'count': len(stores),
             'checkpoints_used': checkpoints_used
         }
-        
+
     except Exception as e:
         logging.error(f"[{retailer_name}] Fatal error: {e}", exc_info=True)
         raise
