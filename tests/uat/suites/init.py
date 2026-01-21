@@ -9,6 +9,8 @@ Test Cases:
 - INIT-003: Initial API data fetch works
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable, Any
 from datetime import datetime

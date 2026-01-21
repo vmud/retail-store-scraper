@@ -9,6 +9,8 @@ Test Cases:
 - PERF-003: UI Responsiveness
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

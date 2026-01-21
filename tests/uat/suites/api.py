@@ -10,6 +10,8 @@ Test Cases:
 - API-004: Control API Contracts
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

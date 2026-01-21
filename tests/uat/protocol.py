@@ -15,6 +15,8 @@ For use with Claude Code and MCP tools:
     MCP tools (browser_navigate, browser_click, browser_snapshot, etc.)
 """
 
+from __future__ import annotations
+
 import json
 import time
 from datetime import datetime

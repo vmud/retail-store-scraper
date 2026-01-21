@@ -9,6 +9,8 @@ Test Cases:
 - LOGS-003: Filter Logs by Level
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

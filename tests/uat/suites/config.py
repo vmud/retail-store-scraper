@@ -11,6 +11,8 @@ Test Cases:
 - CONFIG-005: Backup Created on Save
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

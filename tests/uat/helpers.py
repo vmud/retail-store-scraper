@@ -5,6 +5,8 @@ Shared utilities for browser automation and API interaction in UAT tests.
 These helpers abstract MCP Playwright tool usage for cleaner test code.
 """
 
+from __future__ import annotations
+
 import re
 import time
 import json

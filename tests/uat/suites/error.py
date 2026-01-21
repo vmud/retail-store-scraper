@@ -11,6 +11,8 @@ Test Cases:
 - ERROR-005: Malformed JSON Handling
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

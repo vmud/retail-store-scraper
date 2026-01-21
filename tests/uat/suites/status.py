@@ -10,6 +10,8 @@ Test Cases:
 - STATUS-004: Status badges update on state change
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

@@ -11,6 +11,8 @@ Test Cases:
 - UI-005: Responsive Layout
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

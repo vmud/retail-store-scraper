@@ -9,6 +9,8 @@ Test Cases:
 - PROXY-003: Start Scraper with Proxy Mode
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

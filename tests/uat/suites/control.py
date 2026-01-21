@@ -11,6 +11,8 @@ Test Cases:
 - CONTROL-005: Stop All Scrapers
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime

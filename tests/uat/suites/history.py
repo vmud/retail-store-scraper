@@ -8,6 +8,8 @@ Test Cases:
 - HISTORY-002: Toggle Run History Panel
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime
