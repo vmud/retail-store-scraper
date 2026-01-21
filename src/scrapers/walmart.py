@@ -437,9 +437,10 @@ def run(session, config: dict, **kwargs) -> dict:
         raise
     finally:
         # Clean up store extraction session
-        if store_session and hasattr(store_session, '_proxy_client'):
+        # Clean up store extraction session
+        if store_client and hasattr(store_client, 'close'):
             try:
-                store_session._proxy_client.close()
+                store_client.close()
                 logging.debug(f"[{retailer_name}] Closed web_scraper_api session")
             except Exception as e:
                 logging.warning(f"[{retailer_name}] Error closing store session: {e}")
