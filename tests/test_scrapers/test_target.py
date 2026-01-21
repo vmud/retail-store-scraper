@@ -319,10 +319,13 @@ class TestTargetRun:
         }
         return response
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_session):
+    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_save_cache, mock_load_cache, mock_session):
         """Test that run() returns the expected structure."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         mock_get.side_effect = [
             self._make_sitemap_response([1001]),
             self._make_api_response(1001)
@@ -338,10 +341,13 @@ class TestTargetRun:
         assert isinstance(result['count'], int)
         assert isinstance(result['checkpoints_used'], bool)
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_run_with_limit(self, mock_counter, mock_get, mock_session):
+    def test_run_with_limit(self, mock_counter, mock_get, mock_save_cache, mock_load_cache, mock_session):
         """Test run() respects limit parameter."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         mock_get.side_effect = [
             self._make_sitemap_response([1001, 1002, 1003, 1004, 1005]),
             self._make_api_response(1001),
@@ -353,10 +359,13 @@ class TestTargetRun:
         assert result['count'] == 2
         assert len(result['stores']) == 2
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_session):
+    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_save_cache, mock_load_cache, mock_session):
         """Test run() with empty sitemap returns empty stores."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
@@ -368,10 +377,13 @@ class TestTargetRun:
         assert result['count'] == 0
         assert result['checkpoints_used'] is False
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_session):
+    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_save_cache, mock_load_cache, mock_session):
         """Test that count matches the actual number of stores."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         mock_get.side_effect = [
             self._make_sitemap_response([1001, 1002, 1003]),
             self._make_api_response(1001),
@@ -387,12 +399,15 @@ class TestTargetRun:
 class TestTargetCheckpoint:
     """Tests for Target checkpoint/resume functionality."""
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.load_checkpoint')
     @patch('src.scrapers.target.utils.save_checkpoint')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_session):
+    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_save_cache, mock_load_cache, mock_session):
         """Test that resume=True loads existing checkpoint."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         mock_load.return_value = {
             'stores': [{'store_id': '1001', 'name': 'Existing Store'}],
             'completed_ids': [1001]
@@ -410,12 +425,15 @@ class TestTargetCheckpoint:
         mock_load.assert_called_once()
         assert result['checkpoints_used'] is True
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.load_checkpoint')
     @patch('src.scrapers.target.utils.save_checkpoint')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_resume_skips_completed_stores(self, mock_counter, mock_get, mock_save, mock_load, mock_session):
+    def test_resume_skips_completed_stores(self, mock_counter, mock_get, mock_save, mock_load, mock_save_cache, mock_load_cache, mock_session):
         """Test that resumed run skips already completed stores."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         mock_load.return_value = {
             'stores': [{'store_id': '1001', 'name': 'Store 1'}],
             'completed_ids': [1001]
@@ -443,11 +461,14 @@ class TestTargetCheckpoint:
         # Should have 2 stores total (1 from checkpoint + 1 new)
         assert result['count'] == 2
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.load_checkpoint')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_session):
+    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_save_cache, mock_load_cache, mock_session):
         """Test that resume=False does not load checkpoint."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
@@ -526,10 +547,13 @@ class TestTargetErrorHandling:
 
         assert stores == []
 
+    @patch('src.scrapers.target._load_cached_urls')
+    @patch('src.scrapers.target._save_cached_urls')
     @patch('src.scrapers.target.utils.get_with_retry')
     @patch('src.scrapers.target._request_counter')
-    def test_api_error_skips_store(self, mock_counter, mock_get, mock_session):
+    def test_api_error_skips_store(self, mock_counter, mock_get, mock_save_cache, mock_load_cache, mock_session):
         """Test that API error for one store doesn't fail entire run."""
+        mock_load_cache.return_value = None  # No cache, force sitemap fetch
         xml = '''<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
             <url><loc>https://www.target.com/sl/store/1001</loc></url>
             <url><loc>https://www.target.com/sl/store/1002</loc></url>
