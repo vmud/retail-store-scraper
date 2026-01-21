@@ -296,8 +296,16 @@ function startLivePolling(retailer, runId) {
       
       // Reset error count on successful fetch
       pollErrors = 0;
-      currentPollInterval = LIVE_POLL_INTERVAL;
-      
+
+      // Restore base polling interval if we were in backoff mode
+      if (currentPollInterval !== LIVE_POLL_INTERVAL) {
+        currentPollInterval = LIVE_POLL_INTERVAL;
+        if (liveLogInterval) {
+          clearInterval(liveLogInterval);
+          liveLogInterval = setInterval(pollFunction, LIVE_POLL_INTERVAL);
+        }
+      }
+
     } catch (error) {
       console.error('Error fetching live logs:', error);
 
