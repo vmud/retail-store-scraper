@@ -375,6 +375,16 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
                 if json_match:
                     json_str = json_match.group(1)
                     state_data = json.loads(json_str)
+
+                    # Validate that returned data matches expected state (prevents race condition)
+                    json_state_name = state_data.get('state', {}).get('name', '')
+                    if json_state_name and json_state_name.lower() != state_name.lower():
+                        logging.warning(
+                            f"[{retailer}] State mismatch for {state_name}: "
+                            f"page returned '{json_state_name}' data. Skipping."
+                        )
+                        continue
+
                     if 'cities' in state_data:
                         for city_data in state_data['cities']:
                             city_name = city_data.get('name', '')
