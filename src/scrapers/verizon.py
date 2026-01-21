@@ -752,6 +752,109 @@ def get_request_count() -> int:
 
 
 # =============================================================================
+# PARALLEL DISCOVERY - Speed up city and store URL discovery (Phases 2-3)
+# =============================================================================
+
+
+def _create_session_factory(retailer_config: dict):
+    """Create a factory function that produces per-worker sessions.
+
+    requests.Session is NOT thread-safe, so each worker thread needs its own
+    session instance. This factory creates new sessions with the same proxy
+    configuration as the original.
+
+    Args:
+        retailer_config: Retailer configuration dict with proxy settings
+
+    Returns:
+        Callable that creates new session instances
+    """
+    def factory():
+        return utils.create_proxied_session(retailer_config)
+    return factory
+
+
+def _fetch_cities_for_state_worker(
+    state: Dict[str, str],
+    session_factory,
+    yaml_config: dict,
+    retailer_name: str
+) -> Tuple[str, List[Dict[str, str]]]:
+    """Worker function for parallel city discovery.
+
+    Fetches all cities for a single state. Each worker creates its own
+    session instance for thread safety.
+
+    Args:
+        state: Dict with 'name' and 'url' keys
+        session_factory: Callable that creates session instances
+        yaml_config: Retailer configuration
+        retailer_name: Name of retailer for logging
+
+    Returns:
+        Tuple of (state_name, list_of_cities)
+    """
+    session = session_factory()
+    try:
+        cities = get_cities_for_state(
+            session,
+            state['url'],
+            state['name'],
+            yaml_config,
+            retailer_name
+        )
+        return (state['name'], cities)
+    except Exception as e:
+        logging.warning(f"[{retailer_name}] Error fetching cities for {state['name']}: {e}")
+        return (state['name'], [])
+    finally:
+        # Clean up session resources
+        if hasattr(session, 'close'):
+            session.close()
+
+
+def _fetch_stores_for_city_worker(
+    city: Dict[str, str],
+    session_factory,
+    yaml_config: dict,
+    retailer_name: str
+) -> Tuple[str, str, List[str]]:
+    """Worker function for parallel store URL discovery.
+
+    Fetches all store URLs for a single city. Each worker creates its own
+    session instance for thread safety.
+
+    Args:
+        city: Dict with 'city', 'state', and 'url' keys
+        session_factory: Callable that creates session instances
+        yaml_config: Retailer configuration
+        retailer_name: Name of retailer for logging
+
+    Returns:
+        Tuple of (city_name, state_name, list_of_store_urls)
+    """
+    session = session_factory()
+    try:
+        store_infos = get_stores_for_city(
+            session,
+            city['url'],
+            city['city'],
+            city['state'],
+            yaml_config,
+            retailer_name
+        )
+        store_urls = [s['url'] for s in store_infos]
+        return (city['city'], city['state'], store_urls)
+    except Exception as e:
+        logging.warning(f"[{retailer_name}] Error fetching stores for {city['city']}, {city['state']}: {e}")
+        return (city['city'], city['state'], [])
+    finally:
+        # Clean up session resources
+        if hasattr(session, 'close'):
+            session.close()
+
+
+# =============================================================================
 # URL CACHING - Skip discovery phases on subsequent runs
 # =============================================================================
 
@@ -897,7 +1000,13 @@ def run(session, config: dict, **kwargs) -> dict:
         # Get parallel workers count (default: 5 for residential proxy, 1 for direct)
         default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
         parallel_workers = config.get('parallel_workers', default_workers)
-        logging.info(f"[{retailer_name}] Parallel workers: {parallel_workers}")
+
+        # Get discovery workers (separate from extraction workers for Phases 2-3)
+        # Default: 10 for proxy modes, 1 for direct mode
+        default_discovery_workers = 10 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        discovery_workers = config.get('discovery_workers', default_discovery_workers)
+
+        logging.info(f"[{retailer_name}] Discovery workers: {discovery_workers}, Extraction workers: {parallel_workers}")
         
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
         # Increase checkpoint interval when using parallel workers (less frequent saves)
@@ -927,14 +1036,87 @@ def run(session, config: dict, **kwargs) -> dict:
             all_states = get_all_states(session, config, retailer_name)
             logging.info(f"[{retailer_name}] Found {len(all_states)} states")
             
-            logging.info(f"[{retailer_name}] Phase 2-3: Discovering cities and stores")
+            # Create session factory for parallel workers (each worker needs its own session)
+            session_factory = _create_session_factory(config)
+
+            # Phase 2: Parallel city discovery
+            all_cities = []
+            if discovery_workers > 1 and len(all_states) > 1:
+                logging.info(f"[{retailer_name}] Phase 2: Discovering cities (parallel, {discovery_workers} workers)")
+                states_completed = [0]
+                states_lock = threading.Lock()
+
+                with ThreadPoolExecutor(max_workers=discovery_workers) as executor:
+                    futures = {
+                        executor.submit(
+                            _fetch_cities_for_state_worker,
+                            state,
+                            session_factory,
+                            config,
+                            retailer_name
+                        ): state
+                        for state in all_states
+                    }
+
+                    for future in as_completed(futures):
+                        state_name, cities = future.result()
+                        all_cities.extend(cities)
+
+                        with states_lock:
+                            states_completed[0] += 1
+                            if states_completed[0] % 10 == 0 or states_completed[0] == len(all_states):
+                                logging.info(
+                                    f"[{retailer_name}] Phase 2 progress: "
+                                    f"{states_completed[0]}/{len(all_states)} states, "
+                                    f"{len(all_cities)} cities found"
+                                )
+            else:
+                # Sequential fallback for direct mode or single state
+                logging.info(f"[{retailer_name}] Phase 2: Discovering cities (sequential)")
+                for state in all_states:
+                    cities = get_cities_for_state(session, state['url'], state['name'], config, retailer_name)
+                    all_cities.extend(cities)
+
+            logging.info(f"[{retailer_name}] Found {len(all_cities)} cities total")
+
+            # Phase 3: Parallel store URL discovery
             all_store_urls = []
-            for state in all_states:
-                cities = get_cities_for_state(session, state['url'], state['name'], config, retailer_name)
-                for city in cities:
+            if discovery_workers > 1 and len(all_cities) > 1:
+                logging.info(f"[{retailer_name}] Phase 3: Discovering store URLs (parallel, {discovery_workers} workers)")
+                cities_completed = [0]
+                cities_lock = threading.Lock()
+
+                with ThreadPoolExecutor(max_workers=discovery_workers) as executor:
+                    futures = {
+                        executor.submit(
+                            _fetch_stores_for_city_worker,
+                            city,
+                            session_factory,
+                            config,
+                            retailer_name
+                        ): city
+                        for city in all_cities
+                    }
+
+                    for future in as_completed(futures):
+                        city_name, state_name, store_urls = future.result()
+                        all_store_urls.extend(store_urls)
+
+                        with cities_lock:
+                            cities_completed[0] += 1
+                            if cities_completed[0] % 100 == 0 or cities_completed[0] == len(all_cities):
+                                logging.info(
+                                    f"[{retailer_name}] Phase 3 progress: "
+                                    f"{cities_completed[0]}/{len(all_cities)} cities, "
+                                    f"{len(all_store_urls)} store URLs found"
+                                )
+            else:
+                # Sequential fallback for direct mode or few cities
+                logging.info(f"[{retailer_name}] Phase 3: Discovering store URLs (sequential)")
+                for city in all_cities:
                     store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], config, retailer_name)
                     all_store_urls.extend([s['url'] for s in store_infos])
-            
+
             logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
             
             # Cache the discovered URLs for future runs
