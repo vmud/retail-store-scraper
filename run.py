@@ -730,7 +730,7 @@ def main():
         # Get refresh_urls flag (convert hyphen to underscore for attribute access)
         refresh_urls = getattr(args, 'refresh_urls', False)
         # Parse states list if provided
-        target_states = [s.strip().upper() for s in args.states.split(',')] if args.states else None
+        target_states = [s.strip().upper() for s in args.states.split(',') if s.strip()] if args.states else None
 
         if len(retailers) == 1:
             # Single retailer - run directly
