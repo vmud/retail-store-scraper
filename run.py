@@ -172,6 +172,14 @@ def setup_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Force URL re-discovery (ignore cached store URLs, mainly for Verizon)'
     )
+    parser.add_argument(
+        '--states',
+        type=str,
+        default=None,
+        help='Comma-separated list of state abbreviations to scrape (Verizon only). '
+             'Example: --states MD,PA,RI. Runs targeted discovery for specified states '
+             'and merges results with existing data.'
+    )
 
     # Testing options
     parser.add_argument(
@@ -703,6 +711,8 @@ def main():
         logging.info("Incremental mode enabled")
     if getattr(args, 'refresh_urls', False):
         logging.info("Refresh URLs mode enabled (will re-discover all store URLs)")
+    if args.states:
+        logging.info(f"Targeted states mode: {args.states}")
 
     # Get CLI proxy override and settings (#52)
     cli_proxy_override = args.proxy if args.proxy else None
@@ -719,7 +729,9 @@ def main():
     try:
         # Get refresh_urls flag (convert hyphen to underscore for attribute access)
         refresh_urls = getattr(args, 'refresh_urls', False)
-        
+        # Parse states list if provided
+        target_states = [s.strip().upper() for s in args.states.split(',')] if args.states else None
+
         if len(retailers) == 1:
             # Single retailer - run directly
             result = asyncio.run(run_retailer_async(
@@ -730,7 +742,8 @@ def main():
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit,
-                refresh_urls=refresh_urls
+                refresh_urls=refresh_urls,
+                target_states=target_states
             ))
             print(f"\nResult for {retailers[0]}: {result['status']}")
             if result.get('formats'):
@@ -745,7 +758,8 @@ def main():
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit,
-                refresh_urls=refresh_urls
+                refresh_urls=refresh_urls,
+                target_states=target_states
             ))
 
             print("\n" + "=" * 40)

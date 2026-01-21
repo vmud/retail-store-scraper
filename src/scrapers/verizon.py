@@ -100,6 +100,23 @@ STATE_URL_PATTERNS: Dict[str, str] = {
     s.slug: s.url_pattern for s in _STATES.values() if s.url_pattern
 }
 
+# State abbreviation to slug mapping for --states CLI flag
+STATE_ABBREV_TO_SLUG: Dict[str, str] = {
+    'AL': 'alabama', 'AK': 'alaska', 'AZ': 'arizona', 'AR': 'arkansas',
+    'CA': 'california', 'CO': 'colorado', 'CT': 'connecticut', 'DE': 'delaware',
+    'DC': 'washington-dc', 'FL': 'florida', 'GA': 'georgia', 'HI': 'hawaii',
+    'ID': 'idaho', 'IL': 'illinois', 'IN': 'indiana', 'IA': 'iowa',
+    'KS': 'kansas', 'KY': 'kentucky', 'LA': 'louisiana', 'ME': 'maine',
+    'MD': 'maryland', 'MA': 'massachusetts', 'MI': 'michigan', 'MN': 'minnesota',
+    'MS': 'mississippi', 'MO': 'missouri', 'MT': 'montana', 'NE': 'nebraska',
+    'NV': 'nevada', 'NH': 'new-hampshire', 'NJ': 'new-jersey', 'NM': 'new-mexico',
+    'NY': 'new-york', 'NC': 'north-carolina', 'ND': 'north-dakota', 'OH': 'ohio',
+    'OK': 'oklahoma', 'OR': 'oregon', 'PA': 'pennsylvania', 'RI': 'rhode-island',
+    'SC': 'south-carolina', 'SD': 'south-dakota', 'TN': 'tennessee', 'TX': 'texas',
+    'UT': 'utah', 'VT': 'vermont', 'VA': 'virginia', 'WA': 'washington',
+    'WV': 'west-virginia', 'WI': 'wisconsin', 'WY': 'wyoming'
+}
+
 
 def get_state_url(slug: str) -> str:
     """Get URL path for a state.
@@ -966,7 +983,7 @@ def _extract_single_store(
 
 def run(session, config: dict, **kwargs) -> dict:
     """Standard scraper entry point with parallel extraction and URL caching.
-    
+
     Args:
         session: Configured session (requests.Session or ProxyClient)
         config: Retailer configuration dict from retailers.yaml
@@ -975,7 +992,8 @@ def run(session, config: dict, **kwargs) -> dict:
             - limit: int - Max stores to process
             - incremental: bool - Only process changes
             - refresh_urls: bool - Force URL re-discovery (ignore cache)
-    
+            - target_states: List[str] - State abbreviations to scrape (e.g., ['MD', 'PA', 'RI'])
+
     Returns:
         dict with keys:
             - stores: List[dict] - Scraped store data
@@ -984,11 +1002,42 @@ def run(session, config: dict, **kwargs) -> dict:
     """
     retailer_name = kwargs.get('retailer', 'verizon')
     logging.info(f"[{retailer_name}] Starting scrape run")
-    
+
     try:
         limit = kwargs.get('limit')
         resume = kwargs.get('resume', False)
         refresh_urls = kwargs.get('refresh_urls', False)
+        target_states = kwargs.get('target_states')  # List of state abbreviations like ['MD', 'PA']
+
+        # Targeted states mode: load existing stores for merge
+        existing_stores = []
+        existing_urls = set()
+        if target_states:
+            # Convert abbreviations to slugs and validate
+            target_slugs = []
+            for abbrev in target_states:
+                slug = STATE_ABBREV_TO_SLUG.get(abbrev.upper())
+                if slug:
+                    target_slugs.append(slug)
+                else:
+                    logging.warning(f"[{retailer_name}] Unknown state abbreviation: {abbrev}")
+
+            if not target_slugs:
+                logging.error(f"[{retailer_name}] No valid state abbreviations provided")
+                return {'stores': [], 'count': 0, 'checkpoints_used': False}
+
+            logging.info(f"[{retailer_name}] Targeted states mode: {target_states} -> {target_slugs}")
+
+            # Load existing stores for merge
+            output_path = Path(f"data/{retailer_name}/output/stores_latest.json")
+            if output_path.exists():
+                with open(output_path, 'r') as f:
+                    existing_stores = json.load(f)
+                existing_urls = {s.get('url') for s in existing_stores if s.get('url')}
+                logging.info(f"[{retailer_name}] Loaded {len(existing_stores)} existing stores for merge")
+
+            # Store target slugs for later filtering
+            kwargs['_target_slugs'] = target_slugs
         
         reset_request_counter()
         
@@ -1026,15 +1075,23 @@ def run(session, config: dict, **kwargs) -> dict:
                 checkpoints_used = True
         
         # Try to load cached URLs (skip discovery phases if cache is valid)
+        # Note: Skip cache when targeting specific states
+        target_slugs = kwargs.get('_target_slugs')
         all_store_urls = None
-        if not refresh_urls:
+        if not refresh_urls and not target_slugs:
             all_store_urls = _load_cached_urls(retailer_name)
-        
+
         if all_store_urls is None:
             # Cache miss or refresh requested - run full discovery
             logging.info(f"[{retailer_name}] Phase 1: Discovering states")
             all_states = get_all_states(session, config, retailer_name)
-            logging.info(f"[{retailer_name}] Found {len(all_states)} states")
+
+            # Filter to target states if specified
+            if target_slugs:
+                all_states = [s for s in all_states if s['url'].rstrip('/').split('/')[-1] in target_slugs]
+                logging.info(f"[{retailer_name}] Filtered to {len(all_states)} target states: {[s['name'] for s in all_states]}")
+            else:
+                logging.info(f"[{retailer_name}] Found {len(all_states)} states")
             
             # Create session factory for parallel workers (each worker needs its own session)
             session_factory = _create_session_factory(config)
@@ -1210,9 +1267,34 @@ def run(session, config: dict, **kwargs) -> dict:
                 'last_updated': datetime.now().isoformat()
             }, checkpoint_path)
             logging.info(f"[{retailer_name}] Final checkpoint saved: {len(stores)} stores total")
-        
+
         logging.info(f"[{retailer_name}] Completed: {len(stores)} stores successfully scraped")
-        
+
+        # Merge with existing stores if in targeted states mode
+        if target_states and existing_stores:
+            # Remove stores from target states from existing data (will be replaced)
+            target_state_abbrevs = {a.upper() for a in target_states}
+            filtered_existing = [
+                s for s in existing_stores
+                if s.get('state', '').upper() not in target_state_abbrevs
+            ]
+            # Add newly scraped stores
+            merged_stores = filtered_existing + stores
+            # Deduplicate by URL
+            seen_urls = set()
+            unique_stores = []
+            for s in merged_stores:
+                url = s.get('url')
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    unique_stores.append(s)
+
+            logging.info(
+                f"[{retailer_name}] Merged {len(stores)} new stores with "
+                f"{len(filtered_existing)} existing stores = {len(unique_stores)} total"
+            )
+            stores = unique_stores
+
         return {
             'stores': stores,
             'count': len(stores),
