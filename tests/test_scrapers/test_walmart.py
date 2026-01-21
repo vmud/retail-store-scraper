@@ -14,6 +14,10 @@ from src.scrapers.walmart import (
     get_request_count,
     reset_request_counter,
     _check_pause_logic,
+    _load_cached_urls,
+    _save_cached_urls,
+    _get_cached_response,
+    _cache_response,
 )
 
 
@@ -273,10 +277,15 @@ class TestWalmartRun:
         response.text = html
         return response
 
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
     @patch('src.scrapers.walmart.walmart_config')
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_config,
+                                           mock_load_urls, mock_save_urls, mock_get_resp, mock_cache_resp, mock_session):
         """Test that run() returns the expected structure."""
         mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
         mock_get.side_effect = [
@@ -294,10 +303,15 @@ class TestWalmartRun:
         assert isinstance(result['count'], int)
         assert isinstance(result['checkpoints_used'], bool)
 
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
     @patch('src.scrapers.walmart.walmart_config')
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_run_with_limit(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_with_limit(self, mock_counter, mock_get, mock_config,
+                            mock_load_urls, mock_save_urls, mock_get_resp, mock_cache_resp, mock_session):
         """Test run() respects limit parameter."""
         mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
         mock_get.side_effect = [
@@ -311,10 +325,13 @@ class TestWalmartRun:
         assert result['count'] == 2
         assert len(result['stores']) == 2
 
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
     @patch('src.scrapers.walmart.walmart_config')
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_config,
+                               mock_load_urls, mock_save_urls, mock_session):
         """Test run() with empty sitemap returns empty stores."""
         mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
@@ -328,10 +345,15 @@ class TestWalmartRun:
         assert result['count'] == 0
         assert result['checkpoints_used'] is False
 
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
     @patch('src.scrapers.walmart.walmart_config')
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_config, mock_session):
+    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_config,
+                                              mock_load_urls, mock_save_urls, mock_get_resp, mock_cache_resp, mock_session):
         """Test that count matches the actual number of stores."""
         mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
         mock_get.side_effect = [
@@ -349,12 +371,15 @@ class TestWalmartRun:
 class TestWalmartCheckpoint:
     """Tests for Walmart checkpoint/resume functionality."""
 
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
     @patch('src.scrapers.walmart.walmart_config')
     @patch('src.scrapers.walmart.utils.load_checkpoint')
     @patch('src.scrapers.walmart.utils.save_checkpoint')
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_config, mock_session):
+    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_config,
+                                     mock_load_urls, mock_save_urls, mock_session):
         """Test that resume=True loads existing checkpoint."""
         mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
         mock_load.return_value = {
@@ -374,11 +399,14 @@ class TestWalmartCheckpoint:
         mock_load.assert_called_once()
         assert result['checkpoints_used'] is True
 
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
     @patch('src.scrapers.walmart.walmart_config')
     @patch('src.scrapers.walmart.utils.load_checkpoint')
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_config, mock_session):
+    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_config,
+                                    mock_load_urls, mock_save_urls, mock_session):
         """Test that resume=False does not load checkpoint."""
         mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
@@ -445,9 +473,11 @@ class TestWalmartRateLimiting:
 class TestWalmartErrorHandling:
     """Tests for Walmart error handling."""
 
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_store_fetch_failure_returns_none(self, mock_counter, mock_get, mock_session):
+    def test_store_fetch_failure_returns_none(self, mock_counter, mock_get, mock_get_resp, mock_cache_resp, mock_session):
         """Test that store page fetch failure returns None."""
         mock_get.return_value = None
 
@@ -455,9 +485,11 @@ class TestWalmartErrorHandling:
 
         assert store is None
 
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_missing_next_data_returns_none(self, mock_counter, mock_get, mock_session):
+    def test_missing_next_data_returns_none(self, mock_counter, mock_get, mock_get_resp, mock_cache_resp, mock_session):
         """Test that missing __NEXT_DATA__ returns None."""
         html = '<html><body>No NEXT_DATA here</body></html>'
         response = Mock()
@@ -468,9 +500,11 @@ class TestWalmartErrorHandling:
 
         assert store is None
 
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_missing_store_in_props_returns_none(self, mock_counter, mock_get, mock_session):
+    def test_missing_store_in_props_returns_none(self, mock_counter, mock_get, mock_get_resp, mock_cache_resp, mock_session):
         """Test that missing store in props returns None."""
         next_data = {"props": {"pageProps": {}}}
         html = f'''<html><head>
@@ -484,9 +518,11 @@ class TestWalmartErrorHandling:
 
         assert store is None
 
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
     @patch('src.scrapers.walmart.utils.get_with_retry')
     @patch('src.scrapers.walmart._request_counter')
-    def test_invalid_json_returns_none(self, mock_counter, mock_get, mock_session):
+    def test_invalid_json_returns_none(self, mock_counter, mock_get, mock_get_resp, mock_cache_resp, mock_session):
         """Test that invalid JSON in __NEXT_DATA__ returns None."""
         html = '''<html><head>
 <script id="__NEXT_DATA__" type="application/json">{invalid json}</script>
@@ -498,3 +534,150 @@ class TestWalmartErrorHandling:
         store = extract_store_details(mock_session, 'https://www.walmart.com/store/1234-test-tx')
 
         assert store is None
+
+
+class TestWalmartUrlCaching:
+    """Tests for URL caching functionality."""
+
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls')
+    @patch('src.scrapers.walmart.walmart_config')
+    @patch('src.scrapers.walmart.utils.get_with_retry')
+    @patch('src.scrapers.walmart._request_counter')
+    def test_uses_cached_urls_when_available(self, mock_counter, mock_get, mock_config,
+                                             mock_load_urls, mock_save_urls, mock_session):
+        """Test that run() uses cached URLs when available."""
+        mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
+        mock_load_urls.return_value = ['https://www.walmart.com/store/1234-test-tx']
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='walmart')
+
+        mock_load_urls.assert_called_once_with('walmart')
+        # Should not save URLs again since we used cache
+        mock_save_urls.assert_not_called()
+        # Should not fetch sitemap
+        mock_get.assert_not_called()
+
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
+    @patch('src.scrapers.walmart.walmart_config')
+    @patch('src.scrapers.walmart.utils.get_with_retry')
+    @patch('src.scrapers.walmart._request_counter')
+    def test_fetches_sitemap_when_cache_miss(self, mock_counter, mock_get, mock_config,
+                                              mock_load_urls, mock_save_urls, mock_session):
+        """Test that run() fetches sitemap when cache misses."""
+        mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
+        xml = '''<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://www.walmart.com/store/1234-test-tx</loc></url>
+        </urlset>'''
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        mock_get.return_value = response
+
+        run(mock_session, {'checkpoint_interval': 100}, retailer='walmart')
+
+        mock_load_urls.assert_called_once_with('walmart')
+        mock_save_urls.assert_called_once()
+        mock_get.assert_called()
+
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=['https://cached.url'])
+    @patch('src.scrapers.walmart.walmart_config')
+    @patch('src.scrapers.walmart.utils.get_with_retry')
+    @patch('src.scrapers.walmart._request_counter')
+    def test_refresh_urls_ignores_cache(self, mock_counter, mock_get, mock_config,
+                                        mock_load_urls, mock_save_urls, mock_session):
+        """Test that refresh_urls=True ignores cached URLs."""
+        mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
+        xml = '''<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://www.walmart.com/store/fresh-url</loc></url>
+        </urlset>'''
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        mock_get.return_value = response
+
+        run(mock_session, {'checkpoint_interval': 100}, retailer='walmart', refresh_urls=True)
+
+        # Should not even try to load cache
+        mock_load_urls.assert_not_called()
+        # Should save fresh URLs
+        mock_save_urls.assert_called_once()
+
+
+class TestWalmartResponseCaching:
+    """Tests for response caching functionality."""
+
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response')
+    @patch('src.scrapers.walmart.utils.get_with_retry')
+    @patch('src.scrapers.walmart._request_counter')
+    def test_uses_cached_response_when_available(self, mock_counter, mock_get, mock_get_resp, mock_cache_resp, mock_session):
+        """Test that extract_store_details uses cached response."""
+        cached_html = '''<html><head>
+<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"initialData":{"initialDataNodeDetail":{"data":{"nodeDetail":{"id":"cached123","name":"Walmart Supercenter","displayName":"Cached Store","address":{"addressLineOne":"123 Cache St","city":"Cache City","state":"TX","postalCode":"75001","country":"US"},"geoPoint":{"latitude":32.5,"longitude":-96.5},"capabilities":[],"isGlassEligible":false}}}}}}}</script>
+</head></html>'''
+        mock_get_resp.return_value = cached_html
+
+        store = extract_store_details(mock_session, 'https://www.walmart.com/store/123-cached-tx')
+
+        mock_get_resp.assert_called_once()
+        mock_get.assert_not_called()  # Should not fetch from network
+        mock_cache_resp.assert_not_called()  # Should not re-cache
+
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
+    @patch('src.scrapers.walmart.utils.get_with_retry')
+    @patch('src.scrapers.walmart._request_counter')
+    def test_caches_response_on_fetch(self, mock_counter, mock_get, mock_get_resp, mock_cache_resp):
+        """Test that extract_store_details caches fetched response."""
+        html = '''<html><head>
+<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"initialData":{"initialDataNodeDetail":{"data":{"nodeDetail":{"id":"fresh456","name":"Walmart Supercenter","displayName":"Fresh Store","address":{"addressLineOne":"456 Fresh St","city":"Fresh City","state":"TX","postalCode":"75002","country":"US"},"geoPoint":{"latitude":33.5,"longitude":-97.5},"capabilities":[],"isGlassEligible":true}}}}}}}</script>
+</head></html>'''
+        response = Mock()
+        response.text = html
+        mock_get.return_value = response
+
+        # Create session without .get() method so it uses utils.get_with_retry path
+        mock_session = Mock(spec=['headers', 'cookies', 'auth'])
+
+        store = extract_store_details(mock_session, 'https://www.walmart.com/store/456-fresh-tx')
+
+        mock_get.assert_called_once()  # Should fetch from network
+        mock_cache_resp.assert_called_once()  # Should cache the response
+
+
+class TestWalmartFailedUrlTracking:
+    """Tests for failed URL tracking functionality."""
+
+    @patch('src.scrapers.walmart.Path.mkdir')
+    @patch('builtins.open', create=True)
+    @patch('src.scrapers.walmart._cache_response')
+    @patch('src.scrapers.walmart._get_cached_response', return_value=None)
+    @patch('src.scrapers.walmart._save_cached_urls')
+    @patch('src.scrapers.walmart._load_cached_urls', return_value=None)
+    @patch('src.scrapers.walmart.walmart_config')
+    @patch('src.scrapers.walmart.utils.get_with_retry')
+    @patch('src.scrapers.walmart._request_counter')
+    def test_tracks_failed_urls(self, mock_counter, mock_get, mock_config,
+                                mock_load_urls, mock_save_urls, mock_get_resp, mock_cache_resp,
+                                mock_open, mock_mkdir, mock_session):
+        """Test that run() tracks failed URL extractions."""
+        mock_config.SITEMAP_URLS = ['https://test.com/sitemap.xml']
+        xml = '''<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://www.walmart.com/store/fail-tx</loc></url>
+        </urlset>'''
+        sitemap_response = Mock()
+        sitemap_response.content = xml.encode('utf-8')
+
+        # Store page returns None (failure)
+        mock_get.side_effect = [sitemap_response, None]
+
+        import io
+        mock_file = io.StringIO()
+        mock_open.return_value.__enter__ = Mock(return_value=mock_file)
+        mock_open.return_value.__exit__ = Mock(return_value=False)
+
+        result = run(mock_session, {'checkpoint_interval': 100}, retailer='walmart')
+
+        assert result['count'] == 0  # No stores extracted
+        # Failed URLs should have been logged
