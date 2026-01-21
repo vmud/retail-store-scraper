@@ -198,6 +198,7 @@ def main():
 
     # Save discovered URLs
     urls_file = Path('data/verizon/missing_state_urls.txt')
+    urls_file.parent.mkdir(parents=True, exist_ok=True)
     with open(urls_file, 'w') as f:
         for url in all_store_urls:
             f.write(url + '\n')
