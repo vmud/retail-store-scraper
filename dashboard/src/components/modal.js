@@ -300,6 +300,16 @@ function startLivePolling(retailer, runId) {
       
     } catch (error) {
       console.error('Error fetching live logs:', error);
+
+      // Re-check state after async request completes
+      const currentState = store.getState();
+      if (!currentState.ui.logModalOpen ||
+          currentState.ui.currentLogRetailer !== retailer ||
+          currentState.ui.currentLogRunId !== runId) {
+        // Stale request - modal closed or different log now displayed
+        stopLivePolling();
+        return;
+      }
       
       // Handle rate limiting (429) - stop polling temporarily
       if (error.status === 429) {
