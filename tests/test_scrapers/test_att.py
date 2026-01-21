@@ -2,7 +2,10 @@
 
 import json
 import pytest
-from unittest.mock import Mock, patch
+import tempfile
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock
 
 from src.scrapers.att import (
     ATTStore,
@@ -13,6 +16,12 @@ from src.scrapers.att import (
     get_request_count,
     reset_request_counter,
     _check_pause_logic,
+    _create_session_factory,
+    _extract_single_store,
+    _get_url_cache_path,
+    _load_cached_urls,
+    _save_cached_urls,
+    URL_CACHE_EXPIRY_DAYS,
 )
 
 
@@ -255,10 +264,13 @@ let topDisplayType = "{display_type}";
         response.content = html.encode('utf-8')
         return response
 
+    @patch('src.scrapers.att._save_cached_urls')
+    @patch('src.scrapers.att._load_cached_urls')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
-    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_session):
+    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_load_cache, mock_save_cache, mock_session):
         """Test that run() returns the expected structure."""
+        mock_load_cache.return_value = None
         mock_get.side_effect = [
             self._make_sitemap_response([12345]),
             self._make_store_page_response(12345)
@@ -274,10 +286,13 @@ let topDisplayType = "{display_type}";
         assert isinstance(result['count'], int)
         assert isinstance(result['checkpoints_used'], bool)
 
+    @patch('src.scrapers.att._save_cached_urls')
+    @patch('src.scrapers.att._load_cached_urls')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
-    def test_run_with_limit(self, mock_counter, mock_get, mock_session):
+    def test_run_with_limit(self, mock_counter, mock_get, mock_load_cache, mock_save_cache, mock_session):
         """Test run() respects limit parameter."""
+        mock_load_cache.return_value = None
         mock_get.side_effect = [
             self._make_sitemap_response([12345, 12346, 12347, 12348, 12349]),
             self._make_store_page_response(12345),
@@ -289,10 +304,12 @@ let topDisplayType = "{display_type}";
         assert result['count'] == 2
         assert len(result['stores']) == 2
 
+    @patch('src.scrapers.att._load_cached_urls')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
-    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_session):
+    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_load_cache, mock_session):
         """Test run() with empty sitemap returns empty stores."""
+        mock_load_cache.return_value = None
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
@@ -304,10 +321,13 @@ let topDisplayType = "{display_type}";
         assert result['count'] == 0
         assert result['checkpoints_used'] is False
 
+    @patch('src.scrapers.att._save_cached_urls')
+    @patch('src.scrapers.att._load_cached_urls')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
-    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_session):
+    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_load_cache, mock_save_cache, mock_session):
         """Test that count matches the actual number of stores."""
+        mock_load_cache.return_value = None
         mock_get.side_effect = [
             self._make_sitemap_response([12345, 12346, 12347]),
             self._make_store_page_response(12345),
@@ -323,12 +343,14 @@ let topDisplayType = "{display_type}";
 class TestATTCheckpoint:
     """Tests for AT&T checkpoint/resume functionality."""
 
+    @patch('src.scrapers.att._load_cached_urls')
     @patch('src.scrapers.att.utils.load_checkpoint')
     @patch('src.scrapers.att.utils.save_checkpoint')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
-    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_session):
+    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_load_cache, mock_session):
         """Test that resume=True loads existing checkpoint."""
+        mock_load_cache.return_value = None
         mock_load.return_value = {
             'stores': [{'store_id': '12345', 'name': 'Existing Store'}],
             'completed_urls': ['https://www.att.com/stores/texas/dallas/12345']
@@ -346,11 +368,13 @@ class TestATTCheckpoint:
         mock_load.assert_called_once()
         assert result['checkpoints_used'] is True
 
+    @patch('src.scrapers.att._load_cached_urls')
     @patch('src.scrapers.att.utils.load_checkpoint')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
-    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_session):
+    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_load_cache, mock_session):
         """Test that resume=False does not load checkpoint."""
+        mock_load_cache.return_value = None
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
@@ -474,3 +498,347 @@ class TestATTErrorHandling:
         store = extract_store_details(mock_session, 'https://www.att.com/stores/texas/dallas/12345')
 
         assert store is None
+
+
+class TestATTParallelExtraction:
+    """Tests for AT&T parallel extraction infrastructure."""
+
+    def test_create_session_factory_returns_callable(self):
+        """Test that session factory returns a callable."""
+        config = {'proxy': {'mode': 'direct'}}
+
+        with patch('src.scrapers.att.utils.create_proxied_session') as mock_create:
+            mock_session = Mock()
+            mock_create.return_value = mock_session
+
+            factory = _create_session_factory(config)
+
+            assert callable(factory)
+            # Call the factory to verify it works
+            session = factory()
+            mock_create.assert_called_once_with(config)
+            assert session == mock_session
+
+    def test_create_session_factory_creates_new_session_each_call(self):
+        """Test that factory creates a new session each time it's called."""
+        config = {'proxy': {'mode': 'residential'}}
+
+        with patch('src.scrapers.att.utils.create_proxied_session') as mock_create:
+            session1 = Mock()
+            session2 = Mock()
+            mock_create.side_effect = [session1, session2]
+
+            factory = _create_session_factory(config)
+
+            result1 = factory()
+            result2 = factory()
+
+            assert result1 == session1
+            assert result2 == session2
+            assert mock_create.call_count == 2
+
+    @patch('src.scrapers.att.extract_store_details')
+    def test_extract_single_store_success(self, mock_extract):
+        """Test worker function returns store data on success."""
+        mock_store = Mock()
+        mock_store.to_dict.return_value = {'store_id': '12345', 'name': 'Test Store'}
+        mock_extract.return_value = mock_store
+
+        mock_session = Mock()
+        session_factory = Mock(return_value=mock_session)
+        yaml_config = {'proxy': {'mode': 'residential'}}
+
+        url = 'https://www.att.com/stores/texas/dallas/12345'
+        result_url, result_data = _extract_single_store(url, session_factory, 'att', yaml_config)
+
+        assert result_url == url
+        assert result_data == {'store_id': '12345', 'name': 'Test Store'}
+        mock_extract.assert_called_once_with(mock_session, url, 'att', yaml_config)
+
+    @patch('src.scrapers.att.extract_store_details')
+    def test_extract_single_store_failure(self, mock_extract):
+        """Test worker function returns None on extraction failure."""
+        mock_extract.return_value = None
+
+        mock_session = Mock()
+        session_factory = Mock(return_value=mock_session)
+
+        url = 'https://www.att.com/stores/texas/dallas/12345'
+        result_url, result_data = _extract_single_store(url, session_factory, 'att')
+
+        assert result_url == url
+        assert result_data is None
+
+    @patch('src.scrapers.att.extract_store_details')
+    def test_extract_single_store_exception(self, mock_extract):
+        """Test worker function handles exceptions gracefully."""
+        mock_extract.side_effect = Exception("Network error")
+
+        mock_session = Mock()
+        session_factory = Mock(return_value=mock_session)
+
+        url = 'https://www.att.com/stores/texas/dallas/12345'
+        result_url, result_data = _extract_single_store(url, session_factory, 'att')
+
+        assert result_url == url
+        assert result_data is None
+
+    @patch('src.scrapers.att.extract_store_details')
+    def test_extract_single_store_closes_session(self, mock_extract):
+        """Test worker function closes session after use."""
+        mock_store = Mock()
+        mock_store.to_dict.return_value = {'store_id': '12345'}
+        mock_extract.return_value = mock_store
+
+        mock_session = Mock()
+        session_factory = Mock(return_value=mock_session)
+
+        url = 'https://www.att.com/stores/texas/dallas/12345'
+        _extract_single_store(url, session_factory, 'att')
+
+        mock_session.close.assert_called_once()
+
+
+class TestATTURLCaching:
+    """Tests for AT&T URL caching functionality."""
+
+    def test_get_url_cache_path(self):
+        """Test cache path generation."""
+        path = _get_url_cache_path('att')
+
+        assert path == Path('data/att/store_urls.json')
+
+    def test_load_cached_urls_no_cache_file(self):
+        """Test loading when cache file doesn't exist."""
+        with patch.object(Path, 'exists', return_value=False):
+            result = _load_cached_urls('att')
+
+        assert result is None
+
+    def test_load_cached_urls_valid_cache(self):
+        """Test loading valid, fresh cache."""
+        cache_data = {
+            'discovered_at': datetime.now().isoformat(),
+            'store_count': 3,
+            'urls': [
+                'https://www.att.com/stores/texas/dallas/1',
+                'https://www.att.com/stores/texas/dallas/2',
+                'https://www.att.com/stores/texas/dallas/3'
+            ]
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(cache_data, f)
+            temp_path = Path(f.name)
+
+        try:
+            with patch('src.scrapers.att._get_url_cache_path', return_value=temp_path):
+                result = _load_cached_urls('att')
+
+            assert result is not None
+            assert len(result) == 3
+            assert 'https://www.att.com/stores/texas/dallas/1' in result
+        finally:
+            temp_path.unlink()
+
+    def test_load_cached_urls_expired_cache(self):
+        """Test loading expired cache returns None."""
+        old_date = datetime.now() - timedelta(days=URL_CACHE_EXPIRY_DAYS + 1)
+        cache_data = {
+            'discovered_at': old_date.isoformat(),
+            'store_count': 3,
+            'urls': ['url1', 'url2', 'url3']
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(cache_data, f)
+            temp_path = Path(f.name)
+
+        try:
+            with patch('src.scrapers.att._get_url_cache_path', return_value=temp_path):
+                result = _load_cached_urls('att')
+
+            assert result is None
+        finally:
+            temp_path.unlink()
+
+    def test_load_cached_urls_invalid_json(self):
+        """Test loading invalid JSON returns None."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write('not valid json')
+            temp_path = Path(f.name)
+
+        try:
+            with patch('src.scrapers.att._get_url_cache_path', return_value=temp_path):
+                result = _load_cached_urls('att')
+
+            assert result is None
+        finally:
+            temp_path.unlink()
+
+    def test_save_cached_urls(self):
+        """Test saving URLs to cache."""
+        urls = [
+            'https://www.att.com/stores/texas/dallas/1',
+            'https://www.att.com/stores/texas/dallas/2'
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / 'data' / 'att' / 'store_urls.json'
+
+            with patch('src.scrapers.att._get_url_cache_path', return_value=cache_path):
+                _save_cached_urls('att', urls)
+
+            assert cache_path.exists()
+
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                saved_data = json.load(f)
+
+            assert saved_data['store_count'] == 2
+            assert saved_data['urls'] == urls
+            assert 'discovered_at' in saved_data
+
+    def test_save_cached_urls_creates_parent_dirs(self):
+        """Test that save creates parent directories if needed."""
+        urls = ['https://www.att.com/stores/texas/dallas/1']
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / 'nested' / 'dir' / 'store_urls.json'
+
+            with patch('src.scrapers.att._get_url_cache_path', return_value=cache_path):
+                _save_cached_urls('att', urls)
+
+            assert cache_path.exists()
+
+
+class TestATTRunParallel:
+    """Tests for AT&T run() with parallel extraction."""
+
+    def _make_sitemap_response(self, store_ids):
+        """Helper to create sitemap response with given store IDs."""
+        urls = '\n'.join(
+            f'<url><loc>https://www.att.com/stores/texas/dallas/{sid}</loc></url>'
+            for sid in store_ids
+        )
+        xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'''
+        response = Mock()
+        response.content = xml.encode('utf-8')
+        return response
+
+    def _make_store_page_response(self, store_id, sub_channel='COR'):
+        """Helper to create store page HTML response."""
+        display_type = 'AT&T Retail' if sub_channel == 'COR' else 'Authorized Retail'
+        dealer_line = '' if sub_channel == 'COR' else 'storeMasterDealer: "TEST DEALER - 1"'
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+<script type="application/ld+json">
+{{
+    "@type": "MobilePhoneStore",
+    "name": "AT&T Store {store_id}",
+    "telephone": "(555) 123-4567",
+    "address": {{
+        "streetAddress": "{store_id} Main St",
+        "addressLocality": "Dallas",
+        "addressRegion": "TX",
+        "postalCode": "75001",
+        "addressCountry": {{"name": "US"}}
+    }},
+    "aggregateRating": {{"ratingValue": "4.5", "ratingCount": "120"}}
+}}
+</script>
+</head>
+<body>
+<script>
+let topDisplayType = "{display_type}";
+{dealer_line}
+</script>
+</body>
+</html>'''
+        response = Mock()
+        response.text = html
+        response.content = html.encode('utf-8')
+        return response
+
+    @patch('src.scrapers.att._load_cached_urls')
+    @patch('src.scrapers.att.utils.get_with_retry')
+    @patch('src.scrapers.att._request_counter')
+    def test_run_uses_cached_urls(self, mock_counter, mock_get, mock_load_cache, mock_session):
+        """Test that run() uses cached URLs when available."""
+        mock_load_cache.return_value = [
+            'https://www.att.com/stores/texas/dallas/12345'
+        ]
+        mock_get.return_value = self._make_store_page_response(12345)
+
+        result = run(
+            mock_session,
+            {'checkpoint_interval': 100, 'proxy': {'mode': 'direct'}},
+            retailer='att'
+        )
+
+        mock_load_cache.assert_called_once_with('att')
+        assert result['count'] == 1
+
+    @patch('src.scrapers.att._save_cached_urls')
+    @patch('src.scrapers.att._load_cached_urls')
+    @patch('src.scrapers.att.utils.get_with_retry')
+    @patch('src.scrapers.att._request_counter')
+    def test_run_saves_urls_on_cache_miss(self, mock_counter, mock_get, mock_load_cache, mock_save_cache, mock_session):
+        """Test that run() saves URLs after sitemap fetch on cache miss."""
+        mock_load_cache.return_value = None
+        mock_get.side_effect = [
+            self._make_sitemap_response([12345]),
+            self._make_store_page_response(12345)
+        ]
+
+        result = run(
+            mock_session,
+            {'checkpoint_interval': 100, 'proxy': {'mode': 'direct'}},
+            retailer='att'
+        )
+
+        mock_save_cache.assert_called_once()
+        call_args = mock_save_cache.call_args
+        assert call_args[0][0] == 'att'
+        assert len(call_args[0][1]) == 1
+
+    @patch('src.scrapers.att._load_cached_urls')
+    @patch('src.scrapers.att.utils.get_with_retry')
+    @patch('src.scrapers.att._request_counter')
+    def test_run_refresh_urls_ignores_cache(self, mock_counter, mock_get, mock_load_cache, mock_session):
+        """Test that refresh_urls=True forces sitemap fetch."""
+        mock_get.side_effect = [
+            self._make_sitemap_response([12345]),
+            self._make_store_page_response(12345)
+        ]
+
+        result = run(
+            mock_session,
+            {'checkpoint_interval': 100, 'proxy': {'mode': 'direct'}},
+            retailer='att',
+            refresh_urls=True
+        )
+
+        # Cache should not be loaded when refresh_urls=True
+        mock_load_cache.assert_not_called()
+
+    @patch('src.scrapers.att._load_cached_urls')
+    @patch('src.scrapers.att.utils.get_with_retry')
+    @patch('src.scrapers.att._request_counter')
+    def test_run_respects_parallel_workers_config(self, mock_counter, mock_get, mock_load_cache, mock_session):
+        """Test that run() uses parallel_workers from config."""
+        mock_load_cache.return_value = [
+            'https://www.att.com/stores/texas/dallas/12345'
+        ]
+        mock_get.return_value = self._make_store_page_response(12345)
+
+        # Test with residential proxy - should default to 5 workers
+        config = {'checkpoint_interval': 100, 'proxy': {'mode': 'residential'}}
+        result = run(mock_session, config, retailer='att')
+        assert result['count'] == 1
+
+        # Test with explicit parallel_workers
+        config_explicit = {'checkpoint_interval': 100, 'proxy': {'mode': 'residential'}, 'parallel_workers': 3}
+        result2 = run(mock_session, config_explicit, retailer='att')
+        assert result2['count'] == 1

@@ -81,15 +81,18 @@ retailers:
         min_delay: 2.0
         max_delay: 5.0
       proxied:
-        min_delay: 0.2
-        max_delay: 0.5
+        min_delay: 0.15
+        max_delay: 0.35
     # Legacy fields (deprecated)
     min_delay: 2.0
     max_delay: 5.0
     checkpoint_interval: 10
+    # Parallel workers for discovery phases (Phases 2-3: cities and store URLs)
+    # Higher values = faster discovery but more concurrent connections
+    discovery_workers: 10
     # Parallel workers for store detail extraction (Phase 4)
     # Higher values = faster but more aggressive (use with residential proxy)
-    parallel_workers: 5
+    parallel_workers: 7
     # Disable long pauses when using residential proxy
     pause_50_requests: 999999
     pause_200_requests: 999999
@@ -126,9 +129,21 @@ retailers:
     sitemap_urls:
       - "https://www.att.com/stores/sitemap_0.xml"
     discovery_method: "sitemap"
+    # Dual delay profiles for speedup with proxies
+    delays:
+      direct:
+        min_delay: 2.0
+        max_delay: 5.0
+      proxied:
+        min_delay: 0.2
+        max_delay: 0.4
+    # Legacy fields (deprecated, use delays.direct instead)
     min_delay: 0.5
     max_delay: 1.0
     checkpoint_interval: 100
+    # Parallel workers for store detail extraction
+    # Higher values = faster but more aggressive (use with residential proxy)
+    parallel_workers: 5
     # Disable long pauses when using residential proxy
     pause_50_requests: 999999
     pause_200_requests: 999999
