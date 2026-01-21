@@ -239,9 +239,11 @@ retailers:
     pause_50_max: 0
     pause_200_min: 0
     pause_200_max: 0
-    # Sitemap-based scraping with residential proxy for speed
+    # Sitemap-based scraping with Web Scraper API for Akamai bypass
+    # Note: residential proxy blocked by T-Mobile's Akamai Bot Manager
     proxy:
-      mode: "residential"
+      mode: "web_scraper_api"
+      render_js: false
     output_fields:
       - store_id
       - branch_code
