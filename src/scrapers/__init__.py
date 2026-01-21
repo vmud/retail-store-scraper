@@ -13,6 +13,7 @@ SCRAPER_REGISTRY: Dict[str, str] = {
     'tmobile': 'src.scrapers.tmobile',
     'walmart': 'src.scrapers.walmart',
     'bestbuy': 'src.scrapers.bestbuy',
+    'telus': 'src.scrapers.telus',
 }
 
 
