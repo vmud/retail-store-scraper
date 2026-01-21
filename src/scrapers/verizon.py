@@ -1218,36 +1218,40 @@ def run(session, config: dict, **kwargs) -> dict:
             processed_lock = threading.Lock()
             
             with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
-                # Submit all extraction tasks
-                futures = {
-                    executor.submit(_extract_single_store, url, session, config, retailer_name): url
-                    for url in remaining_urls
-                }
-                
-                for future in as_completed(futures):
-                    url, store_data = future.result()
-                    
-                    with processed_lock:
-                        processed_count[0] += 1
-                        current_count = processed_count[0]
-                        
-                        if store_data:
-                            stores.append(store_data)
-                            completed_urls.add(url)
-                        
-                        # Progress logging every 100 stores
-                        if current_count % 100 == 0:
-                            logging.info(f"[{retailer_name}] Progress: {current_count}/{total_to_process} ({current_count/total_to_process*100:.1f}%)")
-                        
-                        # Checkpoint at intervals
-                        if current_count % checkpoint_interval == 0:
-                            utils.save_checkpoint({
-                                'completed_count': len(stores),
-                                'completed_urls': list(completed_urls),
-                                'stores': stores,
-                                'last_updated': datetime.now().isoformat()
-                            }, checkpoint_path)
-                            logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
+                # Process in batches to limit memory usage
+                batch_size = config.get('extraction_batch_size', 500)
+
+                for batch_start in range(0, len(remaining_urls), batch_size):
+                    batch_urls = remaining_urls[batch_start:batch_start + batch_size]
+                    futures = {
+                        executor.submit(_extract_single_store, url, session, config, retailer_name): url
+                        for url in batch_urls
+                    }
+
+                    for future in as_completed(futures):
+                        url, store_data = future.result()
+
+                        with processed_lock:
+                            processed_count[0] += 1
+                            current_count = processed_count[0]
+
+                            if store_data:
+                                stores.append(store_data)
+                                completed_urls.add(url)
+
+                            # Progress logging every 100 stores
+                            if current_count % 100 == 0:
+                                logging.info(f"[{retailer_name}] Progress: {current_count}/{total_to_process} ({current_count/total_to_process*100:.1f}%)")
+
+                            # Checkpoint at intervals
+                            if current_count % checkpoint_interval == 0:
+                                utils.save_checkpoint({
+                                    'completed_count': len(stores),
+                                    'completed_urls': list(completed_urls),
+                                    'stores': stores,
+                                    'last_updated': datetime.now().isoformat()
+                                }, checkpoint_path)
+                                logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
         else:
             # Sequential extraction (original behavior)
             for i, url in enumerate(remaining_urls, 1):
