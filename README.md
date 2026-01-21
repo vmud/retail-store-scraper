@@ -376,6 +376,37 @@ Each retailer has configurable anti-blocking measures:
 - `pause_200_requests`: Longer pause after 200 requests
 - User-agent rotation (4 different browsers)
 
+### Error Recovery & Retry Behavior
+
+The scraper has multiple layers of error recovery:
+
+#### HTTP-Level Retries (Automatic)
+Every HTTP request automatically retries 3 times with exponential backoff for:
+- 429 (Rate Limited)
+- 500, 502, 503, 504 (Server Errors)
+
+#### Phase 4 (Store Extraction) - Resumable
+Failed store URLs are NOT marked as completed. Running with `--resume` will automatically retry any failed extractions:
+```bash
+# Initial run
+python run.py --retailer verizon --proxy residential
+
+# Resume to retry failed store URLs
+python run.py --retailer verizon --proxy residential --resume
+```
+
+#### Phases 2-3 (Discovery) - Requires Refresh
+For Verizon's parallel discovery phases (city/store URL discovery), failed states or cities return empty results. To retry failed discovery:
+```bash
+# Force complete re-discovery of all states, cities, and store URLs
+python run.py --retailer verizon --proxy residential --refresh-urls
+```
+
+#### Recommended Recovery Workflow
+1. **First run**: `python run.py --retailer verizon --proxy residential`
+2. **If Phase 4 failures**: `python run.py --retailer verizon --proxy residential --resume`
+3. **If Phase 2-3 failures**: `python run.py --retailer verizon --proxy residential --refresh-urls`
+
 ### Oxylabs Proxy Integration (Optional)
 
 For faster scraping with reduced blocking risk, integrate with [Oxylabs](https://oxylabs.io/) proxy services.
