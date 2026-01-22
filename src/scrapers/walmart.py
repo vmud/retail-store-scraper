@@ -205,6 +205,11 @@ class WalmartStore:
     def to_dict(self) -> dict:
         """Convert to dictionary for export"""
         result = asdict(self)
+
+        # Rename fields to match output_fields config in retailers.yaml
+        result['zip'] = result.pop('postal_code', '')
+        result['phone'] = result.pop('phone_number', '')
+
         # Convert capabilities list to JSON string for CSV compatibility
         if result.get('capabilities'):
             result['capabilities'] = json.dumps(result['capabilities'])
