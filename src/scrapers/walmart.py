@@ -210,11 +210,22 @@ class WalmartStore:
         result['zip'] = result.pop('postal_code', '')
         result['phone'] = result.pop('phone_number', '')
 
-        # Convert capabilities list to JSON string for CSV compatibility
-        if result.get('capabilities'):
-            result['capabilities'] = json.dumps(result['capabilities'])
-        elif result.get('capabilities') is None:
-            result['capabilities'] = ''  # Empty string for CSV when None
+        # Extract capabilities into boolean columns
+        capabilities = result.pop('capabilities', None) or []
+        capability_types = set()
+        for cap in capabilities:
+            if isinstance(cap, dict):
+                capability_types.add(cap.get('accessPointType', ''))
+
+        # Create boolean columns for each capability type
+        result['has_curbside_pickup'] = 'PICKUP_CURBSIDE' in capability_types
+        result['has_instore_pickup'] = 'PICKUP_INSTORE' in capability_types
+        result['has_delivery'] = 'DELIVERY_ADDRESS' in capability_types
+        result['has_in_home_delivery'] = 'DELIVERY_IN_HOME' in capability_types
+        result['has_pharmacy'] = 'PHARMACY_IMMUNIZATION' in capability_types
+        result['has_wireless_service'] = 'WIRELESS_SERVICE' in capability_types
+        result['has_fuel_station'] = 'FUEL_STATIONS' in capability_types
+        result['has_auto_care'] = 'ACC' in capability_types or 'ACC_INGROUND' in capability_types
         # Convert numeric types to appropriate format
         if result.get('latitude') is None:
             result['latitude'] = ''

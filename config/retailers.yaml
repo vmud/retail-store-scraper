@@ -312,7 +312,14 @@ retailers:
       - latitude
       - longitude
       - phone
-      - capabilities
+      - has_curbside_pickup
+      - has_instore_pickup
+      - has_delivery
+      - has_in_home_delivery
+      - has_pharmacy
+      - has_wireless_service
+      - has_fuel_station
+      - has_auto_care
       - is_glass_eligible
       - url
       - scraped_at
