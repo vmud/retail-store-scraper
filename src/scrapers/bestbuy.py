@@ -431,18 +431,29 @@ def _check_pause_logic(retailer: str = 'bestbuy') -> None:
         time.sleep(pause_time)
 
 
-def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
+def get_all_store_ids(
+    session: requests.Session,
+    min_delay: float = None,
+    max_delay: float = None
+) -> List[Dict[str, Any]]:
     """Extract all store URLs from Best Buy's sitemap.
 
     Args:
         session: Requests session object
+        min_delay: Minimum delay between requests
+        max_delay: Maximum delay between requests
 
     Returns:
         List of store dictionaries with store_id and url
     """
     logging.info(f"Fetching sitemap: {bestbuy_config.SITEMAP_URL}")
 
-    response = utils.get_with_retry(session, bestbuy_config.SITEMAP_URL)
+    response = utils.get_with_retry(
+        session,
+        bestbuy_config.SITEMAP_URL,
+        min_delay=min_delay,
+        max_delay=max_delay
+    )
     if not response:
         logging.error(f"Failed to fetch sitemap: {bestbuy_config.SITEMAP_URL}")
         return []
@@ -523,19 +534,31 @@ def get_all_store_ids(session: requests.Session) -> List[Dict[str, Any]]:
         return []
 
 
-def extract_store_details(session: requests.Session, url: str) -> Optional[BestBuyStore]:
+def extract_store_details(
+    session: requests.Session,
+    url: str,
+    min_delay: float = None,
+    max_delay: float = None
+) -> Optional[BestBuyStore]:
     """Extract store data from a single Best Buy store page.
 
     Args:
         session: Requests session object
         url: Store page URL
+        min_delay: Minimum delay between requests
+        max_delay: Maximum delay between requests
 
     Returns:
         BestBuyStore object if successful, None otherwise
     """
     logging.debug(f"Extracting details from {url}")
 
-    response = utils.get_with_retry(session, url)
+    response = utils.get_with_retry(
+        session,
+        url,
+        min_delay=min_delay,
+        max_delay=max_delay
+    )
     if not response:
         logging.warning(f"Failed to fetch store details: {url}")
         return None
@@ -764,7 +787,9 @@ def _extract_single_store_worker(
     url: str,
     session_factory: Callable[[], requests.Session],
     yaml_config: dict,
-    retailer_name: str
+    retailer_name: str,
+    min_delay: float = None,
+    max_delay: float = None
 ) -> Tuple[str, Optional[Dict[str, Any]], Optional[str]]:
     """Worker function for parallel store extraction.
 
@@ -776,13 +801,20 @@ def _extract_single_store_worker(
         session_factory: Callable that creates session instances
         yaml_config: Retailer configuration
         retailer_name: Name of retailer for logging
+        min_delay: Minimum delay between requests
+        max_delay: Maximum delay between requests
 
     Returns:
         Tuple of (url, store_data, error_reason) where store_data is None on failure
     """
     session = session_factory()
     try:
-        store_obj = extract_store_details(session, url)
+        store_obj = extract_store_details(
+            session,
+            url,
+            min_delay=min_delay,
+            max_delay=max_delay
+        )
         if store_obj:
             return (url, store_obj.to_dict(), None)
         return (url, None, "No data extracted")
@@ -900,7 +932,11 @@ def run(session, config: dict, **kwargs) -> dict:
         if all_store_urls is None:
             # Cache miss or refresh requested - fetch from sitemap
             logging.info(f"[{retailer_name}] Fetching store URLs from sitemap")
-            store_list = get_all_store_ids(session)
+            store_list = get_all_store_ids(
+                session,
+                min_delay=min_delay,
+                max_delay=max_delay
+            )
 
             if not store_list:
                 logging.warning(f"[{retailer_name}] No store URLs found in sitemap")
@@ -977,7 +1013,9 @@ def run(session, config: dict, **kwargs) -> dict:
                             url,
                             session_factory,
                             config,
-                            retailer_name
+                            retailer_name,
+                            min_delay,
+                            max_delay
                         ): url
                         for url in batch_urls
                     }
@@ -1030,7 +1068,12 @@ def run(session, config: dict, **kwargs) -> dict:
             # Sequential extraction (for direct mode or single store)
             logging.info(f"[{retailer_name}] Using sequential extraction")
             for i, store_url in enumerate(remaining_urls, 1):
-                store_obj = extract_store_details(session, store_url)
+                store_obj = extract_store_details(
+                    session,
+                    store_url,
+                    min_delay=min_delay,
+                    max_delay=max_delay
+                )
                 if store_obj:
                     stores.append(store_obj.to_dict())
                     completed_urls.add(store_url)

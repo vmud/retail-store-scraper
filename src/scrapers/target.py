@@ -202,7 +202,9 @@ def _extract_single_store(
     store_info: Dict[str, Any],
     session_factory,
     retailer_name: str,
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    min_delay: float = None,
+    max_delay: float = None
 ) -> Tuple[int, Optional[Dict[str, Any]]]:
     """Worker function for parallel store extraction.
 
@@ -213,6 +215,8 @@ def _extract_single_store(
         session_factory: Callable that creates session instances
         retailer_name: Name of retailer for logging
         yaml_config: Retailer configuration from retailers.yaml
+        min_delay: Minimum delay between requests
+        max_delay: Maximum delay between requests
 
     Returns:
         Tuple of (store_id, store_data_dict) where store_data_dict is None on failure
@@ -220,7 +224,13 @@ def _extract_single_store(
     session = session_factory()
     store_id = store_info.get('store_id')
     try:
-        store_obj = get_store_details(session, store_id, retailer_name)
+        store_obj = get_store_details(
+            session,
+            store_id,
+            retailer_name,
+            min_delay=min_delay,
+            max_delay=max_delay
+        )
         if store_obj:
             return (store_id, store_obj.to_dict())
         return (store_id, None)
@@ -255,18 +265,30 @@ def _save_failed_extractions(retailer: str, failed_store_ids: List[int]) -> None
         logging.warning(f"[{retailer}] Failed to save failed store IDs: {e}")
 
 
-def get_all_store_ids(session: requests.Session, retailer: str = 'target') -> List[Dict[str, Any]]:
+def get_all_store_ids(
+    session: requests.Session,
+    retailer: str = 'target',
+    min_delay: float = None,
+    max_delay: float = None
+) -> List[Dict[str, Any]]:
     """Extract all store IDs from Target's sitemap.
 
     Args:
         session: Requests session object
+        min_delay: Minimum delay between requests
+        max_delay: Maximum delay between requests
 
     Returns:
         List of store dictionaries with store_id, slug, and url
     """
     logging.info(f"[{retailer}] Fetching sitemap: {target_config.SITEMAP_URL}")
 
-    response = utils.get_with_retry(session, target_config.SITEMAP_URL)
+    response = utils.get_with_retry(
+        session,
+        target_config.SITEMAP_URL,
+        min_delay=min_delay,
+        max_delay=max_delay
+    )
     if not response:
         logging.error(f"[{retailer}] Failed to fetch sitemap: {target_config.SITEMAP_URL}")
         return []
@@ -316,12 +338,20 @@ def get_all_store_ids(session: requests.Session, retailer: str = 'target') -> Li
         return []
 
 
-def get_store_details(session: requests.Session, store_id: int, retailer: str = 'target') -> Optional[TargetStore]:
+def get_store_details(
+    session: requests.Session,
+    store_id: int,
+    retailer: str = 'target',
+    min_delay: float = None,
+    max_delay: float = None
+) -> Optional[TargetStore]:
     """Fetch detailed store info from Redsky API.
 
     Args:
         session: Requests session object
         store_id: Numeric store ID
+        min_delay: Minimum delay between requests
+        max_delay: Maximum delay between requests
 
     Returns:
         TargetStore object if successful, None otherwise
@@ -334,7 +364,13 @@ def get_store_details(session: requests.Session, store_id: int, retailer: str = 
 
     # Build URL with params for get_with_retry
     url_with_params = f"{target_config.REDSKY_API_URL}?{urllib.parse.urlencode(params)}"
-    response = utils.get_with_retry(session, url_with_params, max_retries=target_config.MAX_RETRIES)
+    response = utils.get_with_retry(
+        session,
+        url_with_params,
+        max_retries=target_config.MAX_RETRIES,
+        min_delay=min_delay,
+        max_delay=max_delay
+    )
     if not response:
         logging.warning(f"[{retailer}] Failed to fetch store details for store_id={store_id}")
         return None
@@ -473,7 +509,12 @@ def run(session, config: dict, **kwargs) -> dict:
 
         if store_list is None:
             # Cache miss or refresh requested - fetch from sitemap
-            store_list = get_all_store_ids(session, retailer_name)
+            store_list = get_all_store_ids(
+                session,
+                retailer_name,
+                min_delay=min_delay,
+                max_delay=max_delay
+            )
             logging.info(f"[{retailer_name}] Found {len(store_list)} store IDs from sitemap")
 
             # Save to cache for future runs
@@ -523,7 +564,15 @@ def run(session, config: dict, **kwargs) -> dict:
             with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
                 # Submit all extraction tasks
                 futures = {
-                    executor.submit(_extract_single_store, store_info, session_factory, retailer_name, config): store_info
+                    executor.submit(
+                        _extract_single_store,
+                        store_info,
+                        session_factory,
+                        retailer_name,
+                        config,
+                        min_delay,
+                        max_delay
+                    ): store_info
                     for store_info in remaining_stores
                 }
 
@@ -563,7 +612,13 @@ def run(session, config: dict, **kwargs) -> dict:
             # Sequential extraction (original behavior for direct mode)
             for i, store_info in enumerate(remaining_stores, 1):
                 store_id = store_info.get('store_id')
-                store_obj = get_store_details(session, store_id, retailer_name)
+                store_obj = get_store_details(
+                    session,
+                    store_id,
+                    retailer_name,
+                    min_delay=min_delay,
+                    max_delay=max_delay
+                )
                 if store_obj:
                     stores.append(store_obj.to_dict())
                     completed_ids.add(store_id)
