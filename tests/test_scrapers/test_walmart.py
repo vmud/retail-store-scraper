@@ -1,4 +1,5 @@
 """Unit tests for Walmart scraper."""
+# pylint: disable=no-member  # Mock objects have dynamic attributes
 
 import gzip
 import json

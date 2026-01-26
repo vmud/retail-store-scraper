@@ -1,4 +1,5 @@
 """Unit tests for AT&T scraper."""
+# pylint: disable=no-member  # Mock objects have dynamic attributes
 
 import json
 import pytest
