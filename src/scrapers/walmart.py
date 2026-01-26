@@ -4,9 +4,7 @@ import gzip
 import hashlib
 import json
 import logging
-import random
 import re
-import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
@@ -18,7 +16,7 @@ import requests
 from config import walmart_config
 from src.shared import utils
 from src.shared.cache import URLCache
-from src.shared.request_counter import RequestCounter
+from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
 
 
@@ -163,27 +161,6 @@ class WalmartStore:
         return result
 
 
-def _check_pause_logic(retailer: str = 'walmart') -> None:
-    """Check if we need to pause based on request count"""
-    # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    try:
-        if walmart_config.PAUSE_50_REQUESTS >= 999999 and walmart_config.PAUSE_200_REQUESTS >= 999999:
-            return
-    except (TypeError, AttributeError):
-        pass  # Config mocked in tests, continue with normal pause logic
-    
-    count = _request_counter.count
-
-    if count % walmart_config.PAUSE_200_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(walmart_config.PAUSE_200_MIN, walmart_config.PAUSE_200_MAX)
-        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-    elif count % walmart_config.PAUSE_50_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(walmart_config.PAUSE_50_MIN, walmart_config.PAUSE_50_MAX)
-        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-
-
 def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'walmart') -> List[str]:
     """Fetch all store URLs from the Walmart gzipped sitemaps.
 
@@ -201,7 +178,7 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'walm
             continue
 
         _request_counter.increment()
-        _check_pause_logic(retailer)
+        check_pause_logic(_request_counter, retailer=retailer, config=None)
 
         try:
             # Try to decompress gzipped content, fall back to plain text if not gzipped
@@ -280,7 +257,7 @@ def extract_store_details(client, url: str, retailer: str = 'walmart', use_cache
             response_text = response.text
 
         _request_counter.increment()
-        _check_pause_logic(retailer)
+        check_pause_logic(_request_counter, retailer=retailer, config=None)
 
         # Cache the response for future runs (only if not from cache)
         if use_cache and response_text:

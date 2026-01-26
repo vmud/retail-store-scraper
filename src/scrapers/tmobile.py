@@ -2,10 +2,8 @@
 
 import json
 import logging
-import random
 import re
 import threading
-import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -18,7 +16,7 @@ import requests
 from config import tmobile_config
 from src.shared import utils
 from src.shared.cache import URLCache
-from src.shared.request_counter import RequestCounter
+from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
@@ -58,27 +56,6 @@ class TMobileStore:
         if result.get('store_type') is None:
             result['store_type'] = ''  # Empty string for CSV when None
         return result
-
-
-def _check_pause_logic(retailer: str = 'tmobile') -> None:
-    """Check if we need to pause based on request count"""
-    # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    try:
-        if tmobile_config.PAUSE_50_REQUESTS >= 999999 and tmobile_config.PAUSE_200_REQUESTS >= 999999:
-            return
-    except (TypeError, AttributeError):
-        pass  # Config mocked in tests, continue with normal pause logic
-    
-    count = _request_counter.count
-
-    if count % tmobile_config.PAUSE_200_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(tmobile_config.PAUSE_200_MIN, tmobile_config.PAUSE_200_MAX)
-        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-    elif count % tmobile_config.PAUSE_50_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(tmobile_config.PAUSE_50_MIN, tmobile_config.PAUSE_50_MAX)
-        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
 
 
 # =============================================================================
@@ -196,7 +173,7 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
             continue
 
         _request_counter.increment()
-        _check_pause_logic(retailer)
+        check_pause_logic(_request_counter, retailer=retailer, config=None)
 
         try:
             # Parse XML
@@ -243,7 +220,7 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
         return None
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=None)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')

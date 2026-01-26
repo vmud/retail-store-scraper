@@ -4,10 +4,9 @@
 import hashlib
 import json
 import logging
-import random
 import re
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -19,7 +18,7 @@ import requests
 from config import bestbuy_config
 from src.shared import utils
 from src.shared.cache import URLCache, DEFAULT_CACHE_EXPIRY_DAYS
-from src.shared.request_counter import RequestCounter
+from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
@@ -335,24 +334,6 @@ def _looks_like_service_name(text: str) -> bool:
     return False
 
 
-def _check_pause_logic(retailer: str = 'bestbuy') -> None:
-    """Check if we need to pause based on request count.
-
-    Args:
-        retailer: Retailer name for logging
-    """
-    count = _request_counter.count
-
-    if count % bestbuy_config.PAUSE_200_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(bestbuy_config.PAUSE_200_MIN, bestbuy_config.PAUSE_200_MAX)
-        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-    elif count % bestbuy_config.PAUSE_50_REQUESTS == 0 and count > 0:
-        pause_time = random.uniform(bestbuy_config.PAUSE_50_MIN, bestbuy_config.PAUSE_50_MAX)
-        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-
-
 def get_all_store_ids(
     session: requests.Session,
     min_delay: float = None,
@@ -381,7 +362,7 @@ def get_all_store_ids(
         return []
 
     _request_counter.increment()
-    _check_pause_logic()
+    check_pause_logic(_request_counter, retailer='bestbuy', config=None)
 
     try:
         content = response.text
@@ -486,7 +467,7 @@ def extract_store_details(
         return None
 
     _request_counter.increment()
-    _check_pause_logic()
+    check_pause_logic(_request_counter, retailer='bestbuy', config=None)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
