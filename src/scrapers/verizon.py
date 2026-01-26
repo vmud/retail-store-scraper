@@ -17,7 +17,9 @@ import requests
 
 from config import verizon_config as config
 from src.shared import utils
+from src.shared.cache import URLCache
 from src.shared.request_counter import RequestCounter
+from src.shared.session_factory import create_session_factory
 
 
 # Global request counter
@@ -784,24 +786,6 @@ def get_request_count() -> int:
 # =============================================================================
 
 
-def _create_session_factory(retailer_config: dict):
-    """Create a factory function that produces per-worker sessions.
-
-    requests.Session is NOT thread-safe, so each worker thread needs its own
-    session instance. This factory creates new sessions with the same proxy
-    configuration as the original.
-
-    Args:
-        retailer_config: Retailer configuration dict with proxy settings
-
-    Returns:
-        Callable that creates new session instances
-    """
-    def factory():
-        return utils.create_proxied_session(retailer_config)
-    return factory
-
-
 def _fetch_cities_for_state_worker(
     state: Dict[str, str],
     session_factory,
@@ -883,85 +867,6 @@ def _fetch_stores_for_city_worker(
 
 
 # =============================================================================
-# URL CACHING - Skip discovery phases on subsequent runs
-# =============================================================================
-
-# Default cache expiry: 7 days (stores don't change location frequently)
-URL_CACHE_EXPIRY_DAYS = 7
-
-
-def _get_url_cache_path(retailer: str) -> Path:
-    """Get path to store URL cache file."""
-    return Path(f"data/{retailer}/store_urls.json")
-
-
-def _load_cached_urls(retailer: str, max_age_days: int = URL_CACHE_EXPIRY_DAYS) -> Optional[List[str]]:
-    """Load cached store URLs if recent enough.
-
-    Args:
-        retailer: Retailer name
-        max_age_days: Maximum cache age in days (default: 7)
-
-    Returns:
-        List of cached URLs if cache is valid, None otherwise
-    """
-    cache_path = _get_url_cache_path(retailer)
-
-    if not cache_path.exists():
-        logging.info(f"[{retailer}] No URL cache found at {cache_path}")
-        return None
-
-    try:
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            cache_data = json.load(f)
-
-        # Check cache freshness
-        discovered_at = cache_data.get('discovered_at')
-        if discovered_at:
-            cache_time = datetime.fromisoformat(discovered_at)
-            age_days = (datetime.now() - cache_time).days
-
-            if age_days > max_age_days:
-                logging.info(f"[{retailer}] URL cache expired ({age_days} days old, max: {max_age_days})")
-                return None
-
-            urls = cache_data.get('urls', [])
-            if urls:
-                logging.info(f"[{retailer}] Loaded {len(urls)} URLs from cache ({age_days} days old)")
-                return urls
-
-        logging.warning(f"[{retailer}] URL cache is invalid or empty")
-        return None
-
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
-        logging.warning(f"[{retailer}] Error loading URL cache: {e}")
-        return None
-
-
-def _save_cached_urls(retailer: str, urls: List[str]) -> None:
-    """Save discovered store URLs to cache.
-
-    Args:
-        retailer: Retailer name
-        urls: List of store URLs to cache
-    """
-    cache_path = _get_url_cache_path(retailer)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-
-    cache_data = {
-        'discovered_at': datetime.now().isoformat(),
-        'store_count': len(urls),
-        'urls': urls
-    }
-
-    try:
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(cache_data, f, indent=2)
-        logging.info(f"[{retailer}] Saved {len(urls)} URLs to cache: {cache_path}")
-    except IOError as e:
-        logging.warning(f"[{retailer}] Failed to save URL cache: {e}")
-
-
 # =============================================================================
 # PARALLEL EXTRACTION - Speed up store detail extraction
 # =============================================================================
@@ -1088,9 +993,10 @@ def run(session, config: dict, **kwargs) -> dict:
         # Try to load cached URLs (skip discovery phases if cache is valid)
         # Note: Skip cache when targeting specific states
         target_slugs = kwargs.get('_target_slugs')
+        url_cache = URLCache(retailer_name)
         all_store_urls = None
         if not refresh_urls and not target_slugs:
-            all_store_urls = _load_cached_urls(retailer_name)
+            all_store_urls = url_cache.get()
 
         if all_store_urls is None:
             # Cache miss or refresh requested - run full discovery
@@ -1105,7 +1011,7 @@ def run(session, config: dict, **kwargs) -> dict:
                 logging.info(f"[{retailer_name}] Found {len(all_states)} states")
             
             # Create session factory for parallel workers (each worker needs its own session)
-            session_factory = _create_session_factory(config)
+            session_factory = create_session_factory(config)
 
             # Phase 2: Parallel city discovery
             all_cities = []
@@ -1186,10 +1092,10 @@ def run(session, config: dict, **kwargs) -> dict:
                     all_store_urls.extend([s['url'] for s in store_infos])
 
             logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
-            
+
             # Cache the discovered URLs for future runs
             if all_store_urls:
-                _save_cached_urls(retailer_name, all_store_urls)
+                url_cache.set(all_store_urls)
         else:
             logging.info(f"[{retailer_name}] Skipped discovery phases (using cached URLs)")
         
