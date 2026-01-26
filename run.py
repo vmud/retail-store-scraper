@@ -475,7 +475,7 @@ async def run_retailer_async(
 
         # Upload to cloud storage if configured
         cloud_results = {}
-        if cloud_manager and stores:
+        if cloud_manager:
             if successful_extensions:
                 try:
                     cloud_results = cloud_manager.upload_retailer_data(
