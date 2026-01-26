@@ -42,7 +42,7 @@ proxy:
 # Dual delay profiles: optimized speeds when using proxies vs. direct mode
 
 defaults:
-  # Direct mode delays (conservative, anti-blocking)
+  # Dual delay profiles: direct (conservative) vs proxied (aggressive)
   delays:
     direct:
       min_delay: 2.0
@@ -50,11 +50,7 @@ defaults:
     proxied:
       min_delay: 0.2
       max_delay: 0.5
-  
-  # Legacy fields (deprecated, use delays.direct instead)
-  min_delay: 2.0
-  max_delay: 5.0
-  
+
   max_retries: 3
   timeout: 30
   rate_limit_base_wait: 30
@@ -83,9 +79,6 @@ retailers:
       proxied:
         min_delay: 0.15
         max_delay: 0.35
-    # Legacy fields (deprecated)
-    min_delay: 2.0
-    max_delay: 5.0
     checkpoint_interval: 10
     # Parallel workers for discovery phases (Phases 2-3: cities and store URLs)
     # Higher values = faster discovery but more concurrent connections
@@ -137,9 +130,6 @@ retailers:
       proxied:
         min_delay: 0.2
         max_delay: 0.4
-    # Legacy fields (deprecated, use delays.direct instead)
-    min_delay: 0.5
-    max_delay: 1.0
     checkpoint_interval: 100
     # Parallel workers for store detail extraction
     # Higher values = faster but more aggressive (use with residential proxy)
@@ -186,9 +176,6 @@ retailers:
       proxied:
         min_delay: 0.1
         max_delay: 0.2
-    # Legacy fields (deprecated, use delays.direct instead)
-    min_delay: 0.1
-    max_delay: 0.5
     checkpoint_interval: 100
     # Parallel workers for store detail extraction
     # Higher values = faster but more aggressive (use with residential proxy)
@@ -237,9 +224,6 @@ retailers:
       proxied:
         min_delay: 0.2
         max_delay: 0.4
-    # Legacy fields (deprecated, use delays.direct instead)
-    min_delay: 0.5
-    max_delay: 1.0
     checkpoint_interval: 100
     # Parallel workers for store detail extraction
     # Higher values = faster but more aggressive (use with residential proxy)
@@ -283,8 +267,14 @@ retailers:
       - "https://www.walmart.com/sitemap_store_main_neighborhood.xml.gz"
       - "https://www.walmart.com/sitemap_store_main_other.xml.gz"
     discovery_method: "sitemap_gzip"
-    min_delay: 1.0
-    max_delay: 2.0
+    # Dual delay profiles for speedup with proxies
+    delays:
+      direct:
+        min_delay: 1.0
+        max_delay: 2.0
+      proxied:
+        min_delay: 0.2
+        max_delay: 0.5
     checkpoint_interval: 100
     # Disable long pauses when using residential proxy
     pause_50_requests: 999999
@@ -347,10 +337,6 @@ retailers:
         min_delay: 0.2
         max_delay: 0.5
 
-    # Legacy fields (deprecated, use delays.direct instead)
-    min_delay: 2.0
-    max_delay: 5.0
-
     # Disable pauses for proxy mode (handled by proxy rotation)
     pause_50_requests: 999999
     pause_200_requests: 999999
@@ -403,10 +389,6 @@ retailers:
       proxied:
         min_delay: 0.1
         max_delay: 0.3
-
-    # Legacy fields
-    min_delay: 0.5
-    max_delay: 1.0
 
     # No checkpointing needed - single fast API call
     checkpoint_interval: 999999
