@@ -56,6 +56,16 @@ from .status import (
     load_retailers_config,
 )
 
+from .cache import (
+    URLCache,
+    RichURLCache,
+    DEFAULT_CACHE_EXPIRY_DAYS,
+)
+
+from .session_factory import (
+    create_session_factory,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -102,4 +112,10 @@ __all__ = [
     'get_all_retailers_status',
     'get_progress_status',
     'load_retailers_config',
+    # URL Caching
+    'URLCache',
+    'RichURLCache',
+    'DEFAULT_CACHE_EXPIRY_DAYS',
+    # Session factory
+    'create_session_factory',
 ]
