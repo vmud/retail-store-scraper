@@ -260,6 +260,7 @@ def setup_parser() -> argparse.ArgumentParser:
     cloud_group.add_argument(
         '--gcs-history',
         action='store_true',
+        default=None,
         help='Upload timestamped copies to history/ folder'
     )
 
@@ -794,7 +795,7 @@ def main():
             )
             if cloud_manager:
                 logging.info(f"Cloud storage enabled: {cloud_manager.provider_name}")
-            elif cloud_enabled:
+            elif cloud_enabled or args.gcs_bucket:
                 logging.warning("Cloud storage requested but not configured (check GCS_* env vars)")
 
     # Run scrapers

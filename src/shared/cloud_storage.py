@@ -144,13 +144,20 @@ class GCSProvider(CloudStorageProvider):
                     logging.warning(f"GCS client error (not retrying): {e}")
                     return False, str(e)
 
-                # Exponential backoff: 2s, 4s, 8s
-                wait_time = self.retry_delay * (2 ** attempt)
-                logging.warning(
-                    f"GCS transient error (attempt {attempt + 1}/{self.max_retries}), "
-                    f"retrying in {wait_time}s: {e}"
-                )
-                time.sleep(wait_time)
+                # Only sleep if there are more attempts remaining
+                if attempt < self.max_retries - 1:
+                    # Exponential backoff: 2s, 4s, 8s
+                    wait_time = self.retry_delay * (2 ** attempt)
+                    logging.warning(
+                        f"GCS transient error (attempt {attempt + 1}/{self.max_retries}), "
+                        f"retrying in {wait_time}s: {e}"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logging.warning(
+                        f"GCS transient error (attempt {attempt + 1}/{self.max_retries}), "
+                        f"no more retries: {e}"
+                    )
 
         return False, str(last_error) if last_error else "Unknown error"
 
