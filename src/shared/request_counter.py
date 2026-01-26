@@ -42,6 +42,8 @@ class RequestCounter:
 
 def check_pause_logic(
     counter: RequestCounter,
+    retailer: str = None,
+    config: dict = None,
     pause_50_requests: int = 50,
     pause_50_min: float = 30,
     pause_50_max: float = 60,
@@ -49,24 +51,44 @@ def check_pause_logic(
     pause_200_min: float = 120,
     pause_200_max: float = 180,
 ) -> None:
-    """Check if we need to pause based on request count
+    """Check if we need to pause based on request count (#71).
 
     Args:
         counter: RequestCounter instance to check
+        retailer: Retailer name for logging (optional)
+        config: YAML config dict with pause settings (optional, overrides defaults)
         pause_50_requests: Pause after this many requests
         pause_50_min: Minimum pause duration for 50-request pause
         pause_50_max: Maximum pause duration for 50-request pause
         pause_200_requests: Longer pause after this many requests
         pause_200_min: Minimum pause duration for 200-request pause
         pause_200_max: Maximum pause duration for 200-request pause
+
+    If config is provided, it can contain:
+        - pause_50_requests, pause_50_min, pause_50_max
+        - pause_200_requests, pause_200_min, pause_200_max
     """
+    # Read from config if provided, otherwise use defaults
+    if config:
+        pause_50_requests = config.get('pause_50_requests', pause_50_requests)
+        pause_50_min = config.get('pause_50_min', pause_50_min)
+        pause_50_max = config.get('pause_50_max', pause_50_max)
+        pause_200_requests = config.get('pause_200_requests', pause_200_requests)
+        pause_200_min = config.get('pause_200_min', pause_200_min)
+        pause_200_max = config.get('pause_200_max', pause_200_max)
+
+    # Skip if pauses are effectively disabled (>= 999999)
+    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
+        return
+
     count = counter.count
+    prefix = f"[{retailer}] " if retailer else ""
 
     if count % pause_200_requests == 0 and count > 0:
         pause_time = random.uniform(pause_200_min, pause_200_max)
-        logging.info(f"Long pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"{prefix}Long pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)
     elif count % pause_50_requests == 0 and count > 0:
         pause_time = random.uniform(pause_50_min, pause_50_max)
-        logging.info(f"Pause after {count} requests: {pause_time:.0f} seconds")
+        logging.info(f"{prefix}Pause after {count} requests: {pause_time:.0f} seconds")
         time.sleep(pause_time)

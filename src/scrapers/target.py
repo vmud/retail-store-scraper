@@ -3,10 +3,8 @@
 import gzip
 import json
 import logging
-import random
 import re
 import threading
-import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -19,7 +17,7 @@ import requests
 from config import target_config
 from src.shared import utils
 from src.shared.cache import RichURLCache
-from src.shared.request_counter import RequestCounter
+from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
@@ -71,32 +69,6 @@ class TargetStore:
         return result
 
 
-def _check_pause_logic(retailer: str = 'target') -> None:
-    """Check if we need to pause based on request count (#71).
-
-    Uses standardized random delay ranges for consistency with other scrapers.
-    """
-    # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    try:
-        if target_config.PAUSE_50_REQUESTS >= 999999 and target_config.PAUSE_200_REQUESTS >= 999999:
-            return
-    except (TypeError, AttributeError):
-        pass  # Config mocked in tests, continue with normal pause logic
-    
-    count = _request_counter.count
-
-    if count % target_config.PAUSE_200_REQUESTS == 0 and count > 0:
-        # Use random delay range for 200-request pause (#71)
-        pause_time = random.uniform(target_config.PAUSE_200_MIN, target_config.PAUSE_200_MAX)
-        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-    elif count % target_config.PAUSE_50_REQUESTS == 0 and count > 0:
-        # Use random delay range for 50-request pause (#71)
-        pause_time = random.uniform(target_config.PAUSE_50_MIN, target_config.PAUSE_50_MAX)
-        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.1f} seconds")
-        time.sleep(pause_time)
-
-
 # =============================================================================
 # PARALLEL EXTRACTION - Speed up store detail extraction
 # =============================================================================
@@ -133,7 +105,8 @@ def _extract_single_store(
             store_id,
             retailer_name,
             min_delay=min_delay,
-            max_delay=max_delay
+            max_delay=max_delay,
+            yaml_config=yaml_config
         )
         if store_obj:
             return (store_id, store_obj.to_dict())
@@ -173,14 +146,17 @@ def get_all_store_ids(
     session: requests.Session,
     retailer: str = 'target',
     min_delay: float = None,
-    max_delay: float = None
+    max_delay: float = None,
+    yaml_config: dict = None
 ) -> List[Dict[str, Any]]:
     """Extract all store IDs from Target's sitemap.
 
     Args:
         session: Requests session object
+        retailer: Retailer name for logging
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
+        yaml_config: Retailer config dict (for pause settings)
 
     Returns:
         List of store dictionaries with store_id, slug, and url
@@ -198,7 +174,7 @@ def get_all_store_ids(
         return []
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     try:
         # Check if content is already decompressed (starts with XML) or gzipped
@@ -247,15 +223,18 @@ def get_store_details(
     store_id: int,
     retailer: str = 'target',
     min_delay: float = None,
-    max_delay: float = None
+    max_delay: float = None,
+    yaml_config: dict = None
 ) -> Optional[TargetStore]:
     """Fetch detailed store info from Redsky API.
 
     Args:
         session: Requests session object
         store_id: Numeric store ID
+        retailer: Retailer name for logging
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
+        yaml_config: Retailer config dict (for pause settings)
 
     Returns:
         TargetStore object if successful, None otherwise
@@ -280,7 +259,7 @@ def get_store_details(
         return None
 
     _request_counter.increment()
-    _check_pause_logic(retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     try:
         if response.status_code == 200:
@@ -419,7 +398,8 @@ def run(session, config: dict, **kwargs) -> dict:
                 session,
                 retailer_name,
                 min_delay=min_delay,
-                max_delay=max_delay
+                max_delay=max_delay,
+                yaml_config=config
             )
             logging.info(f"[{retailer_name}] Found {len(store_list)} store IDs from sitemap")
 
@@ -523,7 +503,8 @@ def run(session, config: dict, **kwargs) -> dict:
                     store_id,
                     retailer_name,
                     min_delay=min_delay,
-                    max_delay=max_delay
+                    max_delay=max_delay,
+                    yaml_config=config
                 )
                 if store_obj:
                     stores.append(store_obj.to_dict())

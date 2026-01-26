@@ -14,8 +14,9 @@ from src.scrapers.target import (
     run,
     get_request_count,
     reset_request_counter,
-    _check_pause_logic,
+    _request_counter,
 )
+from src.shared.request_counter import check_pause_logic
 from src.shared.cache import RichURLCache
 
 
@@ -510,48 +511,45 @@ class TestTargetRateLimiting:
         reset_request_counter()
         assert get_request_count() == 0
 
-    @patch('src.scrapers.target.time.sleep')
-    @patch('src.scrapers.target.random.uniform')
+    @patch('src.shared.request_counter.time.sleep')
+    @patch('src.shared.request_counter.random.uniform')
     def test_pause_at_50_requests(self, mock_uniform, mock_sleep):
         """Test that pause triggers at 50 request threshold."""
         mock_uniform.return_value = 1.5
         reset_request_counter()
 
         # Simulate 50 requests
-        from src.scrapers.target import _request_counter
         _request_counter._count = 50
 
-        _check_pause_logic()
+        check_pause_logic(_request_counter, retailer='target')
 
         mock_sleep.assert_called_once()
         mock_uniform.assert_called()
 
-    @patch('src.scrapers.target.time.sleep')
-    @patch('src.scrapers.target.random.uniform')
+    @patch('src.shared.request_counter.time.sleep')
+    @patch('src.shared.request_counter.random.uniform')
     def test_pause_at_200_requests(self, mock_uniform, mock_sleep):
         """Test that longer pause triggers at 200 request threshold."""
         mock_uniform.return_value = 150
         reset_request_counter()
 
-        from src.scrapers.target import _request_counter
         _request_counter._count = 200
 
-        _check_pause_logic()
+        check_pause_logic(_request_counter, retailer='target')
 
         mock_sleep.assert_called_once()
         # 200 request pause should use longer delay range
         call_args = mock_uniform.call_args[0]
         assert call_args[0] >= 100  # Min should be at least 100s
 
-    @patch('src.scrapers.target.time.sleep')
+    @patch('src.shared.request_counter.time.sleep')
     def test_no_pause_between_thresholds(self, mock_sleep):
         """Test that no pause occurs between thresholds."""
         reset_request_counter()
 
-        from src.scrapers.target import _request_counter
         _request_counter._count = 25  # Between 0 and 50
 
-        _check_pause_logic()
+        check_pause_logic(_request_counter, retailer='target')
 
         mock_sleep.assert_not_called()
 

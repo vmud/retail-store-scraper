@@ -16,9 +16,10 @@ from src.scrapers.att import (
     run,
     get_request_count,
     reset_request_counter,
-    _check_pause_logic,
     _extract_single_store,
+    _request_counter,
 )
+from src.shared.request_counter import check_pause_logic
 from src.shared.session_factory import create_session_factory
 from src.shared.cache import URLCache, DEFAULT_CACHE_EXPIRY_DAYS as URL_CACHE_EXPIRY_DAYS
 
@@ -401,44 +402,41 @@ class TestATTRateLimiting:
         reset_request_counter()
         assert get_request_count() == 0
 
-    @patch('src.scrapers.att.time.sleep')
-    @patch('src.scrapers.att.random.uniform')
+    @patch('src.shared.request_counter.time.sleep')
+    @patch('src.shared.request_counter.random.uniform')
     def test_pause_at_50_requests(self, mock_uniform, mock_sleep):
         """Test that pause triggers at 50 request threshold."""
         mock_uniform.return_value = 15
         reset_request_counter()
 
-        from src.scrapers.att import _request_counter
         _request_counter._count = 50
 
-        _check_pause_logic()
+        check_pause_logic(_request_counter, retailer='att')
 
         mock_sleep.assert_called_once()
         mock_uniform.assert_called()
 
-    @patch('src.scrapers.att.time.sleep')
-    @patch('src.scrapers.att.random.uniform')
+    @patch('src.shared.request_counter.time.sleep')
+    @patch('src.shared.request_counter.random.uniform')
     def test_pause_at_200_requests(self, mock_uniform, mock_sleep):
         """Test that longer pause triggers at 200 request threshold."""
         mock_uniform.return_value = 180
         reset_request_counter()
 
-        from src.scrapers.att import _request_counter
         _request_counter._count = 200
 
-        _check_pause_logic()
+        check_pause_logic(_request_counter, retailer='att')
 
         mock_sleep.assert_called_once()
 
-    @patch('src.scrapers.att.time.sleep')
+    @patch('src.shared.request_counter.time.sleep')
     def test_no_pause_between_thresholds(self, mock_sleep):
         """Test that no pause occurs between thresholds."""
         reset_request_counter()
 
-        from src.scrapers.att import _request_counter
         _request_counter._count = 25
 
-        _check_pause_logic()
+        check_pause_logic(_request_counter, retailer='att')
 
         mock_sleep.assert_not_called()
 

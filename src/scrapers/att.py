@@ -2,10 +2,8 @@
 
 import json
 import logging
-import random
 import re
 import threading
-import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -18,7 +16,7 @@ import requests
 from config import att_config
 from src.shared import utils
 from src.shared.cache import URLCache
-from src.shared.request_counter import RequestCounter
+from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
@@ -47,46 +45,6 @@ class ATTStore:
     def to_dict(self) -> dict:
         """Convert to dictionary for export"""
         return asdict(self)
-
-
-def _check_pause_logic(yaml_config: dict = None, retailer: str = 'att') -> None:
-    """Check if we need to pause based on request count.
-
-    Args:
-        yaml_config: Retailer configuration dict from retailers.yaml (optional for tests)
-        retailer: Retailer name for logging
-    """
-    # If no config provided (tests), use hardcoded Python config values
-    if yaml_config is None:
-        pause_50_requests = att_config.PAUSE_50_REQUESTS
-        pause_200_requests = att_config.PAUSE_200_REQUESTS
-        pause_50_min = att_config.PAUSE_50_MIN
-        pause_50_max = att_config.PAUSE_50_MAX
-        pause_200_min = att_config.PAUSE_200_MIN
-        pause_200_max = att_config.PAUSE_200_MAX
-    else:
-        # Read from YAML config (preferred)
-        pause_50_requests = yaml_config.get('pause_50_requests', att_config.PAUSE_50_REQUESTS)
-        pause_200_requests = yaml_config.get('pause_200_requests', att_config.PAUSE_200_REQUESTS)
-        pause_50_min = yaml_config.get('pause_50_min', att_config.PAUSE_50_MIN)
-        pause_50_max = yaml_config.get('pause_50_max', att_config.PAUSE_50_MAX)
-        pause_200_min = yaml_config.get('pause_200_min', att_config.PAUSE_200_MIN)
-        pause_200_max = yaml_config.get('pause_200_max', att_config.PAUSE_200_MAX)
-
-    # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
-        return
-
-    count = _request_counter.count
-
-    if count % pause_200_requests == 0 and count > 0:
-        pause_time = random.uniform(pause_200_min, pause_200_max)
-        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-    elif count % pause_50_requests == 0 and count > 0:
-        pause_time = random.uniform(pause_50_min, pause_50_max)
-        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
 
 
 # =============================================================================
@@ -208,7 +166,7 @@ def get_store_urls_from_sitemap(
         return []
 
     _request_counter.increment()
-    _check_pause_logic(yaml_config, retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     try:
         # Parse XML
@@ -272,7 +230,7 @@ def extract_store_details(
         return None
 
     _request_counter.increment()
-    _check_pause_logic(yaml_config, retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')

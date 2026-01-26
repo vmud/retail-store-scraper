@@ -3,10 +3,8 @@
 
 import json
 import logging
-import random
 import re
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,7 +16,7 @@ import requests
 from config import verizon_config as config
 from src.shared import utils
 from src.shared.cache import URLCache
-from src.shared.request_counter import RequestCounter
+from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
@@ -136,46 +134,6 @@ def get_state_url(slug: str) -> str:
     return f"/stores/state/{slug}/"
 
 
-def _check_pause_logic(yaml_config: dict = None, retailer: str = 'verizon') -> None:
-    """Check if we need to pause based on request count
-    
-    Args:
-        yaml_config: Retailer configuration dict from retailers.yaml (optional for tests)
-        retailer: Retailer name for logging
-    """
-    # If no config provided (tests), use hardcoded Python config values
-    if yaml_config is None:
-        pause_50_requests = config.PAUSE_50_REQUESTS
-        pause_200_requests = config.PAUSE_200_REQUESTS
-        pause_50_min = config.PAUSE_50_MIN
-        pause_50_max = config.PAUSE_50_MAX
-        pause_200_min = config.PAUSE_200_MIN
-        pause_200_max = config.PAUSE_200_MAX
-    else:
-        # Read from YAML config (preferred)
-        pause_50_requests = yaml_config.get('pause_50_requests', config.PAUSE_50_REQUESTS)
-        pause_200_requests = yaml_config.get('pause_200_requests', config.PAUSE_200_REQUESTS)
-        pause_50_min = yaml_config.get('pause_50_min', config.PAUSE_50_MIN)
-        pause_50_max = yaml_config.get('pause_50_max', config.PAUSE_50_MAX)
-        pause_200_min = yaml_config.get('pause_200_min', config.PAUSE_200_MIN)
-        pause_200_max = yaml_config.get('pause_200_max', config.PAUSE_200_MAX)
-    
-    # Skip modulo operations if pauses are effectively disabled (>= 999999)
-    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
-        return
-    
-    count = _request_counter.count
-
-    if count % pause_200_requests == 0 and count > 0:
-        pause_time = random.uniform(pause_200_min, pause_200_max)
-        logging.info(f"[{retailer}] Long pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-    elif count % pause_50_requests == 0 and count > 0:
-        pause_time = random.uniform(pause_50_min, pause_50_max)
-        logging.info(f"[{retailer}] Pause after {count} requests: {pause_time:.0f} seconds")
-        time.sleep(pause_time)
-
-
 def _scrape_states_from_html(session: requests.Session, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Scrape state URLs from the main stores page HTML.
     Returns empty list if scraping fails.
@@ -194,7 +152,7 @@ def _scrape_states_from_html(session: requests.Session, yaml_config: dict = None
         return []
 
     _request_counter.increment()
-    _check_pause_logic(yaml_config, retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     states = []
@@ -355,7 +313,7 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
         return []
 
     _request_counter.increment()
-    _check_pause_logic(yaml_config, retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     # Extract state slug from URL (e.g., "new-jersey" from "/stores/state/new-jersey/")
     state_slug = state_url.rstrip('/').split('/')[-1].lower()
@@ -464,7 +422,7 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
         return []
 
     _request_counter.increment()
-    _check_pause_logic(yaml_config, retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     stores = []
@@ -721,7 +679,7 @@ def extract_store_details(session: requests.Session, store_url: str, yaml_config
         return None
 
     _request_counter.increment()
-    _check_pause_logic(yaml_config, retailer)
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
 
     soup = BeautifulSoup(response.text, 'html.parser')
 
