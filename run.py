@@ -459,40 +459,48 @@ async def run_retailer_async(
             ExportFormat.GEOJSON: 'geojson'
         }
 
+        successful_formats = []
+        successful_extensions = []
         for fmt in export_formats:
+            ext = format_extensions.get(fmt, fmt.value)
+            output_path = f"{output_dir}/stores_latest.{ext}"
             try:
-                ext = format_extensions.get(fmt, fmt.value)
-                output_path = f"{output_dir}/stores_latest.{ext}"
                 ExportService.export_stores(stores, fmt, output_path, retailer_config)
             except Exception as export_err:
                 logging.warning(f"[{retailer}] Failed to export {fmt.value}: {export_err}")
+                continue
+
+            successful_formats.append(fmt)
+            successful_extensions.append(ext)
 
         # Upload to cloud storage if configured
         cloud_results = {}
         if cloud_manager and stores:
-            try:
-                format_extensions_list = [format_extensions.get(f, f.value) for f in export_formats]
-                cloud_results = cloud_manager.upload_retailer_data(
-                    retailer=retailer,
-                    output_dir=output_dir,
-                    formats=format_extensions_list
-                )
-                successful = sum(1 for v in cloud_results.values() if v)
-                total = len(cloud_results)
-                if successful == total:
-                    logging.info(f"[{retailer}] Cloud upload complete: {successful} files")
-                elif successful > 0:
-                    logging.warning(f"[{retailer}] Cloud upload partial: {successful}/{total} files")
-                else:
-                    logging.error(f"[{retailer}] Cloud upload failed: 0/{total} files")
-            except Exception as cloud_err:
-                logging.warning(f"[{retailer}] Cloud upload failed: {cloud_err}")
+            if successful_extensions:
+                try:
+                    cloud_results = cloud_manager.upload_retailer_data(
+                        retailer=retailer,
+                        output_dir=output_dir,
+                        formats=successful_extensions
+                    )
+                    successful = sum(1 for v in cloud_results.values() if v)
+                    total = len(cloud_results)
+                    if successful == total:
+                        logging.info(f"[{retailer}] Cloud upload complete: {successful} files")
+                    elif successful > 0:
+                        logging.warning(f"[{retailer}] Cloud upload partial: {successful}/{total} files")
+                    else:
+                        logging.error(f"[{retailer}] Cloud upload failed: 0/{total} files")
+                except Exception as cloud_err:
+                    logging.warning(f"[{retailer}] Cloud upload failed: {cloud_err}")
+            else:
+                logging.warning(f"[{retailer}] Cloud upload skipped: no successful exports")
 
         result = {
             'retailer': retailer,
             'status': 'completed',
             'stores': count,
-            'formats': [f.value for f in export_formats],
+            'formats': [f.value for f in successful_formats],
             'cloud_uploaded': bool(cloud_results and any(cloud_results.values())),
             'error': None
         }
