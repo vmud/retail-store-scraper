@@ -260,7 +260,6 @@ def setup_parser() -> argparse.ArgumentParser:
     cloud_group.add_argument(
         '--gcs-history',
         action='store_true',
-        default=None,
         help='Upload timestamped copies to history/ folder'
     )
 
@@ -790,7 +789,7 @@ def main():
         if cloud_enabled or args.gcs_bucket:
             cloud_manager = get_cloud_storage(
                 bucket_override=args.gcs_bucket,
-                enable_history=getattr(args, 'gcs_history', False),
+                enable_history=True if args.gcs_history else None,
                 config=loaded_config
             )
             if cloud_manager:
