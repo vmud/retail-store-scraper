@@ -1,7 +1,7 @@
 """
 UAT Test Suites
 
-This package contains all UAT test suites for the Retail Store Scraper Dashboard.
+This package contains UAT test suites for the Retail Store Scraper.
 Each suite focuses on a specific area of functionality.
 """
 
@@ -11,9 +11,7 @@ from .control import ControlSuite
 from .config import ConfigSuite
 from .logs import LogsSuite
 from .history import HistorySuite
-from .ui import UISuite
 from .error import ErrorSuite
-from .api import APISuite
 from .perf import PerfSuite
 from .proxy import ProxySuite
 
@@ -25,9 +23,7 @@ __all__ = [
     "ConfigSuite",
     "LogsSuite",
     "HistorySuite",
-    "UISuite",
     "ErrorSuite",
-    "APISuite",
     "PerfSuite",
     "ProxySuite",
 ]
@@ -39,11 +35,9 @@ SUITE_ORDER = [
     "StatusSuite",
     "ControlSuite",
     "ErrorSuite",
-    "APISuite",
     # High priority
     "ConfigSuite",
     "LogsSuite",
-    "UISuite",
     "ProxySuite",
     # Medium priority
     "HistorySuite",

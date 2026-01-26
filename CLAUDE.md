@@ -114,18 +114,19 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   └── telus.py                # Uberall API (Canadian)
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
+│   ├── cache.py                # URL caching (URLCache, RichURLCache)
+│   ├── session_factory.py      # Thread-safe session creation for parallel workers
 │   ├── proxy_client.py         # Oxylabs proxy abstraction (ProxyMode, ProxyClient)
 │   ├── export_service.py       # Multi-format export (JSON, CSV, Excel, GeoJSON)
 │   ├── request_counter.py      # Rate limiting tracker
-│   ├── status.py               # Progress reporting
+│   ├── status.py               # Progress reporting (interface for future UI)
 │   ├── notifications.py        # Pluggable notification system (Slack, console)
 │   ├── run_tracker.py          # Run metadata and state tracking
 │   └── scraper_manager.py      # Process lifecycle management
 ├── src/change_detector.py      # Detects new/closed/modified stores between runs
-├── config/
-│   ├── retailers.yaml          # Global config: proxy settings, per-retailer overrides
-│   └── *_config.py             # Per-retailer Python configs
-└── dashboard/app.py            # Flask monitoring UI
+└── config/
+    ├── retailers.yaml          # Global config: proxy settings, per-retailer overrides
+    └── *_config.py             # Per-retailer Python configs
 ```
 
 ### Scraper Interface
@@ -243,15 +244,14 @@ tests/
 ├── test_change_detector.py  # Change detection tests
 ├── test_proxy_client.py     # Proxy integration tests
 ├── test_export_service.py   # Export format tests
-├── test_api.py              # Dashboard API tests
 └── uat/                     # User Acceptance Testing framework
     ├── protocol.py          # UAT test protocol
     ├── helpers.py           # Test utilities
     ├── report.py            # Test reporting
     └── suites/              # Test suites by feature
-        ├── api.py, config.py, control.py, error.py
+        ├── config.py, control.py, error.py
         ├── history.py, init.py, logs.py, perf.py
-        └── proxy.py, status.py, ui.py
+        └── proxy.py, status.py
 ```
 
 ## Deployment
