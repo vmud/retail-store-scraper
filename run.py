@@ -35,6 +35,7 @@ from src.shared.utils import (
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
+from src.shared.cloud_storage import get_cloud_storage
 from src.scrapers import get_available_retailers, get_enabled_retailers, get_scraper_module
 from src.change_detector import ChangeDetector
 
@@ -236,6 +237,32 @@ def setup_parser() -> argparse.ArgumentParser:
         help='Export formats (comma-separated): json,csv,excel,geojson (default: json,csv)'
     )
 
+    # Cloud storage options
+    cloud_group = parser.add_argument_group('cloud storage', 'GCS backup/sync options')
+    cloud_mutex = cloud_group.add_mutually_exclusive_group()
+    cloud_mutex.add_argument(
+        '--cloud',
+        action='store_true',
+        default=None,
+        help='Enable cloud storage sync (uploads to GCS after local export)'
+    )
+    cloud_mutex.add_argument(
+        '--no-cloud',
+        action='store_true',
+        help='Disable cloud storage sync (overrides env/config)'
+    )
+    cloud_group.add_argument(
+        '--gcs-bucket',
+        type=str,
+        default=None,
+        help='Override GCS bucket name'
+    )
+    cloud_group.add_argument(
+        '--gcs-history',
+        action='store_true',
+        help='Upload timestamped copies to history/ folder'
+    )
+
     # Logging
     parser.add_argument(
         '--log-file',
@@ -335,6 +362,7 @@ async def run_retailer_async(
     cli_proxy_override: Optional[str] = None,
     cli_proxy_settings: Optional[dict] = None,
     export_formats: Optional[List[ExportFormat]] = None,
+    cloud_manager=None,
     **kwargs
 ) -> dict:
     """Run a single retailer scraper asynchronously
@@ -347,6 +375,7 @@ async def run_retailer_async(
         cli_proxy_override: Optional CLI proxy mode override from --proxy flag
         cli_proxy_settings: Optional CLI proxy settings (country_code, render_js)
         export_formats: List of formats to export (default: JSON, CSV)
+        cloud_manager: Optional CloudStorageManager for uploading to GCS
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
     logging.info(f"[{retailer}] Starting scraper")
@@ -438,11 +467,33 @@ async def run_retailer_async(
             except Exception as export_err:
                 logging.warning(f"[{retailer}] Failed to export {fmt.value}: {export_err}")
 
+        # Upload to cloud storage if configured
+        cloud_results = {}
+        if cloud_manager and stores:
+            try:
+                format_extensions_list = [format_extensions.get(f, f.value) for f in export_formats]
+                cloud_results = cloud_manager.upload_retailer_data(
+                    retailer=retailer,
+                    output_dir=output_dir,
+                    formats=format_extensions_list
+                )
+                successful = sum(1 for v in cloud_results.values() if v)
+                total = len(cloud_results)
+                if successful == total:
+                    logging.info(f"[{retailer}] Cloud upload complete: {successful} files")
+                elif successful > 0:
+                    logging.warning(f"[{retailer}] Cloud upload partial: {successful}/{total} files")
+                else:
+                    logging.error(f"[{retailer}] Cloud upload failed: 0/{total} files")
+            except Exception as cloud_err:
+                logging.warning(f"[{retailer}] Cloud upload failed: {cloud_err}")
+
         result = {
             'retailer': retailer,
             'status': 'completed',
             'stores': count,
             'formats': [f.value for f in export_formats],
+            'cloud_uploaded': bool(cloud_results and any(cloud_results.values())),
             'error': None
         }
 
@@ -471,6 +522,7 @@ async def run_all_retailers(
     cli_proxy_override: Optional[str] = None,
     cli_proxy_settings: Optional[dict] = None,
     export_formats: Optional[List[ExportFormat]] = None,
+    cloud_manager=None,
     **kwargs
 ) -> dict:
     """Run multiple retailers concurrently
@@ -480,6 +532,7 @@ async def run_all_retailers(
         cli_proxy_override: Optional CLI proxy mode override from --proxy flag
         cli_proxy_settings: Optional CLI proxy settings (country_code, render_js)
         export_formats: List of formats to export
+        cloud_manager: Optional CloudStorageManager for uploading to GCS
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
     logging.info(f"Starting concurrent scrape for {len(retailers)} retailers: {retailers}")
@@ -490,6 +543,7 @@ async def run_all_retailers(
             cli_proxy_override=cli_proxy_override,
             cli_proxy_settings=cli_proxy_settings,
             export_formats=export_formats,
+            cloud_manager=cloud_manager,
             **kwargs
         )
         for retailer in retailers
@@ -725,6 +779,24 @@ def main():
     if not cli_proxy_settings and not cli_proxy_override:
         cli_proxy_settings = None
 
+    # Initialize cloud storage if enabled
+    # Priority: --no-cloud (disable) > --cloud (enable) > config/env
+    cloud_manager = None
+    if getattr(args, 'no_cloud', False):
+        logging.debug("Cloud storage disabled via --no-cloud")
+    else:
+        cloud_enabled = getattr(args, 'cloud', False) or loaded_config.get('cloud_storage', {}).get('enabled', False)
+        if cloud_enabled or args.gcs_bucket:
+            cloud_manager = get_cloud_storage(
+                bucket_override=args.gcs_bucket,
+                enable_history=getattr(args, 'gcs_history', False),
+                config=loaded_config
+            )
+            if cloud_manager:
+                logging.info(f"Cloud storage enabled: {cloud_manager.provider_name}")
+            elif cloud_enabled:
+                logging.warning("Cloud storage requested but not configured (check GCS_* env vars)")
+
     # Run scrapers
     try:
         # Get refresh_urls flag (convert hyphen to underscore for attribute access)
@@ -739,6 +811,7 @@ def main():
                 cli_proxy_override=cli_proxy_override,
                 cli_proxy_settings=cli_proxy_settings,
                 export_formats=export_formats,
+                cloud_manager=cloud_manager,
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit,
@@ -748,6 +821,8 @@ def main():
             print(f"\nResult for {retailers[0]}: {result['status']}")
             if result.get('formats'):
                 print(f"  Exported: {', '.join(result['formats'])}")
+            if result.get('cloud_uploaded'):
+                print(f"  Cloud: uploaded to {cloud_manager.provider_name}")
         else:
             # Multiple retailers - run concurrently
             results = asyncio.run(run_all_retailers(
@@ -755,6 +830,7 @@ def main():
                 cli_proxy_override=cli_proxy_override,
                 cli_proxy_settings=cli_proxy_settings,
                 export_formats=export_formats,
+                cloud_manager=cloud_manager,
                 resume=args.resume,
                 incremental=args.incremental,
                 limit=limit,
@@ -769,7 +845,8 @@ def main():
                 status = result.get('status', 'unknown')
                 stores = result.get('stores', 0)
                 error = result.get('error', '')
-                print(f"  {retailer}: {status} ({stores} stores)")
+                cloud_status = " [cloud]" if result.get('cloud_uploaded') else ""
+                print(f"  {retailer}: {status} ({stores} stores){cloud_status}")
                 if error:
                     print(f"    Error: {error}")
 

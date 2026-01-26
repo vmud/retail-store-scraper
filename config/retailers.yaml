@@ -2,6 +2,24 @@
 # This file contains configuration for all supported retailers
 
 # =============================================================================
+# CLOUD STORAGE CONFIGURATION (GCS Integration)
+# =============================================================================
+# Sync scraped data to Google Cloud Storage for backup and team access.
+# Credentials are loaded from environment variables (see .env.example).
+#
+# GCS bucket structure:
+#   gs://{bucket}/
+#   ├── {retailer}/stores_latest.{json,csv,xlsx}  (overwritten, versioned)
+#   └── history/{retailer}/stores_YYYY-MM-DD_HHMMSS.{ext}  (optional)
+
+cloud_storage:
+  enabled: false          # Set to true or use --cloud CLI flag
+  provider: "gcs"         # Currently only GCS supported
+  max_retries: 3          # Retry attempts for transient errors
+  retry_delay: 2.0        # Base delay (exponential backoff: 2s, 4s, 8s)
+  enable_history: false   # Upload timestamped copies to history/ folder
+
+# =============================================================================
 # PROXY CONFIGURATION (Oxylabs Integration)
 # =============================================================================
 # Credentials are loaded from environment variables:
