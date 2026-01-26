@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, and Best Buy. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
+Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, and Telus. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
 
 ## Environment Setup
 
@@ -43,6 +43,24 @@ python run.py --all --proxy residential --validate-proxy
 
 # Export in multiple formats
 python run.py --retailer target --format json,csv,excel
+
+# Incremental mode (only new/changed stores)
+python run.py --all --incremental
+
+# Targeted state scraping (Verizon only)
+python run.py --retailer verizon --states MD,PA,RI
+
+# Force URL re-discovery
+python run.py --retailer verizon --refresh-urls
+
+# Exclude specific retailers
+python run.py --all --exclude bestbuy att
+
+# Web Scraper API with JS rendering
+python run.py --retailer walmart --proxy web_scraper_api --render-js
+
+# Geo-targeted proxy
+python run.py --retailer target --proxy residential --proxy-country ca
 ```
 
 ### Testing
@@ -92,18 +110,23 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   ├── target.py               # Gzipped sitemap + API
 │   ├── tmobile.py              # Paginated sitemaps
 │   ├── walmart.py              # Multiple gzipped sitemaps
-│   └── bestbuy.py              # XML sitemap (WIP, disabled)
+│   ├── bestbuy.py              # XML sitemap
+│   └── telus.py                # Uberall API (Canadian)
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
+│   ├── cache.py                # URL caching (URLCache, RichURLCache)
+│   ├── session_factory.py      # Thread-safe session creation for parallel workers
 │   ├── proxy_client.py         # Oxylabs proxy abstraction (ProxyMode, ProxyClient)
 │   ├── export_service.py       # Multi-format export (JSON, CSV, Excel, GeoJSON)
 │   ├── request_counter.py      # Rate limiting tracker
-│   └── status.py               # Progress reporting
+│   ├── status.py               # Progress reporting (interface for future UI)
+│   ├── notifications.py        # Pluggable notification system (Slack, console)
+│   ├── run_tracker.py          # Run metadata and state tracking
+│   └── scraper_manager.py      # Process lifecycle management
 ├── src/change_detector.py      # Detects new/closed/modified stores between runs
-├── config/
-│   ├── retailers.yaml          # Global config: proxy settings, per-retailer overrides
-│   └── *_config.py             # Per-retailer Python configs
-└── dashboard/app.py            # Flask monitoring UI
+└── config/
+    ├── retailers.yaml          # Global config: proxy settings, per-retailer overrides
+    └── *_config.py             # Per-retailer Python configs
 ```
 
 ### Scraper Interface
@@ -120,6 +143,28 @@ def run(session, retailer_config, retailer: str, **kwargs) -> dict:
 - `DEFAULT_MAX_RETRIES = 3` - HTTP retry attempts
 - `DEFAULT_TIMEOUT = 30` - request timeout in seconds
 - `DEFAULT_RATE_LIMIT_BASE_WAIT = 30` - wait time on 429 errors
+
+### Dual Delay Profiles
+
+Retailers can define separate delay profiles for direct and proxied requests in `config/retailers.yaml`:
+```yaml
+delays:
+  direct:      # Conservative (no proxy)
+    min_delay: 2.0
+    max_delay: 5.0
+  proxied:     # Aggressive (with proxy)
+    min_delay: 0.2
+    max_delay: 0.5
+```
+- Provides 5-7x speedup when using residential proxies
+- Automatically selects appropriate delays based on proxy mode
+- Falls back to direct delays when no proxy is configured
+
+### Performance Features
+
+- **Parallel workers**: Configure `discovery_workers` and `parallel_workers` in retailers.yaml for concurrent request handling
+- **URL caching**: 7-day cache for discovered store URLs (reduces repeat work on subsequent runs)
+- **Verizon optimization**: 9.6x speedup with parallel discovery + extraction using proxies
 
 ## Key Patterns
 
@@ -161,6 +206,10 @@ Data stored in `data/{retailer}/`:
 - `checkpoints/` - resumable state
 - `history/changes_{retailer}_YYYY-MM-DD_HH-MM-SS-ffffff.json` - change reports
 
+Additional output directories:
+- `runs/{run_id}.json` - run metadata tracking
+- `logs/{run_id}.log` - per-run log files
+
 ### Anti-Blocking
 
 Configurable in `config/retailers.yaml`:
@@ -195,5 +244,19 @@ tests/
 ├── test_change_detector.py  # Change detection tests
 ├── test_proxy_client.py     # Proxy integration tests
 ├── test_export_service.py   # Export format tests
-└── test_api.py              # Dashboard API tests
+└── uat/                     # User Acceptance Testing framework
+    ├── protocol.py          # UAT test protocol
+    ├── helpers.py           # Test utilities
+    ├── report.py            # Test reporting
+    └── suites/              # Test suites by feature
+        ├── config.py, control.py, error.py
+        ├── history.py, init.py, logs.py, perf.py
+        └── proxy.py, status.py
 ```
+
+## Deployment
+
+Deployment tools in `deploy/`:
+- `rsync-deploy.sh` - production deployment via rsync
+- `validate.sh` - deployment validation checks
+- `diagnose-network.sh` - network troubleshooting utilities

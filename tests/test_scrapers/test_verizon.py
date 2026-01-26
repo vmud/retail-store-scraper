@@ -16,7 +16,11 @@ from src.scrapers.verizon import (
     get_request_count,
     reset_request_counter,
     _check_pause_logic,
+    _fetch_cities_for_state_worker,
+    _fetch_stores_for_city_worker,
 )
+from src.shared.session_factory import create_session_factory
+from src.shared.cache import URLCache
 
 
 class TestStateConfiguration:
@@ -155,16 +159,20 @@ class TestVerizonRun:
         response.text = html
         return response
 
-    @patch('src.scrapers.verizon._load_cached_urls')
+    @patch('src.scrapers.verizon.URLCache')
     @patch('src.scrapers.verizon.get_stores_for_city')
     @patch('src.scrapers.verizon.get_cities_for_state')
     @patch('src.scrapers.verizon.get_all_states')
     @patch('src.scrapers.verizon.extract_store_details')
     @patch('src.scrapers.verizon.reset_request_counter')
     def test_run_returns_correct_structure(self, mock_reset, mock_extract, mock_states,
-                                           mock_cities, mock_stores, mock_cache, mock_session):
+                                           mock_cities, mock_stores, mock_cache_class, mock_session):
         """Test that run() returns the expected structure."""
-        mock_cache.return_value = None  # Force discovery (no URL cache)
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None  # Force discovery (no URL cache)
+        mock_cache_class.return_value = mock_cache
+
         mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
         mock_cities.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/'}]
         mock_stores.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/store-123/'}]
@@ -197,16 +205,20 @@ class TestVerizonRun:
         assert isinstance(result['count'], int)
         assert isinstance(result['checkpoints_used'], bool)
 
-    @patch('src.scrapers.verizon._load_cached_urls')
+    @patch('src.scrapers.verizon.URLCache')
     @patch('src.scrapers.verizon.get_stores_for_city')
     @patch('src.scrapers.verizon.get_cities_for_state')
     @patch('src.scrapers.verizon.get_all_states')
     @patch('src.scrapers.verizon.extract_store_details')
     @patch('src.scrapers.verizon.reset_request_counter')
     def test_run_with_limit(self, mock_reset, mock_extract, mock_states,
-                            mock_cities, mock_stores, mock_cache, mock_session):
+                            mock_cities, mock_stores, mock_cache_class, mock_session):
         """Test run() respects limit parameter."""
-        mock_cache.return_value = None  # Force discovery (no URL cache)
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None  # Force discovery (no URL cache)
+        mock_cache_class.return_value = mock_cache
+
         mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
         mock_cities.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/'}]
         mock_stores.return_value = [
@@ -237,14 +249,18 @@ class TestVerizonRun:
         assert result['count'] == 2
         assert len(result['stores']) == 2
 
-    @patch('src.scrapers.verizon._load_cached_urls')
+    @patch('src.scrapers.verizon.URLCache')
     @patch('src.scrapers.verizon.get_stores_for_city')
     @patch('src.scrapers.verizon.get_cities_for_state')
     @patch('src.scrapers.verizon.get_all_states')
     @patch('src.scrapers.verizon.reset_request_counter')
-    def test_run_empty_stores(self, mock_reset, mock_states, mock_cities, mock_stores, mock_cache, mock_session):
+    def test_run_empty_stores(self, mock_reset, mock_states, mock_cities, mock_stores, mock_cache_class, mock_session):
         """Test run() with no store URLs returns empty stores."""
-        mock_cache.return_value = None  # Force discovery (no URL cache)
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None  # Force discovery (no URL cache)
+        mock_cache_class.return_value = mock_cache
+
         mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
         mock_cities.return_value = []
         mock_stores.return_value = []
@@ -259,7 +275,7 @@ class TestVerizonRun:
 class TestVerizonCheckpoint:
     """Tests for Verizon checkpoint/resume functionality."""
 
-    @patch('src.scrapers.verizon._load_cached_urls')
+    @patch('src.scrapers.verizon.URLCache')
     @patch('src.scrapers.verizon.utils.load_checkpoint')
     @patch('src.scrapers.verizon.utils.save_checkpoint')
     @patch('src.scrapers.verizon.get_stores_for_city')
@@ -267,9 +283,13 @@ class TestVerizonCheckpoint:
     @patch('src.scrapers.verizon.get_all_states')
     @patch('src.scrapers.verizon.reset_request_counter')
     def test_resume_loads_checkpoint(self, mock_reset, mock_states, mock_cities,
-                                      mock_stores, mock_save, mock_load, mock_cache, mock_session):
+                                      mock_stores, mock_save, mock_load, mock_cache_class, mock_session):
         """Test that resume=True loads existing checkpoint."""
-        mock_cache.return_value = None  # Force discovery (no URL cache)
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None  # Force discovery (no URL cache)
+        mock_cache_class.return_value = mock_cache
+
         mock_load.return_value = {
             'stores': [{'store_id': '123', 'name': 'Existing Store'}],
             'completed_urls': ['https://www.verizon.com/stores/texas/dallas/store-123/']
@@ -284,16 +304,20 @@ class TestVerizonCheckpoint:
         mock_load.assert_called_once()
         assert result['checkpoints_used'] is True
 
-    @patch('src.scrapers.verizon._load_cached_urls')
+    @patch('src.scrapers.verizon.URLCache')
     @patch('src.scrapers.verizon.utils.load_checkpoint')
     @patch('src.scrapers.verizon.get_stores_for_city')
     @patch('src.scrapers.verizon.get_cities_for_state')
     @patch('src.scrapers.verizon.get_all_states')
     @patch('src.scrapers.verizon.reset_request_counter')
     def test_no_resume_starts_fresh(self, mock_reset, mock_states, mock_cities,
-                                     mock_stores, mock_load, mock_cache, mock_session):
+                                     mock_stores, mock_load, mock_cache_class, mock_session):
         """Test that resume=False does not load checkpoint."""
-        mock_cache.return_value = None  # Force discovery (no URL cache)
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None  # Force discovery (no URL cache)
+        mock_cache_class.return_value = mock_cache
+
         mock_states.return_value = []
         mock_cities.return_value = []
         mock_stores.return_value = []
@@ -422,11 +446,9 @@ class TestParallelDiscovery:
     """Tests for parallel discovery worker functions."""
 
     @patch('src.scrapers.verizon.get_cities_for_state')
-    @patch('src.scrapers.verizon.utils.create_proxied_session')
+    @patch('src.shared.session_factory.utils.create_proxied_session')
     def test_fetch_cities_worker_success(self, mock_create_session, mock_get_cities):
         """Test city worker successfully fetches cities for a state."""
-        from src.scrapers.verizon import _fetch_cities_for_state_worker, _create_session_factory
-
         mock_session = Mock()
         mock_session.close = Mock()
         mock_create_session.return_value = mock_session
@@ -437,7 +459,7 @@ class TestParallelDiscovery:
 
         state = {'name': 'Texas', 'url': 'https://verizon.com/stores/state/texas/'}
         config = {'proxy': {'mode': 'direct'}}
-        factory = _create_session_factory(config)
+        factory = create_session_factory(config)
 
         state_name, cities = _fetch_cities_for_state_worker(state, factory, config, 'verizon')
 
@@ -447,11 +469,9 @@ class TestParallelDiscovery:
         mock_session.close.assert_called_once()
 
     @patch('src.scrapers.verizon.get_cities_for_state')
-    @patch('src.scrapers.verizon.utils.create_proxied_session')
+    @patch('src.shared.session_factory.utils.create_proxied_session')
     def test_fetch_cities_worker_handles_error(self, mock_create_session, mock_get_cities):
         """Test city worker handles errors gracefully."""
-        from src.scrapers.verizon import _fetch_cities_for_state_worker, _create_session_factory
-
         mock_session = Mock()
         mock_session.close = Mock()
         mock_create_session.return_value = mock_session
@@ -459,7 +479,7 @@ class TestParallelDiscovery:
 
         state = {'name': 'Texas', 'url': 'https://verizon.com/stores/state/texas/'}
         config = {'proxy': {'mode': 'direct'}}
-        factory = _create_session_factory(config)
+        factory = create_session_factory(config)
 
         state_name, cities = _fetch_cities_for_state_worker(state, factory, config, 'verizon')
 
@@ -468,11 +488,9 @@ class TestParallelDiscovery:
         mock_session.close.assert_called_once()
 
     @patch('src.scrapers.verizon.get_stores_for_city')
-    @patch('src.scrapers.verizon.utils.create_proxied_session')
+    @patch('src.shared.session_factory.utils.create_proxied_session')
     def test_fetch_stores_worker_success(self, mock_create_session, mock_get_stores):
         """Test store URL worker successfully fetches store URLs for a city."""
-        from src.scrapers.verizon import _fetch_stores_for_city_worker, _create_session_factory
-
         mock_session = Mock()
         mock_session.close = Mock()
         mock_create_session.return_value = mock_session
@@ -483,7 +501,7 @@ class TestParallelDiscovery:
 
         city = {'city': 'Dallas', 'state': 'Texas', 'url': 'https://verizon.com/stores/texas/dallas/'}
         config = {'proxy': {'mode': 'direct'}}
-        factory = _create_session_factory(config)
+        factory = create_session_factory(config)
 
         city_name, state_name, store_urls = _fetch_stores_for_city_worker(city, factory, config, 'verizon')
 
@@ -494,11 +512,9 @@ class TestParallelDiscovery:
         mock_session.close.assert_called_once()
 
     @patch('src.scrapers.verizon.get_stores_for_city')
-    @patch('src.scrapers.verizon.utils.create_proxied_session')
+    @patch('src.shared.session_factory.utils.create_proxied_session')
     def test_fetch_stores_worker_handles_error(self, mock_create_session, mock_get_stores):
         """Test store URL worker handles errors gracefully."""
-        from src.scrapers.verizon import _fetch_stores_for_city_worker, _create_session_factory
-
         mock_session = Mock()
         mock_session.close = Mock()
         mock_create_session.return_value = mock_session
@@ -506,7 +522,7 @@ class TestParallelDiscovery:
 
         city = {'city': 'Dallas', 'state': 'Texas', 'url': 'https://verizon.com/stores/texas/dallas/'}
         config = {'proxy': {'mode': 'direct'}}
-        factory = _create_session_factory(config)
+        factory = create_session_factory(config)
 
         city_name, state_name, store_urls = _fetch_stores_for_city_worker(city, factory, config, 'verizon')
 
@@ -515,17 +531,15 @@ class TestParallelDiscovery:
         assert store_urls == []  # Empty list on error
         mock_session.close.assert_called_once()
 
-    @patch('src.scrapers.verizon.utils.create_proxied_session')
+    @patch('src.shared.session_factory.utils.create_proxied_session')
     def test_session_factory_creates_sessions(self, mock_create_session):
         """Test session factory creates new sessions on each call."""
-        from src.scrapers.verizon import _create_session_factory
-
         session1 = Mock()
         session2 = Mock()
         mock_create_session.side_effect = [session1, session2]
 
         config = {'proxy': {'mode': 'direct'}}
-        factory = _create_session_factory(config)
+        factory = create_session_factory(config)
 
         result1 = factory()
         result2 = factory()

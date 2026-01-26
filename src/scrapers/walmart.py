@@ -17,92 +17,13 @@ import requests
 
 from config import walmart_config
 from src.shared import utils
+from src.shared.cache import URLCache
 from src.shared.request_counter import RequestCounter
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
 
 
 # Global request counter
 _request_counter = RequestCounter()
-
-
-# =============================================================================
-# URL CACHING - Skip sitemap fetch on subsequent runs
-# =============================================================================
-
-# Default cache expiry: 7 days (stores don't change location frequently)
-URL_CACHE_EXPIRY_DAYS = 7
-
-
-def _get_url_cache_path(retailer: str) -> Path:
-    """Get path to store URL cache file."""
-    return Path(f"data/{retailer}/store_urls.json")
-
-
-def _load_cached_urls(retailer: str, max_age_days: int = URL_CACHE_EXPIRY_DAYS) -> Optional[List[str]]:
-    """Load cached store URLs if recent enough.
-
-    Args:
-        retailer: Retailer name
-        max_age_days: Maximum cache age in days (default: 7)
-
-    Returns:
-        List of cached URLs if cache is valid, None otherwise
-    """
-    cache_path = _get_url_cache_path(retailer)
-
-    if not cache_path.exists():
-        logging.info(f"[{retailer}] No URL cache found at {cache_path}")
-        return None
-
-    try:
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            cache_data = json.load(f)
-
-        # Check cache freshness
-        discovered_at = cache_data.get('discovered_at')
-        if discovered_at:
-            cache_time = datetime.fromisoformat(discovered_at)
-            age_days = (datetime.now() - cache_time).days
-
-            if age_days > max_age_days:
-                logging.info(f"[{retailer}] URL cache expired ({age_days} days old, max: {max_age_days})")
-                return None
-
-            urls = cache_data.get('urls', [])
-            if urls:
-                logging.info(f"[{retailer}] Loaded {len(urls)} URLs from cache ({age_days} days old)")
-                return urls
-
-        logging.warning(f"[{retailer}] URL cache is invalid or empty")
-        return None
-
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
-        logging.warning(f"[{retailer}] Error loading URL cache: {e}")
-        return None
-
-
-def _save_cached_urls(retailer: str, urls: List[str]) -> None:
-    """Save discovered store URLs to cache.
-
-    Args:
-        retailer: Retailer name
-        urls: List of store URLs to cache
-    """
-    cache_path = _get_url_cache_path(retailer)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-
-    cache_data = {
-        'discovered_at': datetime.now().isoformat(),
-        'store_count': len(urls),
-        'urls': urls
-    }
-
-    try:
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(cache_data, f, indent=2)
-        logging.info(f"[{retailer}] Saved {len(urls)} URLs to cache: {cache_path}")
-    except IOError as e:
-        logging.warning(f"[{retailer}] Failed to save URL cache: {e}")
 
 
 # =============================================================================
@@ -564,9 +485,10 @@ def run(session, config: dict, **kwargs) -> dict:
                 checkpoints_used = True
 
         # Try to load cached URLs (skip sitemap fetch if cache is valid)
+        url_cache = URLCache(retailer_name)
         store_urls = None
         if not refresh_urls:
-            store_urls = _load_cached_urls(retailer_name)
+            store_urls = url_cache.get()
 
         if store_urls is None:
             # Cache miss or refresh requested - fetch from sitemap
@@ -575,7 +497,7 @@ def run(session, config: dict, **kwargs) -> dict:
 
             # Save to cache for future runs
             if store_urls:
-                _save_cached_urls(retailer_name, store_urls)
+                url_cache.set(store_urls)
         else:
             logging.info(f"[{retailer_name}] Using {len(store_urls)} cached store URLs")
 
@@ -619,8 +541,8 @@ def run(session, config: dict, **kwargs) -> dict:
             else:
                 failed_urls.append(url)
 
-            # Progress logging every 100 stores
-            if i % 100 == 0:
+            # Progress logging every 50 stores
+            if i % 50 == 0:
                 logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
 
             if i % checkpoint_interval == 0:
@@ -662,6 +584,13 @@ def run(session, config: dict, **kwargs) -> dict:
                 'last_updated': datetime.now().isoformat()
             }, checkpoint_path)
             logging.info(f"[{retailer_name}] Final checkpoint saved: {len(stores)} stores total")
+
+        # Validate store data
+        validation_summary = utils.validate_stores_batch(stores)
+        logging.info(
+            f"[{retailer_name}] Validation: {validation_summary['valid']}/{validation_summary['total']} valid, "
+            f"{validation_summary['warning_count']} warnings"
+        )
 
         logging.info(f"[{retailer_name}] Completed: {len(stores)} stores successfully scraped")
 

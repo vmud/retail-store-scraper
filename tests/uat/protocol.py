@@ -40,9 +40,7 @@ from .suites import (
     ConfigSuite,
     LogsSuite,
     HistorySuite,
-    UISuite,
     ErrorSuite,
-    APISuite,
     PerfSuite,
     ProxySuite,
 )
@@ -74,9 +72,7 @@ class UATProtocol:
             "config": ConfigSuite(self.config),
             "logs": LogsSuite(self.config),
             "history": HistorySuite(self.config),
-            "ui": UISuite(self.config),
             "error": ErrorSuite(self.config),
-            "api": APISuite(self.config),
             "perf": PerfSuite(self.config),
             "proxy": ProxySuite(self.config),
         }

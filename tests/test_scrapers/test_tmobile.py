@@ -1,4 +1,5 @@
 """Unit tests for T-Mobile scraper."""
+# pylint: disable=no-member  # Mock objects have dynamic attributes
 
 import json
 import pytest
@@ -16,13 +17,10 @@ from src.scrapers.tmobile import (
     get_request_count,
     reset_request_counter,
     _check_pause_logic,
-    _create_session_factory,
     _extract_single_store,
-    _load_cached_urls,
-    _save_cached_urls,
-    _get_url_cache_path,
-    URL_CACHE_EXPIRY_DAYS,
 )
+from src.shared.session_factory import create_session_factory
+from src.shared.cache import URLCache, DEFAULT_CACHE_EXPIRY_DAYS as URL_CACHE_EXPIRY_DAYS
 
 
 class TestTMobileStore:
@@ -258,16 +256,17 @@ class TestTMobileRun:
         response.text = html
         return response
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_config, mock_cache_class, mock_session):
         """Test that run() returns the expected structure."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
-        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache = Mock()
+        mock_cache.get.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache_class.return_value = mock_cache
         mock_get.return_value = self._make_store_page_response('TX-DAL-001')
 
         result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile')
@@ -280,23 +279,24 @@ class TestTMobileRun:
         assert isinstance(result['count'], int)
         assert isinstance(result['checkpoints_used'], bool)
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_with_limit(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_with_limit(self, mock_counter, mock_get, mock_config, mock_cache_class, mock_session):
         """Test run() respects limit parameter."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        mock_cache = Mock()
         # Return cached URLs to skip sitemap fetch
-        mock_load_cache.return_value = [
+        mock_cache.get.return_value = [
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-003',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-004',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-005'
         ]
+        mock_cache_class.return_value = mock_cache
         mock_get.side_effect = [
             self._make_store_page_response('TX-DAL-001'),
             self._make_store_page_response('TX-DAL-002'),
@@ -307,17 +307,18 @@ class TestTMobileRun:
         assert result['count'] == 2
         assert len(result['stores']) == 2
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_empty_sitemap(self, mock_counter, mock_get, mock_config, mock_cache_class, mock_session):
         """Test run() with empty sitemap returns empty stores."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        mock_cache = Mock()
         # No cached URLs, force sitemap fetch
-        mock_load_cache.return_value = None
+        mock_cache.get.return_value = None
+        mock_cache_class.return_value = mock_cache
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
@@ -329,20 +330,21 @@ class TestTMobileRun:
         assert result['count'] == 0
         assert result['checkpoints_used'] is False
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_config, mock_cache_class, mock_session):
         """Test that count matches the actual number of stores."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
-        mock_load_cache.return_value = [
+        mock_cache = Mock()
+        mock_cache.get.return_value = [
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-003'
         ]
+        mock_cache_class.return_value = mock_cache
         mock_get.side_effect = [
             self._make_store_page_response('TX-DAL-001'),
             self._make_store_page_response('TX-DAL-002'),
@@ -357,14 +359,13 @@ class TestTMobileRun:
 class TestTMobileCheckpoint:
     """Tests for T-Mobile checkpoint/resume functionality."""
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.load_checkpoint')
     @patch('src.scrapers.tmobile.utils.save_checkpoint')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_config, mock_cache_class, mock_session):
         """Test that resume=True loads existing checkpoint."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
@@ -372,26 +373,29 @@ class TestTMobileCheckpoint:
             'stores': [{'branch_code': 'TX-DAL-001', 'name': 'Existing Store'}],
             'completed_urls': ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
         }
+        mock_cache = Mock()
         # Return cached URLs
-        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache.get.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache_class.return_value = mock_cache
 
         result = run(mock_session, {'checkpoint_interval': 100, 'parallel_workers': 1}, retailer='tmobile', resume=True)
 
         mock_load.assert_called_once()
         assert result['checkpoints_used'] is True
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.load_checkpoint')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_config, mock_cache_class, mock_session):
         """Test that resume=False does not load checkpoint."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        mock_cache = Mock()
         # No cached URLs
-        mock_load_cache.return_value = None
+        mock_cache.get.return_value = None
+        mock_cache_class.return_value = mock_cache
         xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'
         response = Mock()
         response.content = xml.encode('utf-8')
@@ -511,23 +515,23 @@ class TestTMobileErrorHandling:
 
 
 class TestTMobileSessionFactory:
-    """Tests for session factory function."""
+    """Tests for session factory function using shared module."""
 
-    @patch('src.scrapers.tmobile.utils.create_proxied_session')
+    @patch('src.shared.session_factory.utils.create_proxied_session')
     def test_session_factory_creates_session(self, mock_create_session):
         """Test that session factory creates a session."""
         mock_session = Mock()
         mock_create_session.return_value = mock_session
 
         config = {'proxy': {'mode': 'residential'}}
-        factory = _create_session_factory(config)
+        factory = create_session_factory(config)
 
         result = factory()
 
         mock_create_session.assert_called_once_with(config)
         assert result == mock_session
 
-    @patch('src.scrapers.tmobile.utils.create_proxied_session')
+    @patch('src.shared.session_factory.utils.create_proxied_session')
     def test_session_factory_creates_new_session_each_call(self, mock_create_session):
         """Test that session factory creates new session each time."""
         mock_session1 = Mock()
@@ -535,7 +539,7 @@ class TestTMobileSessionFactory:
         mock_create_session.side_effect = [mock_session1, mock_session2]
 
         config = {'proxy': {'mode': 'residential'}}
-        factory = _create_session_factory(config)
+        factory = create_session_factory(config)
 
         result1 = factory()
         result2 = factory()
@@ -628,20 +632,20 @@ class TestTMobileParallelExtraction:
 
 
 class TestTMobileURLCaching:
-    """Tests for URL caching functionality."""
+    """Tests for URL caching functionality using shared URLCache."""
 
-    def test_get_url_cache_path(self):
+    def test_url_cache_path_generation(self):
         """Test URL cache path generation."""
-        path = _get_url_cache_path('tmobile')
-        assert path == Path('data/tmobile/store_urls.json')
+        cache = URLCache('tmobile')
+        assert cache.cache_path == Path('data/tmobile/store_urls.json')
 
-    def test_load_cached_urls_no_file(self, tmp_path):
+    def test_url_cache_no_file(self, tmp_path):
         """Test loading from non-existent cache returns None."""
-        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=tmp_path / 'nonexistent.json'):
-            result = _load_cached_urls('tmobile')
-            assert result is None
+        cache = URLCache('tmobile', cache_dir=tmp_path)
+        result = cache.get()
+        assert result is None
 
-    def test_load_cached_urls_valid_cache(self, tmp_path):
+    def test_url_cache_valid(self, tmp_path):
         """Test loading valid cached URLs."""
         cache_file = tmp_path / 'store_urls.json'
         cache_data = {
@@ -655,13 +659,13 @@ class TestTMobileURLCaching:
         }
         cache_file.write_text(json.dumps(cache_data))
 
-        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
-            result = _load_cached_urls('tmobile')
-            assert result is not None
-            assert len(result) == 3
-            assert 'https://www.t-mobile.com/stores/bd/tx/dallas/store-1' in result
+        cache = URLCache('tmobile', cache_dir=tmp_path)
+        result = cache.get()
+        assert result is not None
+        assert len(result) == 3
+        assert 'https://www.t-mobile.com/stores/bd/tx/dallas/store-1' in result
 
-    def test_load_cached_urls_expired(self, tmp_path):
+    def test_url_cache_expired(self, tmp_path):
         """Test that expired cache returns None."""
         cache_file = tmp_path / 'store_urls.json'
         # Create cache with old timestamp (8 days ago)
@@ -673,27 +677,27 @@ class TestTMobileURLCaching:
         }
         cache_file.write_text(json.dumps(cache_data))
 
-        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
-            result = _load_cached_urls('tmobile')
-            assert result is None
+        cache = URLCache('tmobile', cache_dir=tmp_path)
+        result = cache.get()
+        assert result is None
 
-    def test_load_cached_urls_invalid_json(self, tmp_path):
+    def test_url_cache_invalid_json(self, tmp_path):
         """Test that invalid JSON cache returns None."""
         cache_file = tmp_path / 'store_urls.json'
         cache_file.write_text('invalid json {')
 
-        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
-            result = _load_cached_urls('tmobile')
-            assert result is None
+        cache = URLCache('tmobile', cache_dir=tmp_path)
+        result = cache.get()
+        assert result is None
 
-    def test_save_cached_urls(self, tmp_path):
+    def test_url_cache_save(self, tmp_path):
         """Test saving URLs to cache."""
-        cache_file = tmp_path / 'store_urls.json'
         urls = ['url1', 'url2', 'url3']
 
-        with patch('src.scrapers.tmobile._get_url_cache_path', return_value=cache_file):
-            _save_cached_urls('tmobile', urls)
+        cache = URLCache('tmobile', cache_dir=tmp_path)
+        cache.set(urls)
 
+        cache_file = tmp_path / 'store_urls.json'
         assert cache_file.exists()
         saved_data = json.loads(cache_file.read_text())
         assert saved_data['store_count'] == 3
@@ -741,16 +745,17 @@ class TestTMobileRunParallel:
         response.text = html
         return response
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_uses_url_cache(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_uses_url_cache(self, mock_counter, mock_get, mock_config, mock_cache_class, mock_session):
         """Test that run() uses cached URLs when available."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
-        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache = Mock()
+        mock_cache.get.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache_class.return_value = mock_cache
         mock_get.return_value = self._make_store_page_response('TX-DAL-001')
 
         config = {
@@ -760,18 +765,19 @@ class TestTMobileRunParallel:
         }
         result = run(mock_session, config, retailer='tmobile')
 
-        mock_load_cache.assert_called_once_with('tmobile')
-        mock_save_cache.assert_not_called()  # No save since cache was valid
+        mock_cache.get.assert_called_once()
+        mock_cache.set.assert_not_called()  # No save since cache was valid
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_refresh_urls_ignores_cache(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_refresh_urls_ignores_cache(self, mock_counter, mock_get, mock_config, mock_cache_class, mock_session):
         """Test that refresh_urls=True ignores cached URLs."""
         mock_config.SITEMAP_PAGES = [1]
         mock_config.SITEMAP_BASE_URL = 'https://www.t-mobile.com/sitemap.xml'
+        mock_cache = Mock()
+        mock_cache_class.return_value = mock_cache
         mock_get.side_effect = [
             self._make_sitemap_response(['TX-DAL-001']),
             self._make_store_page_response('TX-DAL-001')
@@ -784,23 +790,24 @@ class TestTMobileRunParallel:
         }
         result = run(mock_session, config, retailer='tmobile', refresh_urls=True)
 
-        mock_load_cache.assert_not_called()  # Should not load cache
-        mock_save_cache.assert_called_once()  # Should save newly discovered URLs
+        mock_cache.get.assert_not_called()  # Should not load cache
+        mock_cache.set.assert_called_once()  # Should save newly discovered URLs
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
-    @patch('src.scrapers.tmobile._create_session_factory')
+    @patch('src.scrapers.tmobile.URLCache')
+    @patch('src.scrapers.tmobile.create_session_factory')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.save_checkpoint')
     @patch('src.scrapers.tmobile.extract_store_details')
-    def test_run_parallel_extraction(self, mock_extract, mock_save_checkpoint, mock_config, mock_session_factory, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_parallel_extraction(self, mock_extract, mock_save_checkpoint, mock_config, mock_session_factory, mock_cache_class, mock_session):
         """Test that parallel extraction works with multiple workers."""
         mock_config.SITEMAP_PAGES = [1]
-        mock_load_cache.return_value = [
+        mock_cache = Mock()
+        mock_cache.get.return_value = [
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-003'
         ]
+        mock_cache_class.return_value = mock_cache
 
         # Mock session factory
         mock_worker_session = Mock()
@@ -825,15 +832,16 @@ class TestTMobileRunParallel:
         assert len(result['stores']) == 3
         mock_session_factory.assert_called_once()
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_run_sequential_fallback(self, mock_counter, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session):
+    def test_run_sequential_fallback(self, mock_counter, mock_get, mock_config, mock_cache_class, mock_session):
         """Test that sequential extraction is used when parallel_workers=1."""
         mock_config.SITEMAP_PAGES = [1]
-        mock_load_cache.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache = Mock()
+        mock_cache.get.return_value = ['https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001']
+        mock_cache_class.return_value = mock_cache
         mock_get.return_value = self._make_store_page_response('TX-DAL-001')
 
         config = {
@@ -875,19 +883,20 @@ class TestTMobileFailedExtraction:
         response.text = html
         return response
 
-    @patch('src.scrapers.tmobile._load_cached_urls')
-    @patch('src.scrapers.tmobile._save_cached_urls')
+    @patch('src.scrapers.tmobile.URLCache')
     @patch('src.scrapers.tmobile.tmobile_config')
     @patch('src.scrapers.tmobile.utils.get_with_retry')
     @patch('src.scrapers.tmobile.utils.save_checkpoint')
     @patch('src.scrapers.tmobile._request_counter')
-    def test_failed_urls_logged_and_saved(self, mock_counter, mock_save_checkpoint, mock_get, mock_config, mock_save_cache, mock_load_cache, mock_session, tmp_path, monkeypatch):
+    def test_failed_urls_logged_and_saved(self, mock_counter, mock_save_checkpoint, mock_get, mock_config, mock_cache_class, mock_session, tmp_path, monkeypatch):
         """Test that failed URLs are logged and saved to file."""
         mock_config.SITEMAP_PAGES = [1]
-        mock_load_cache.return_value = [
+        mock_cache = Mock()
+        mock_cache.get.return_value = [
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-001',
             'https://www.t-mobile.com/stores/bd/tx/dallas/TX-DAL-002'
         ]
+        mock_cache_class.return_value = mock_cache
         # First URL succeeds, second fails
         mock_get.side_effect = [
             self._make_store_page_response('TX-DAL-001'),
