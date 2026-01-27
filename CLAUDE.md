@@ -61,6 +61,21 @@ python run.py --retailer walmart --proxy web_scraper_api --render-js
 
 # Geo-targeted proxy
 python run.py --retailer target --proxy residential --proxy-country ca
+
+# Cloud storage sync to GCS
+python run.py --retailer verizon --cloud
+
+# Cloud sync for all retailers
+python run.py --all --cloud
+
+# Cloud with custom bucket
+python run.py --all --cloud --gcs-bucket my-backup-bucket
+
+# Cloud with timestamped history copies
+python run.py --retailer target --cloud --gcs-history
+
+# Disable cloud (overrides env/config)
+python run.py --all --no-cloud
 ```
 
 ### Testing
@@ -121,6 +136,7 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   ├── request_counter.py      # Rate limiting tracker
 │   ├── status.py               # Progress reporting (interface for future UI)
 │   ├── notifications.py        # Pluggable notification system (Slack, console)
+│   ├── cloud_storage.py        # GCS integration for backup/sync
 │   ├── run_tracker.py          # Run metadata and state tracking
 │   └── scraper_manager.py      # Process lifecycle management
 ├── src/change_detector.py      # Detects new/closed/modified stores between runs
@@ -197,6 +213,41 @@ Proxy modes in `config/retailers.yaml`:
 - `direct` - no proxy (default, 2-5s delays)
 - `residential` - rotating residential IPs (0.2-0.5s delays, 9.6x faster)
 - `web_scraper_api` - managed service with JS rendering
+
+### Cloud Storage (GCS)
+
+Sync scraped data to Google Cloud Storage for backup and team access.
+
+**Environment variables** (see `.env.example`):
+- `GCS_SERVICE_ACCOUNT_KEY` - path to service account JSON file
+- `GCS_BUCKET_NAME` - GCS bucket name
+- `GCS_PROJECT_ID` - GCP project ID (optional, auto-detected)
+- `GCS_ENABLE_HISTORY` - enable timestamped history copies
+
+**YAML config** in `config/retailers.yaml`:
+```yaml
+cloud_storage:
+  enabled: true        # or use --cloud CLI flag
+  max_retries: 3
+  retry_delay: 2.0
+  enable_history: false
+```
+
+**GCS bucket structure**:
+```
+gs://{bucket}/
+├── verizon/stores_latest.json    # Overwritten each run (versioned by GCS)
+├── verizon/stores_latest.csv
+├── att/stores_latest.json
+└── history/                      # Optional (--gcs-history)
+    └── verizon/stores_2026-01-26_143022.json
+```
+
+**Setup**:
+1. Create GCS bucket with object versioning enabled
+2. Create service account with `Storage Object Admin` role
+3. Download service account key JSON
+4. Set `GCS_SERVICE_ACCOUNT_KEY` and `GCS_BUCKET_NAME` in `.env`
 
 ### Output Structure
 
