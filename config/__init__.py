@@ -11,6 +11,8 @@ CONFIG_MODULES = {
     'tmobile': 'config.tmobile_config',
     'walmart': 'config.walmart_config',
     'bestbuy': 'config.bestbuy_config',
+    'telus': 'config.telus_config',
+    'cricket': 'config.cricket_config',
 }
 
 def get_config(retailer: str):

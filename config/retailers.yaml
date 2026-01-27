@@ -439,3 +439,66 @@ retailers:
       - hours
       - url
       - scraped_at
+
+  cricket:
+    name: "Cricket Wireless"
+    enabled: true
+    base_url: "https://www.cricketwireless.com"
+    # Cricket uses Yext API with geographic grid discovery
+    sitemap_urls: []
+    discovery_method: "api"
+    api_url: "https://prod-cdn.us.yextapis.com/v2/accounts/me/search/query"
+
+    # Grid-based geographic search configuration
+    grid_spacing_miles: 50
+
+    # Dual delay profiles (API is lightweight, can be aggressive with proxies)
+    delays:
+      direct:
+        min_delay: 0.3
+        max_delay: 0.5
+      proxied:
+        min_delay: 0.1
+        max_delay: 0.2
+
+    # Parallel workers for grid scanning (reduced for direct mode)
+    parallel_workers: 5
+
+    # No checkpointing needed - parallel API-based scraper
+    checkpoint_interval: 999999
+
+    # Disable long pauses (API is lightweight)
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Default to direct mode (use --proxy residential for faster scraping)
+    proxy:
+      mode: "direct"
+      render_js: false
+
+    output_fields:
+      - store_id
+      - name
+      - store_type
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - url
+      - hours_monday
+      - hours_tuesday
+      - hours_wednesday
+      - hours_thursday
+      - hours_friday
+      - hours_saturday
+      - hours_sunday
+      - closed
+      - scraped_at
