@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Any, Tuple
 try:
     from google.cloud import storage
     from google.cloud.exceptions import GoogleCloudError
-    from google.auth.exceptions import DefaultCredentialsError
+    from google.cloud.exceptions import GoogleCloudError
     GCS_AVAILABLE = True
 except ImportError:
     GCS_AVAILABLE = False
