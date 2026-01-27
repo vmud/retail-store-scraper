@@ -183,7 +183,7 @@ def _parse_store(raw_store: Dict[str, Any]) -> Optional[CricketStore]:
 
         # Build website URL if available
         website_url = data.get('websiteUrl', {})
-        url = website_url.get('url') if isinstance(website_url, dict) else website_url
+        url = website_url.get('url') if isinstance(website_url, dict) else (website_url or None)
 
         return CricketStore(
             store_id=str(data.get('id', '')),
