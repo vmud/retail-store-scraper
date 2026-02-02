@@ -99,7 +99,7 @@ def _extract_store_type(store_name: str) -> str:
         'corporate' or 'authorized_dealer'
     """
     # Corporate stores are simply named "Bell" or "Bell - Location"
-    if store_name.lower().strip() == 'bell':
+    if store_name.lower().strip().startswith('bell'):
         return 'corporate'
     return 'authorized_dealer'
 
