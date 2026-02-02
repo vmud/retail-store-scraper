@@ -26,7 +26,12 @@ from config import samsclub_config as config
 from src.shared import utils
 from src.shared.cache import URLCache
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
+from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
+
+
+# Global request counter for anti-blocking pause logic
+_request_counter = RequestCounter()
 
 
 @dataclass
@@ -470,6 +475,11 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
         for i, url in enumerate(remaining_urls, 1):
             club_obj = extract_club_details(club_client, url, retailer_name)
+
+            # Track request and apply pause logic for anti-blocking
+            _request_counter.increment()
+            check_pause_logic(_request_counter, retailer=retailer_name, config=yaml_config)
+
             if club_obj:
                 clubs.append(club_obj.to_dict())
                 completed_urls.add(url)
@@ -548,3 +558,13 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
                 logging.debug(f"[{retailer_name}] Closed web_scraper_api session")
             except Exception as e:
                 logging.warning(f"[{retailer_name}] Error closing club session: {e}")
+
+
+def reset_request_counter() -> None:
+    """Reset the global request counter."""
+    _request_counter.reset()
+
+
+def get_request_count() -> int:
+    """Get current request count."""
+    return _request_counter.count
