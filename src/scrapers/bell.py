@@ -149,3 +149,58 @@ def reset_request_counter() -> None:
 def get_request_count() -> int:
     """Get current request count"""
     return _request_counter.count
+
+
+def get_store_urls_from_sitemap(
+    session,
+    retailer: str = 'bell',
+    yaml_config: dict = None
+) -> List[str]:
+    """Fetch all store URLs from the Bell sitemap.
+
+    Args:
+        session: Requests session object
+        retailer: Retailer name for logging
+        yaml_config: Retailer configuration from retailers.yaml
+
+    Returns:
+        List of store URLs (filtered to only those with BE### store IDs)
+    """
+    logging.info(f"[{retailer}] Fetching sitemap from {bell_config.SITEMAP_URL}")
+
+    response = utils.get_with_retry(session, bell_config.SITEMAP_URL)
+    if not response:
+        logging.error(f"[{retailer}] Failed to fetch sitemap")
+        return []
+
+    _request_counter.increment()
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+
+    try:
+        # Parse XML
+        root = ET.fromstring(response.content)
+        namespace = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+
+        # Extract all URLs
+        all_urls = []
+        for loc in root.findall(".//ns:loc", namespace):
+            url = loc.text
+            if url:
+                all_urls.append(url)
+
+        logging.info(f"[{retailer}] Found {len(all_urls)} total URLs in sitemap")
+
+        # Filter to only store URLs (containing /BE followed by digits)
+        store_pattern = re.compile(bell_config.STORE_URL_PATTERN)
+        store_urls = [url for url in all_urls if store_pattern.search(url)]
+
+        logging.info(f"[{retailer}] Filtered to {len(store_urls)} store URLs")
+
+        return store_urls
+
+    except ET.ParseError as e:
+        logging.error(f"[{retailer}] Failed to parse XML sitemap: {e}")
+        return []
+    except Exception as e:
+        logging.error(f"[{retailer}] Unexpected error parsing sitemap: {e}")
+        return []
