@@ -258,7 +258,7 @@ def extract_store_details(
             return None
 
         # Extract store ID from URL (e.g., BE516)
-        store_id_match = re.search(r'(BE\d+)$', url)
+        store_id_match = re.search(r'(BE\d+)$', data.get('url', url))
         store_id = store_id_match.group(1) if store_id_match else ''
 
         # Extract address components
