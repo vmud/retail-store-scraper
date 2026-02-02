@@ -111,18 +111,6 @@ def build_warehouse_url(state: str, city: str, warehouse_id: str) -> str:
     return f"{BASE_URL}/w/-/{state}/{city}/{warehouse_id}"
 
 
-def build_search_url(query: str) -> str:
-    """Build URL for warehouse search.
-
-    Args:
-        query: Search query (zip code, city, or state)
-
-    Returns:
-        Search URL
-    """
-    return f"{LOCATIONS_URL}?query={query}"
-
-
 # Rate limiting - more conservative due to bot protection
 # Use with web_scraper_api proxy mode
 MIN_DELAY = 1.0
