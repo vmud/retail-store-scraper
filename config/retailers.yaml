@@ -502,3 +502,55 @@ retailers:
       - hours_sunday
       - closed
       - scraped_at
+
+  bell:
+    name: "Bell"
+    enabled: true
+    base_url: "https://storelocator.bell.ca"
+    sitemap_urls:
+      - "https://storelocator.bell.ca/sitemap.xml"
+    discovery_method: "sitemap"
+
+    # Conservative delays (robots.txt specifies Crawl-delay: 10)
+    delays:
+      direct:
+        min_delay: 10.0
+        max_delay: 12.0
+      proxied:
+        min_delay: 2.0
+        max_delay: 4.0
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 25
+
+    # Single worker due to crawl-delay requirement
+    parallel_workers: 1
+
+    # Disable long pauses (already respecting crawl-delay)
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Direct mode - no aggressive bot protection observed
+    proxy:
+      mode: "direct"
+      render_js: false
+
+    output_fields:
+      - store_id
+      - name
+      - street_address
+      - city
+      - state
+      - postal_code
+      - country
+      - phone
+      - hours
+      - services
+      - store_type
+      - has_curbside
+      - url
+      - scraped_at
