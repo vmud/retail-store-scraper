@@ -414,7 +414,8 @@ def _fetch_by_zip_codes(
             if store_id and store_id not in all_warehouses:
                 all_warehouses[store_id] = w
 
-        utils.random_delay(retailer_config, kwargs.get('proxy_mode'))
+        min_delay, max_delay = utils.select_delays(retailer_config, kwargs.get('proxy_mode'))
+        utils.random_delay(min_delay, max_delay)
 
     return list(all_warehouses.values())
 
