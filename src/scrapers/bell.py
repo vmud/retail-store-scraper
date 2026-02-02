@@ -204,3 +204,107 @@ def get_store_urls_from_sitemap(
     except Exception as e:
         logging.error(f"[{retailer}] Unexpected error parsing sitemap: {e}")
         return []
+
+
+def extract_store_details(
+    session,
+    url: str,
+    retailer: str = 'bell',
+    yaml_config: dict = None
+) -> Optional[BellStore]:
+    """Extract store data from a single Bell store page.
+
+    Args:
+        session: Requests session object
+        url: Store page URL
+        retailer: Retailer name for logging
+        yaml_config: Retailer configuration from retailers.yaml
+
+    Returns:
+        BellStore object if successful, None otherwise
+    """
+    logging.debug(f"[{retailer}] Extracting details from {url}")
+
+    response = utils.get_with_retry(session, url)
+    if not response:
+        logging.warning(f"[{retailer}] Failed to fetch store details: {url}")
+        return None
+
+    _request_counter.increment()
+    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+
+    try:
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Find JSON-LD script with LocalBusiness schema
+        scripts = soup.find_all('script', type='application/ld+json')
+        if not scripts:
+            logging.warning(f"[{retailer}] No JSON-LD found for {url}")
+            return None
+
+        # Find LocalBusiness schema
+        data = None
+        for script in scripts:
+            try:
+                script_data = json.loads(script.string)
+                if script_data.get('@type') == 'LocalBusiness':
+                    data = script_data
+                    break
+            except json.JSONDecodeError:
+                continue
+
+        if not data:
+            logging.debug(f"[{retailer}] No LocalBusiness schema found for {url}")
+            return None
+
+        # Extract store ID from URL (e.g., BE516)
+        store_id_match = re.search(r'(BE\d+)$', url)
+        store_id = store_id_match.group(1) if store_id_match else ''
+
+        # Extract address components
+        address = data.get('address', {})
+
+        # Get province - already abbreviated in schema (ON, QC, etc.)
+        state = address.get('addressRegion', '')
+
+        # Extract phone - clean formatting
+        phone = data.get('telephone', '')
+        if phone:
+            phone = re.sub(r'[^\d-]', '', phone)  # Keep digits and dashes
+
+        # Extract hours
+        opening_hours = data.get('openingHours', [])
+        hours = _format_schema_hours(opening_hours)
+
+        # Extract services from HTML
+        services = _extract_services(soup)
+
+        # Determine store type and curbside availability
+        store_name = data.get('name', 'Bell')
+        store_type = _extract_store_type(store_name)
+        has_curbside = _has_curbside_pickup(soup)
+
+        # Create BellStore object
+        store = BellStore(
+            store_id=store_id,
+            name=store_name,
+            street_address=address.get('streetAddress', ''),
+            city=address.get('addressLocality', ''),
+            state=state,
+            postal_code=address.get('postalCode', ''),
+            country='CA',
+            phone=phone,
+            hours=hours,
+            services=services,
+            store_type=store_type,
+            has_curbside=has_curbside,
+            url=url,
+            scraped_at=datetime.now().isoformat()
+        )
+
+        logging.debug(f"[{retailer}] Extracted store: {store.name} ({store.store_id})")
+        return store
+
+    except Exception as e:
+        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
+        return None
