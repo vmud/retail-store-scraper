@@ -75,6 +75,18 @@ class TestFormatSchemaHours:
 
         assert len(parsed) == 2
 
+    def test_single_string_hours(self):
+        """Test schema.org single string format is handled."""
+        # schema.org allows openingHours as single string, not just array
+        hours = "Mo 1000-1800"
+        result = _format_schema_hours(hours)
+        parsed = json.loads(result)
+
+        assert len(parsed) == 1
+        assert parsed[0]['day'] == 'Monday'
+        assert parsed[0]['open'] == '10:00'
+        assert parsed[0]['close'] == '18:00'
+
 
 class TestExtractStoreType:
     """Tests for _extract_store_type function."""

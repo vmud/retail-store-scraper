@@ -49,18 +49,22 @@ class BellStore:
         return asdict(self)
 
 
-def _format_schema_hours(opening_hours: List[str]) -> Optional[str]:
+def _format_schema_hours(opening_hours) -> Optional[str]:
     """Format schema.org openingHours to JSON string.
 
     Args:
-        opening_hours: List of hours in schema.org format
-            Example: ["Su 1200-1700", "Mo 1100-1800", ...]
+        opening_hours: Hours in schema.org format - can be a single string
+            or list of strings. Example: "Mo 1100-1800" or ["Su 1200-1700", ...]
 
     Returns:
         JSON string of formatted hours or None if no hours
     """
     if not opening_hours:
         return None
+
+    # Normalize to list - schema.org allows single string or array
+    if isinstance(opening_hours, str):
+        opening_hours = [opening_hours]
 
     day_map = {
         'Su': 'Sunday', 'Mo': 'Monday', 'Tu': 'Tuesday',
