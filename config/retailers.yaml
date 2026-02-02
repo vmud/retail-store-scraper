@@ -502,3 +502,59 @@ retailers:
       - hours_sunday
       - closed
       - scraped_at
+
+  costco:
+    name: "Costco"
+    enabled: true
+    base_url: "https://www.costco.com"
+    # Costco uses Akamai bot protection - requires Web Scraper API with JS rendering
+    sitemap_urls: []
+    discovery_method: "page_scrape"
+    locations_url: "https://www.costco.com/w/-/locations"
+
+    # Dual delay profiles (more conservative due to bot protection)
+    delays:
+      direct:
+        min_delay: 2.0
+        max_delay: 4.0
+      proxied:
+        min_delay: 1.0
+        max_delay: 2.0
+
+    # Parallel workers (keep low due to bot protection)
+    parallel_workers: 3
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 25
+
+    # Disable long pauses when using proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Default to web_scraper_api due to Akamai protection
+    proxy:
+      mode: "web_scraper_api"
+      render_js: true
+
+    output_fields:
+      - store_id
+      - name
+      - store_type
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - url
+      - services
+      - hours_weekday
+      - hours_saturday
+      - hours_sunday
+      - scraped_at
