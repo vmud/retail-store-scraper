@@ -17,8 +17,6 @@ Approach:
 import json
 import logging
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Set, Tuple
@@ -224,127 +222,28 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns:
         Normalized warehouse dictionary
+
+    Note:
+        Uses 'or' chaining instead of nested .get() defaults to properly handle
+        null JSON values. dict.get(key, default) returns None if key exists with
+        null value, but 'or' will fall through to the next option.
     """
+    name = data.get('name') or data.get('displayName') or ''
     return {
-        'store_id': str(data.get('storeNumber', data.get('locationId', data.get('id', '')))),
-        'name': data.get('name', data.get('displayName', '')),
-        'street_address': data.get('address', data.get('streetAddress', data.get('address1', ''))),
-        'city': data.get('city', ''),
-        'state': data.get('state', data.get('stateCode', '')),
-        'zip': data.get('zip', data.get('zipCode', data.get('postalCode', ''))),
-        'country': data.get('country', data.get('countryCode', 'US')),
-        'latitude': data.get('latitude', data.get('lat')),
-        'longitude': data.get('longitude', data.get('lng', data.get('lon'))),
-        'phone': data.get('phone', data.get('phoneNumber', '')),
-        'url': data.get('url', data.get('detailsUrl', '')),
-        'services': data.get('services', []),
-        'store_type': 'business_center' if 'business' in data.get('name', '').lower() else 'warehouse',
+        'store_id': str(data.get('storeNumber') or data.get('locationId') or data.get('id') or ''),
+        'name': name,
+        'street_address': data.get('address') or data.get('streetAddress') or data.get('address1') or '',
+        'city': data.get('city') or '',
+        'state': data.get('state') or data.get('stateCode') or '',
+        'zip': data.get('zip') or data.get('zipCode') or data.get('postalCode') or '',
+        'country': data.get('country') or data.get('countryCode') or 'US',
+        'latitude': data.get('latitude') or data.get('lat'),
+        'longitude': data.get('longitude') or data.get('lng') or data.get('lon'),
+        'phone': data.get('phone') or data.get('phoneNumber') or '',
+        'url': data.get('url') or data.get('detailsUrl') or '',
+        'services': data.get('services') or [],
+        'store_type': 'business_center' if 'business' in name.lower() else 'warehouse',
     }
-
-
-def _fetch_warehouse_detail(
-    proxy_client: ProxyClient,
-    url: str,
-    retailer_config: Dict[str, Any],
-    **kwargs
-) -> Optional[Dict[str, Any]]:
-    """Fetch detailed information from a warehouse detail page.
-
-    Args:
-        proxy_client: ProxyClient instance for making requests
-        url: Warehouse detail page URL
-        retailer_config: Configuration dictionary
-        **kwargs: Additional arguments (proxy_mode, etc.)
-
-    Returns:
-        Dictionary with warehouse details or None on failure
-    """
-    try:
-        proxy_mode = kwargs.get('proxy_mode', 'direct')
-
-        # Use Web Scraper API with JS rendering for Costco
-        response = proxy_client.get(
-            url,
-            headers=config.get_headers(),
-            render_js=True,
-            timeout=config.TIMEOUT
-        )
-
-        if response.status_code != 200:
-            logger.warning(f"Failed to fetch {url}: {response.status_code}")
-            return None
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Extract warehouse name
-        name_elem = soup.find(['h1', 'h2'], class_=re.compile(r'warehouse|title', re.I))
-        name = name_elem.get_text(strip=True) if name_elem else ''
-
-        # Extract address
-        address_elem = soup.find(['address', 'div'], class_=re.compile(r'address', re.I))
-        address_text = address_elem.get_text(separator='\n', strip=True) if address_elem else ''
-        address_parts = _parse_address(address_text)
-
-        # Extract phone
-        phone_elem = soup.find('a', href=re.compile(r'tel:'))
-        phone = phone_elem.get_text(strip=True) if phone_elem else ''
-
-        # Extract hours
-        hours_elem = soup.find(['div', 'section'], class_=re.compile(r'hours', re.I))
-        hours_weekday = ''
-        hours_saturday = ''
-        hours_sunday = ''
-        if hours_elem:
-            hours_text = hours_elem.get_text(separator='\n', strip=True)
-            # Parse hours (simplified)
-            if 'Mon' in hours_text:
-                hours_weekday = re.search(r'Mon.*?(\d+:\d+\s*[AP]M.*?\d+:\d+\s*[AP]M)', hours_text, re.I)
-                hours_weekday = hours_weekday.group(1) if hours_weekday else ''
-
-        # Extract coordinates from map element or data attributes
-        latitude = None
-        longitude = None
-        map_elem = soup.find(['div', 'iframe'], {'data-lat': True})
-        if map_elem:
-            latitude = float(map_elem.get('data-lat', 0))
-            longitude = float(map_elem.get('data-lng', map_elem.get('data-lon', 0)))
-
-        # Extract store ID from URL
-        store_id = ''
-        match = re.search(r'/(\d+)(?:\?|$|#)', url)
-        if match:
-            store_id = match.group(1)
-
-        # Extract services
-        services = []
-        services_elem = soup.find(['div', 'ul'], class_=re.compile(r'services|amenities', re.I))
-        if services_elem:
-            service_items = services_elem.find_all(['li', 'span'])
-            for item in service_items:
-                service_text = item.get_text(strip=True).lower()
-                for known_service in config.WAREHOUSE_SERVICES:
-                    if known_service.replace('_', ' ') in service_text:
-                        services.append(known_service)
-
-        return {
-            'store_id': store_id,
-            'name': name.replace(' Warehouse', '').strip(),
-            'store_type': 'business_center' if 'business' in name.lower() else 'warehouse',
-            **address_parts,
-            'country': 'US',
-            'latitude': latitude,
-            'longitude': longitude,
-            'phone': phone,
-            'url': url,
-            'services': services,
-            'hours_weekday': hours_weekday,
-            'hours_saturday': hours_saturday,
-            'hours_sunday': hours_sunday,
-        }
-
-    except Exception as e:
-        logger.error(f"Error fetching warehouse detail {url}: {e}")
-        return None
 
 
 def _fetch_by_zip_codes(
@@ -383,7 +282,6 @@ def _fetch_by_zip_codes(
     ]
 
     all_warehouses = {}
-    warehouses_lock = threading.Lock()
 
     def search_zip(zip_code: str) -> List[Dict[str, Any]]:
         """Search for warehouses near a zip code."""
@@ -440,6 +338,7 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
     """
     stores = []
     checkpoints_used = False
+    proxy_client = None
 
     limit = kwargs.get('limit')
     test_mode = kwargs.get('test_mode', False)
@@ -450,97 +349,107 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
 
     logger.info(f"Starting Costco scraper (limit={limit}, proxy_mode={proxy_mode})")
 
-    # Initialize proxy client
-    proxy_config = ProxyConfig.from_env()
-    if proxy_mode == 'web_scraper_api':
-        proxy_config.mode = ProxyMode.WEB_SCRAPER_API
-        proxy_config.render_js = True
-    elif proxy_mode == 'residential':
-        proxy_config.mode = ProxyMode.RESIDENTIAL
-    else:
-        proxy_config.mode = ProxyMode.DIRECT
-
-    proxy_client = ProxyClient(proxy_config)
-
-    # Step 1: Fetch main locations page to discover warehouses
-    logger.info("Fetching Costco warehouse locations page...")
     try:
-        response = proxy_client.get(
-            config.LOCATIONS_URL,
-            headers=config.get_headers(),
-            render_js=True,
-            timeout=config.TIMEOUT
-        )
-
-        if response.status_code != 200:
-            logger.warning(f"Failed to fetch locations page: {response.status_code}")
-            # Fall back to zip code search
-            warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
+        # Initialize proxy client
+        proxy_config = ProxyConfig.from_env()
+        if proxy_mode == 'web_scraper_api':
+            proxy_config.mode = ProxyMode.WEB_SCRAPER_API
+            proxy_config.render_js = True
+        elif proxy_mode == 'residential':
+            proxy_config.mode = ProxyMode.RESIDENTIAL
         else:
-            warehouses = _extract_warehouses_from_page(response.text)
+            proxy_config.mode = ProxyMode.DIRECT
 
-    except Exception as e:
-        logger.error(f"Error fetching locations page: {e}")
-        warehouses = []
+        proxy_client = ProxyClient(proxy_config)
 
-    # Step 2: Deduplicate and limit
-    unique_warehouses = {}
-    for w in warehouses:
-        store_id = w.get('store_id')
-        if store_id and store_id not in unique_warehouses:
-            unique_warehouses[store_id] = w
-            if limit and len(unique_warehouses) >= limit:
-                break
-
-    logger.info(f"Found {len(unique_warehouses)} unique warehouses")
-
-    # Step 3: Optionally fetch detailed info for each warehouse
-    # For now, use the data we have from the list page
-    scraped_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-    for store_id, data in unique_warehouses.items():
-        # Create CostcoWarehouse object
+        # Step 1: Fetch main locations page to discover warehouses
+        logger.info("Fetching Costco warehouse locations page...")
         try:
-            # Parse address if we only have address_text
-            if 'address_text' in data and not data.get('city'):
-                address_parts = _parse_address(data.get('address_text', ''))
-                data.update(address_parts)
-
-            warehouse = CostcoWarehouse(
-                store_id=data.get('store_id', ''),
-                name=data.get('name', ''),
-                store_type=data.get('store_type', 'warehouse'),
-                street_address=data.get('street_address', ''),
-                city=data.get('city', ''),
-                state=data.get('state', ''),
-                zip=data.get('zip', ''),
-                country=data.get('country', 'US'),
-                latitude=data.get('latitude'),
-                longitude=data.get('longitude'),
-                phone=data.get('phone', ''),
-                url=data.get('url', ''),
-                services=data.get('services', []),
-                hours_weekday=data.get('hours_weekday', ''),
-                hours_saturday=data.get('hours_saturday', ''),
-                hours_sunday=data.get('hours_sunday', ''),
-                scraped_at=scraped_at,
+            response = proxy_client.get(
+                config.LOCATIONS_URL,
+                headers=config.get_headers(),
+                render_js=True,
+                timeout=config.TIMEOUT
             )
 
-            # Validate before adding
-            store_dict = warehouse.to_dict()
-            validation = utils.validate_store_data(store_dict)
-            if validation.is_valid:
-                stores.append(store_dict)
+            if response.status_code != 200:
+                logger.warning(f"Failed to fetch locations page: {response.status_code}")
+                # Fall back to zip code search
+                warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
             else:
-                logger.debug(f"Invalid warehouse {store_id}: {validation.errors}")
+                warehouses = _extract_warehouses_from_page(response.text)
 
         except Exception as e:
-            logger.warning(f"Error creating warehouse object for {store_id}: {e}")
+            logger.error(f"Error fetching locations page: {e}")
+            warehouses = []
 
-    logger.info(f"Costco scraper complete: {len(stores)} valid warehouses")
+        # Step 2: Deduplicate and limit
+        unique_warehouses = {}
+        for w in warehouses:
+            store_id = w.get('store_id')
+            if store_id and store_id not in unique_warehouses:
+                unique_warehouses[store_id] = w
+                if limit and len(unique_warehouses) >= limit:
+                    break
 
-    return {
-        'stores': stores,
-        'count': len(stores),
-        'checkpoints_used': checkpoints_used,
-    }
+        logger.info(f"Found {len(unique_warehouses)} unique warehouses")
+
+        # Step 3: Optionally fetch detailed info for each warehouse
+        # For now, use the data we have from the list page
+        scraped_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+        for store_id, data in unique_warehouses.items():
+            # Create CostcoWarehouse object
+            try:
+                # Parse address if we only have address_text
+                if 'address_text' in data and not data.get('city'):
+                    address_parts = _parse_address(data.get('address_text', ''))
+                    data.update(address_parts)
+
+                warehouse = CostcoWarehouse(
+                    store_id=data.get('store_id', ''),
+                    name=data.get('name', ''),
+                    store_type=data.get('store_type', 'warehouse'),
+                    street_address=data.get('street_address', ''),
+                    city=data.get('city', ''),
+                    state=data.get('state', ''),
+                    zip=data.get('zip', ''),
+                    country=data.get('country', 'US'),
+                    latitude=data.get('latitude'),
+                    longitude=data.get('longitude'),
+                    phone=data.get('phone', ''),
+                    url=data.get('url', ''),
+                    services=data.get('services', []),
+                    hours_weekday=data.get('hours_weekday', ''),
+                    hours_saturday=data.get('hours_saturday', ''),
+                    hours_sunday=data.get('hours_sunday', ''),
+                    scraped_at=scraped_at,
+                )
+
+                # Validate before adding
+                store_dict = warehouse.to_dict()
+                validation = utils.validate_store_data(store_dict)
+                if validation.is_valid:
+                    stores.append(store_dict)
+                else:
+                    logger.debug(f"Invalid warehouse {store_id}: {validation.errors}")
+
+            except Exception as e:
+                logger.warning(f"Error creating warehouse object for {store_id}: {e}")
+
+        logger.info(f"Costco scraper complete: {len(stores)} valid warehouses")
+
+        return {
+            'stores': stores,
+            'count': len(stores),
+            'checkpoints_used': checkpoints_used,
+        }
+
+    finally:
+        # Clean up proxy client session
+        if proxy_client and hasattr(proxy_client, 'close'):
+            try:
+                proxy_client.close()
+                logger.debug("Closed proxy client session")
+            except Exception as e:
+                logger.warning(f"Error closing proxy client session: {e}")
