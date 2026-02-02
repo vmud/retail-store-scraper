@@ -232,10 +232,14 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         Normalized warehouse dictionary
 
     Note:
-        Uses 'or' chaining instead of nested .get() defaults to properly handle
-        null JSON values. dict.get(key, default) returns None if key exists with
-        null value, but 'or' will fall through to the next option.
+        Uses None-coalescing for fields like coordinates to preserve valid
+        falsy values (e.g., 0.0) while still falling back on null JSON values.
     """
+    def _coalesce_none(*values: Any) -> Any:
+        for value in values:
+            if value is not None:
+                return value
+        return None
     name = data.get('name') or data.get('displayName') or ''
     return {
         'store_id': str(data.get('storeNumber') or data.get('locationId') or data.get('id') or ''),
@@ -245,8 +249,8 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         'state': data.get('state') or data.get('stateCode') or '',
         'zip': data.get('zip') or data.get('zipCode') or data.get('postalCode') or '',
         'country': data.get('country') or data.get('countryCode') or 'US',
-        'latitude': data.get('latitude') or data.get('lat'),
-        'longitude': data.get('longitude') or data.get('lng') or data.get('lon'),
+        'latitude': _coalesce_none(data.get('latitude'), data.get('lat')),
+        'longitude': _coalesce_none(data.get('longitude'), data.get('lng'), data.get('lon')),
         'phone': data.get('phone') or data.get('phoneNumber') or '',
         'url': data.get('url') or data.get('detailsUrl') or '',
         'services': data.get('services') or [],
