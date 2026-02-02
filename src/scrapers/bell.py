@@ -308,3 +308,143 @@ def extract_store_details(
     except Exception as e:
         logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
         return None
+
+
+def run(session, config: dict, **kwargs) -> dict:
+    """Standard scraper entry point with URL caching and checkpoints.
+
+    Args:
+        session: Configured session (requests.Session or ProxyClient)
+        config: Retailer configuration dict from retailers.yaml
+        **kwargs: Additional options
+            - retailer: str - Retailer name for logging
+            - resume: bool - Resume from checkpoint
+            - limit: int - Max stores to process
+            - refresh_urls: bool - Force URL re-discovery (ignore cache)
+
+    Returns:
+        dict with keys:
+            - stores: List[dict] - Scraped store data
+            - count: int - Number of stores processed
+            - checkpoints_used: bool - Whether resume was used
+    """
+    retailer_name = kwargs.get('retailer', 'bell')
+    logging.info(f"[{retailer_name}] Starting scrape run")
+
+    try:
+        limit = kwargs.get('limit')
+        resume = kwargs.get('resume', False)
+        refresh_urls = kwargs.get('refresh_urls', False)
+
+        reset_request_counter()
+
+        # Auto-select delays based on proxy mode
+        proxy_mode = config.get('proxy', {}).get('mode', 'direct')
+        min_delay, max_delay = utils.select_delays(config, proxy_mode)
+        logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
+
+        checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
+        checkpoint_interval = config.get('checkpoint_interval', 25)
+
+        stores = []
+        completed_urls = set()
+        checkpoints_used = False
+
+        if resume:
+            checkpoint = utils.load_checkpoint(checkpoint_path)
+            if checkpoint:
+                stores = checkpoint.get('stores', [])
+                completed_urls = set(checkpoint.get('completed_urls', []))
+                logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
+                checkpoints_used = True
+
+        # Try to load cached URLs
+        url_cache = URLCache(retailer_name)
+        store_urls = None
+        if not refresh_urls:
+            store_urls = url_cache.get()
+
+        if store_urls is None:
+            # Cache miss - fetch from sitemap
+            store_urls = get_store_urls_from_sitemap(session, retailer_name, yaml_config=config)
+            logging.info(f"[{retailer_name}] Found {len(store_urls)} store URLs from sitemap")
+
+            if store_urls:
+                url_cache.set(store_urls)
+        else:
+            logging.info(f"[{retailer_name}] Using {len(store_urls)} cached store URLs")
+
+        if not store_urls:
+            logging.warning(f"[{retailer_name}] No store URLs found")
+            return {'stores': [], 'count': 0, 'checkpoints_used': False}
+
+        remaining_urls = [url for url in store_urls if url not in completed_urls]
+
+        if resume and completed_urls:
+            logging.info(f"[{retailer_name}] Skipping {len(store_urls) - len(remaining_urls)} already-processed stores")
+
+        if limit:
+            logging.info(f"[{retailer_name}] Limited to {limit} stores")
+            total_needed = limit - len(stores)
+            if total_needed > 0:
+                remaining_urls = remaining_urls[:total_needed]
+            else:
+                remaining_urls = []
+
+        total_to_process = len(remaining_urls)
+        if total_to_process > 0:
+            logging.info(f"[{retailer_name}] Extracting details for {total_to_process} stores")
+        else:
+            logging.info(f"[{retailer_name}] No new stores to process")
+
+        # Sequential extraction (Bell requires conservative rate limiting)
+        for i, url in enumerate(remaining_urls, 1):
+            store_obj = extract_store_details(session, url, retailer_name, yaml_config=config)
+            if store_obj:
+                stores.append(store_obj.to_dict())
+                completed_urls.add(url)
+
+            # Progress logging every 25 stores
+            if i % 25 == 0:
+                logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
+
+            # Checkpoint at intervals
+            if i % checkpoint_interval == 0:
+                utils.save_checkpoint({
+                    'completed_count': len(stores),
+                    'completed_urls': list(completed_urls),
+                    'stores': stores,
+                    'last_updated': datetime.now().isoformat()
+                }, checkpoint_path)
+                logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores")
+
+            # Respect rate limiting
+            utils.random_delay(config, proxy_mode)
+
+        # Final checkpoint
+        if stores:
+            utils.save_checkpoint({
+                'completed_count': len(stores),
+                'completed_urls': list(completed_urls),
+                'stores': stores,
+                'last_updated': datetime.now().isoformat()
+            }, checkpoint_path)
+
+        # Validate store data
+        validation_summary = utils.validate_stores_batch(stores)
+        logging.info(
+            f"[{retailer_name}] Validation: {validation_summary['valid']}/{validation_summary['total']} valid, "
+            f"{validation_summary['warning_count']} warnings"
+        )
+
+        logging.info(f"[{retailer_name}] Completed: {len(stores)} stores scraped")
+
+        return {
+            'stores': stores,
+            'count': len(stores),
+            'checkpoints_used': checkpoints_used
+        }
+
+    except Exception as e:
+        logging.error(f"[{retailer_name}] Fatal error: {e}", exc_info=True)
+        raise
