@@ -191,9 +191,17 @@ def _extract_warehouses_from_page(html: str) -> List[Dict[str, Any]]:
                 json_match = re.search(r'(\{.*"warehouses?".*\})', script_text, re.DOTALL)
                 if json_match:
                     data = json.loads(json_match.group(1))
-                    if isinstance(data, dict) and 'warehouses' in data:
-                        for w in data['warehouses']:
-                            warehouses.append(_normalize_warehouse_json(w))
+                    if isinstance(data, dict):
+                        warehouses_data = None
+                        if 'warehouses' in data:
+                            warehouses_data = data['warehouses']
+                        elif 'warehouse' in data:
+                            warehouses_data = data['warehouse']
+                        if isinstance(warehouses_data, dict):
+                            warehouses_data = [warehouses_data]
+                        if isinstance(warehouses_data, list):
+                            for w in warehouses_data:
+                                warehouses.append(_normalize_warehouse_json(w))
             except (json.JSONDecodeError, KeyError) as e:
                 logger.debug(f"Could not parse embedded JSON: {e}")
 
