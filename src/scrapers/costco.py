@@ -25,7 +25,6 @@ from bs4 import BeautifulSoup
 from config import costco_config as config
 from src.shared import utils
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
-from src.shared.session_factory import create_session_factory
 
 
 logger = logging.getLogger(__name__)
@@ -72,11 +71,10 @@ class CostcoWarehouse:
         return result
 
 
-def _extract_warehouse_from_html(soup: BeautifulSoup, warehouse_element) -> Optional[Dict[str, Any]]:
+def _extract_warehouse_from_html(warehouse_element) -> Optional[Dict[str, Any]]:
     """Extract warehouse data from a warehouse list item element.
 
     Args:
-        soup: BeautifulSoup object for the page
         warehouse_element: HTML element containing warehouse info
 
     Returns:
@@ -191,9 +189,12 @@ def _extract_warehouses_from_page(html: str) -> List[Dict[str, Any]]:
                 json_match = re.search(r'(\{.*"warehouses?".*\})', script_text, re.DOTALL)
                 if json_match:
                     data = json.loads(json_match.group(1))
-                    if isinstance(data, dict) and 'warehouses' in data:
-                        for w in data['warehouses']:
-                            warehouses.append(_normalize_warehouse_json(w))
+                    if isinstance(data, dict):
+                        # Handle both singular and plural keys
+                        warehouse_list = data.get('warehouses') or data.get('warehouse')
+                        if warehouse_list:
+                            for w in warehouse_list:
+                                warehouses.append(_normalize_warehouse_json(w))
             except (json.JSONDecodeError, KeyError) as e:
                 logger.debug(f"Could not parse embedded JSON: {e}")
 
@@ -206,7 +207,7 @@ def _extract_warehouses_from_page(html: str) -> List[Dict[str, Any]]:
         )
 
         for container in warehouse_containers:
-            warehouse_data = _extract_warehouse_from_html(soup, container)
+            warehouse_data = _extract_warehouse_from_html(container)
             if warehouse_data and warehouse_data.get('store_id'):
                 warehouses.append(warehouse_data)
 
@@ -391,13 +392,18 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
             if response.status_code != 200:
                 logger.warning(f"Failed to fetch locations page: {response.status_code}")
                 # Fall back to zip code search
-                warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
+                warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, proxy_mode=proxy_mode)
             else:
-                warehouses = _extract_warehouses_from_page(response.text)
+                try:
+                    warehouses = _extract_warehouses_from_page(response.text)
+                except Exception as parse_err:
+                    logger.warning(f"Error parsing locations page: {parse_err}, falling back to zip code search")
+                    warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, proxy_mode=proxy_mode)
 
         except Exception as e:
             logger.error(f"Error fetching locations page: {e}")
-            warehouses = []
+            # Fall back to zip code search on network/fetch errors
+            warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, proxy_mode=proxy_mode)
 
         # Step 2: Deduplicate and limit
         unique_warehouses = {}
