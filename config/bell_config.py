@@ -39,24 +39,6 @@ def get_headers(user_agent=None):
         "Referer": BASE_URL,
     }
 
-
-# Canadian province name to abbreviation mapping
-PROVINCE_ABBREVIATIONS = {
-    'Alberta': 'AB',
-    'British Columbia': 'BC',
-    'Manitoba': 'MB',
-    'New Brunswick': 'NB',
-    'Newfoundland and Labrador': 'NL',
-    'Northwest Territories': 'NT',
-    'Nova Scotia': 'NS',
-    'Nunavut': 'NU',
-    'Ontario': 'ON',
-    'Prince Edward Island': 'PE',
-    'Quebec': 'QC',
-    'Saskatchewan': 'SK',
-    'Yukon': 'YT',
-}
-
 # Rate limiting (conservative for HTML scraping)
 MIN_DELAY = 1.0
 MAX_DELAY = 2.0
