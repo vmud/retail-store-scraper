@@ -39,6 +39,7 @@ def get_headers(user_agent=None):
         "Referer": BASE_URL,
     }
 
+
 # Rate limiting (conservative for HTML scraping)
 MIN_DELAY = 1.0
 MAX_DELAY = 2.0

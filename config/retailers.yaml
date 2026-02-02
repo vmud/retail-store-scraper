@@ -503,6 +503,7 @@ retailers:
       - closed
       - scraped_at
 
+
   bell:
     name: "Bell"
     enabled: true
@@ -553,4 +554,132 @@ retailers:
       - store_type
       - has_curbside
       - url
+      - scraped_at
+
+  costco:
+    name: "Costco"
+    enabled: true
+    base_url: "https://www.costco.com"
+    # Costco uses Akamai bot protection - requires Web Scraper API with JS rendering
+    sitemap_urls: []
+    discovery_method: "page_scrape"
+    locations_url: "https://www.costco.com/w/-/locations"
+
+    # Dual delay profiles (more conservative due to bot protection)
+    delays:
+      direct:
+        min_delay: 2.0
+        max_delay: 4.0
+      proxied:
+        min_delay: 1.0
+        max_delay: 2.0
+
+    # Parallel workers (keep low due to bot protection)
+    parallel_workers: 3
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 25
+
+    # Disable long pauses when using proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Default to web_scraper_api due to Akamai protection
+    proxy:
+      mode: "web_scraper_api"
+      render_js: true
+
+    output_fields:
+      - store_id
+      - name
+      - store_type
+      - street_address
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - url
+      - services
+      - hours_weekday
+      - hours_saturday
+      - hours_sunday
+      - scraped_at
+
+  samsclub:
+    name: "Sam's Club"
+    enabled: true
+    base_url: "https://www.samsclub.com"
+    # Sam's Club uses Akamai bot protection - requires Web Scraper API with JS rendering
+    # Discovery via sitemap (no protection), extraction via Web Scraper API
+    sitemap_urls:
+      - "https://www.samsclub.com/sitemap_locators.xml"
+    discovery_method: "sitemap"
+
+    # Dual delay profiles (Web Scraper API handles rate limiting)
+    delays:
+      direct:
+        min_delay: 1.0
+        max_delay: 2.0
+      proxied:
+        min_delay: 0.5
+        max_delay: 1.0
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 50
+
+    # Disable long pauses when using proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # HYBRID PROXY MODE:
+    # - Sitemap fetching uses direct mode (no bot protection)
+    # - Club page extraction uses web_scraper_api (Akamai bypass with JS rendering)
+    proxy:
+      mode: "web_scraper_api"
+      render_js: true
+
+    output_fields:
+      - store_id
+      - name
+      - street_address
+      - city
+      - state
+      - zip
+      - county
+      - country
+      - latitude
+      - longitude
+      - phone
+      - url
+      - time_zone
+      - services
+      - has_pharmacy
+      - has_optical
+      - has_hearing_aid
+      - has_wireless
+      - has_cafe
+      - has_bakery
+      - has_gas
+      - has_liquor
+      - has_tires_batteries
+      - is_curbside
+      - is_scan_and_go
+      - is_same_day_pickup
+      - hours_mon_fri
+      - hours_saturday
+      - hours_sunday
+      - plus_hours_mon_fri
+      - plus_hours_saturday
+      - plus_hours_sunday
       - scraped_at
