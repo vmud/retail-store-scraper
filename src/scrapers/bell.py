@@ -246,11 +246,13 @@ def extract_store_details(
         data = None
         for script in scripts:
             try:
+                if not script.string:
+                    continue
                 script_data = json.loads(script.string)
                 if script_data.get('@type') == 'LocalBusiness':
                     data = script_data
                     break
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 continue
 
         if not data:
