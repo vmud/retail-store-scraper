@@ -72,11 +72,10 @@ class CostcoWarehouse:
         return result
 
 
-def _extract_warehouse_from_html(soup: BeautifulSoup, warehouse_element) -> Optional[Dict[str, Any]]:
+def _extract_warehouse_from_html(warehouse_element) -> Optional[Dict[str, Any]]:
     """Extract warehouse data from a warehouse list item element.
 
     Args:
-        soup: BeautifulSoup object for the page
         warehouse_element: HTML element containing warehouse info
 
     Returns:
@@ -206,7 +205,7 @@ def _extract_warehouses_from_page(html: str) -> List[Dict[str, Any]]:
         )
 
         for container in warehouse_containers:
-            warehouse_data = _extract_warehouse_from_html(soup, container)
+            warehouse_data = _extract_warehouse_from_html(container)
             if warehouse_data and warehouse_data.get('store_id'):
                 warehouses.append(warehouse_data)
 
