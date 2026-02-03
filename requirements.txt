@@ -1,25 +1,25 @@
 # Core dependencies - pinned for reproducibility (#116)
-requests==2.32.4
-beautifulsoup4==4.12.2
+requests==2.32.5
+beautifulsoup4==4.14.3
 lxml==5.1.0
 brotli==1.2.0  # Required for Brotli decompression (T-Mobile uses Content-Encoding: br)
 
 # Async support for concurrent scraping
-aiohttp==3.9.1  # Used in tests/uat/protocol.py for async API testing
+aiohttp==3.13.3  # Used in tests/uat/protocol.py for async API testing
 aiofiles==23.2.1
 
 # Export formats
-openpyxl==3.1.2  # Excel export support
+openpyxl==3.1.5  # Excel export support
 
 # Cloud storage
 google-cloud-storage==2.14.0  # GCS integration for backup/sync
 
 # Performance
-ijson==3.2.3  # Streaming JSON parser for memory-efficient change detection (#65)
+ijson==3.4.0.post0  # Streaming JSON parser for memory-efficient change detection (#65)
 
 # Configuration
-pyyaml==6.0.1
-python-dotenv==1.0.0  # Load .env file for environment variables
+pyyaml==6.0.3
+python-dotenv==1.2.1  # Load .env file for environment variables
 
 # Testing
 pytest==8.3.5
@@ -30,15 +30,15 @@ pytest-cov==6.1.1
 # Code quality & formatting
 black==24.1.1      # Code formatter
 isort==5.13.2      # Import sorter
-mypy==1.8.0        # Type checker
-types-requests==2.31.0.20240125  # Type stubs for requests
+mypy==1.19.1        # Type checker
+types-requests==2.32.4.20260107  # Type stubs for requests
 types-PyYAML==6.0.12.12          # Type stubs for PyYAML
 
 # Security
 defusedxml==0.7.1  # Safe XML parsing (prevents XXE attacks)
-bandit==1.7.7      # Security linter
+bandit==1.9.3      # Security linter
 
 # Development (optional)
-gitpython==3.1.41  # For PR creation script (CVE-2023-40590 fix)
+gitpython==3.1.46  # For PR creation script (CVE-2023-40590 fix)
 watchdog==3.0.0    # For file watcher
 pre-commit==3.5.0  # For pre-commit hooks (3.5.0 is last version supporting Python 3.8)
