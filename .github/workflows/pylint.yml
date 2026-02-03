@@ -21,4 +21,6 @@ jobs:
         pip install -r requirements.txt
     - name: Analysing the code with pylint
       run: |
-        pylint $(git ls-files '*.py')
+        # Disable unknown-option-value (W0012) for Python 3.8 compatibility
+        # (too-many-positional-arguments not recognized in older pylint)
+        pylint $(git ls-files '*.py') --disable=unknown-option-value

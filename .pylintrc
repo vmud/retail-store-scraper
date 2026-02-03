@@ -47,7 +47,8 @@ disable=
     too-many-public-methods,
     f-string-without-interpolation,
     reimported,
-    anomalous-backslash-in-string
+    anomalous-backslash-in-string,
+    too-many-positional-arguments
 
 [BASIC]
 # Good variable names which should always be accepted
