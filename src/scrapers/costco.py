@@ -191,9 +191,17 @@ def _extract_warehouses_from_page(html: str) -> List[Dict[str, Any]]:
                 json_match = re.search(r'(\{.*"warehouses?".*\})', script_text, re.DOTALL)
                 if json_match:
                     data = json.loads(json_match.group(1))
-                    if isinstance(data, dict) and 'warehouses' in data:
-                        for w in data['warehouses']:
-                            warehouses.append(_normalize_warehouse_json(w))
+                    if isinstance(data, dict):
+                        warehouses_data = None
+                        if 'warehouses' in data:
+                            warehouses_data = data['warehouses']
+                        elif 'warehouse' in data:
+                            warehouses_data = data['warehouse']
+                        if isinstance(warehouses_data, dict):
+                            warehouses_data = [warehouses_data]
+                        if isinstance(warehouses_data, list):
+                            for w in warehouses_data:
+                                warehouses.append(_normalize_warehouse_json(w))
             except (json.JSONDecodeError, KeyError) as e:
                 logger.debug(f"Could not parse embedded JSON: {e}")
 
@@ -224,20 +232,15 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         Normalized warehouse dictionary
 
     Note:
-        Uses 'or' chaining instead of nested .get() defaults to properly handle
-        null JSON values. dict.get(key, default) returns None if key exists with
-        null value, but 'or' will fall through to the next option.
-        
-        Exception: Coordinates use explicit None checks since 0 is a valid
-        coordinate value but would be falsy in 'or' chaining.
+        Uses None-coalescing for fields like coordinates to preserve valid
+        falsy values (e.g., 0.0) while still falling back on null JSON values.
     """
-    def _first_not_none(*values):
-        """Return the first value that is not None."""
-        for v in values:
-            if v is not None:
-                return v
+    def _coalesce_none(*values: Any) -> Any:
+        """Return first value that is not None (preserves valid 0 coordinates)."""
+        for value in values:
+            if value is not None:
+                return value
         return None
-    
     name = data.get('name') or data.get('displayName') or ''
     return {
         'store_id': str(data.get('storeNumber') or data.get('locationId') or data.get('id') or ''),
@@ -247,8 +250,8 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         'state': data.get('state') or data.get('stateCode') or '',
         'zip': data.get('zip') or data.get('zipCode') or data.get('postalCode') or '',
         'country': data.get('country') or data.get('countryCode') or 'US',
-        'latitude': _first_not_none(data.get('latitude'), data.get('lat')),
-        'longitude': _first_not_none(data.get('longitude'), data.get('lng'), data.get('lon')),
+        'latitude': _coalesce_none(data.get('latitude'), data.get('lat')),
+        'longitude': _coalesce_none(data.get('longitude'), data.get('lng'), data.get('lon')),
         'phone': data.get('phone') or data.get('phoneNumber') or '',
         'url': data.get('url') or data.get('detailsUrl') or '',
         'services': data.get('services') or [],
@@ -403,11 +406,17 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
                 # Fall back to zip code search
                 warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
             else:
-                warehouses = _extract_warehouses_from_page(response.text)
+                try:
+                    warehouses = _extract_warehouses_from_page(response.text)
+                except Exception as e:
+                    logger.error(f"Error extracting warehouses from locations page: {e}")
+                    logger.info("Falling back to zip code search after extraction error")
+                    warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
 
         except Exception as e:
             logger.error(f"Error fetching locations page: {e}")
-            warehouses = []
+            logger.info("Falling back to zip code search after fetch error")
+            warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
 
         # Step 2: Deduplicate and limit
         unique_warehouses = {}
