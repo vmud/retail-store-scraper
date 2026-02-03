@@ -222,9 +222,14 @@ def get_with_retry(
                 time.sleep(wait_time)
 
             elif response.status_code == 403:  # Blocked
-                logging.error(f"Blocked (403) for {url}. Waiting 5 minutes...")
-                time.sleep(300)  # 5 minutes
-                return None  # Don't retry 403, likely blocked
+                # Use exponential backoff starting at 30s (#144)
+                wait_time = (2 ** attempt) * rate_limit_base_wait
+                logging.warning(
+                    f"Blocked (403) for {url}. "
+                    f"Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait_time)
+                # Continue to retry instead of immediate return (#144)
 
             elif response.status_code >= 500:  # Server error
                 wait_time = 10
@@ -254,7 +259,9 @@ def get_with_retry(
             logging.warning(f"Request error for {url}: {safe_error}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
             time.sleep(wait_time)
 
-    logging.error(f"Failed to fetch {url} after {max_retries} attempts")
+    # Log final failure with context (#144)
+    final_status = response.status_code if response else 'no response'
+    logging.error(f"Failed to fetch {url} after {max_retries} attempts (last status: {final_status})")
     return None
 
 
