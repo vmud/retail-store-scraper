@@ -40,7 +40,7 @@ jobs:
 
       - name: Check for high severity issues
         run: |
-          bandit -r src/ run.py -ll --severity-level high
+          bandit -r src/ run.py --severity-level high
 
   dependency-check:
     name: Dependency Vulnerability Check

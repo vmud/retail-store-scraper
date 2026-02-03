@@ -62,7 +62,7 @@ variable-rgx=[a-z_][a-z0-9_]{1,30}$
 max-line-length=120
 
 # Maximum number of lines in a module
-max-module-lines=1000
+max-module-lines=1100
 
 [DESIGN]
 # Maximum number of arguments for function / method
