@@ -1,0 +1,134 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      config: ${{ steps.filter.outputs.config }}
+      docker: ${{ steps.filter.outputs.docker }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - '**/*.py'
+            config:
+              - 'config/**'
+              - '*.yaml'
+              - '*.yml'
+            docker:
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - 'docker-entrypoint.sh'
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+
+  lint:
+    name: Lint & Format Check
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install linters
+        run: |
+          pip install pylint isort black
+
+      - name: Check import sorting
+        run: isort --check-only --diff src/ tests/ run.py || echo "::warning::Imports not sorted"
+
+      - name: Check code formatting
+        run: black --check --diff src/ tests/ run.py || echo "::warning::Code not formatted with black"
+
+      - name: Run Pylint
+        run: pylint $(git ls-files '*.py') --exit-zero
+
+  config-validation:
+    name: Validate Configuration
+    needs: changes
+    if: needs.changes.outputs.config == 'true' || needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml
+
+      - name: Validate YAML syntax
+        run: |
+          python -c "
+          import yaml
+          import sys
+          
+          files = ['config/retailers.yaml']
+          errors = []
+          
+          for f in files:
+              try:
+                  with open(f) as fp:
+                      yaml.safe_load(fp)
+                  print(f'✅ {f}')
+              except Exception as e:
+                  errors.append(f'{f}: {e}')
+                  print(f'❌ {f}: {e}')
+          
+          if errors:
+              sys.exit(1)
+          "
+
+      - name: Run config validation
+        run: |
+          pip install -r requirements.txt
+          python -c "
+          from run import validate_config_on_startup
+          errors = validate_config_on_startup()
+          if errors:
+              print('Configuration errors:')
+              for e in errors:
+                  print(f'  - {e}')
+              exit(1)
+          print('✅ Configuration valid')
+          "
+
+  pr-size:
+    name: PR Size Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR size
+        run: |
+          ADDITIONS=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{sum+=$1} END {print sum}')
+          DELETIONS=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{sum+=$2} END {print sum}')
+          TOTAL=$((ADDITIONS + DELETIONS))
+          
+          echo "PR Stats: +$ADDITIONS -$DELETIONS (total: $TOTAL lines)"
+          
+          if [ "$TOTAL" -gt 1000 ]; then
+            echo "::warning::Large PR detected ($TOTAL lines). Consider breaking into smaller PRs."
+          fi
