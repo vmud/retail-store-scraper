@@ -1,8 +1,7 @@
 """Tests for traceback logging in run_all_retailers."""
-import asyncio
 import logging
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 from run import run_all_retailers
 

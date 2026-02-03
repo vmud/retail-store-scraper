@@ -136,6 +136,9 @@ class ChangeDetector:
         even when comparison fields change. When multiple stores have the same key
         (multi-tenant or data issues), stores them with suffixes to prevent data loss.
 
+        Stores are sorted by fingerprint before indexing to ensure deterministic
+        collision suffix assignment regardless of input order (#57).
+
         Returns:
             Tuple of (stores_by_key dict, fingerprints_by_key dict, collision_count)
         """
@@ -143,12 +146,16 @@ class ChangeDetector:
         fingerprints_by_key = {}
         collision_count = 0
 
-        for store in stores:
-            # Compute identity hash for stable key generation (address-based stores only)
-            identity_hash = self.compute_identity_hash(store)
-            # Compute full fingerprint for change detection (includes comparison fields)
-            fingerprint = self.compute_fingerprint(store)
+        # Pre-compute identity hashes and fingerprints for all stores
+        stores_with_hashes = [
+            (store, self.compute_identity_hash(store), self.compute_fingerprint(store))
+            for store in stores
+        ]
+        # Sort by fingerprint to ensure deterministic collision suffix assignment
+        # This prevents false change detection when stores appear in different order
+        stores_with_hashes.sort(key=lambda x: x[2])
 
+        for store, identity_hash, fingerprint in stores_with_hashes:
             # Keys use identity hash to remain stable when comparison fields change
             key = self._get_store_key(store, identity_hash[:8])
 
