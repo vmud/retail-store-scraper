@@ -180,6 +180,9 @@ def fetch_all_stores(session, retailer: str = 'telus') -> List[TelusStore]:
 
     Returns:
         List of TelusStore objects
+
+    Raises:
+        RuntimeError: If API request fails after retries or returns error status (#147)
     """
     logging.info(f"[{retailer}] Fetching all stores from Uberall API")
 
@@ -192,15 +195,15 @@ def fetch_all_stores(session, retailer: str = 'telus') -> List[TelusStore]:
     )
 
     if not response:
-        logging.error(f"[{retailer}] Failed to fetch stores from API")
-        return []
+        # Explicit failure instead of returning empty list (#147)
+        raise RuntimeError(f"[{retailer}] API request failed after retries - no response received")
 
     try:
         data = response.json()
 
         if data.get('status') != 'SUCCESS':
-            logging.error(f"[{retailer}] API returned error status: {data.get('status')}")
-            return []
+            # Explicit failure on API error status (#147)
+            raise RuntimeError(f"[{retailer}] API returned error status: {data.get('status')}")
 
         locations = data.get('response', {}).get('locations', [])
         logging.info(f"[{retailer}] API returned {len(locations)} locations")
@@ -218,11 +221,8 @@ def fetch_all_stores(session, retailer: str = 'telus') -> List[TelusStore]:
         return stores
 
     except json.JSONDecodeError as e:
-        logging.error(f"[{retailer}] Failed to parse API response: {e}")
-        return []
-    except Exception as e:
-        logging.error(f"[{retailer}] Unexpected error processing API response: {e}")
-        return []
+        # Explicit failure on JSON parse error (#147)
+        raise RuntimeError(f"[{retailer}] Failed to parse API response: {e}") from e
 
 
 def run(session, config: dict, **kwargs) -> dict:
