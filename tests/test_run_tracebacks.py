@@ -29,11 +29,11 @@ class TestRunAllRetailersTracebacks:
         assert results['test_retailer']['status'] == 'error'
 
         # Check that traceback info was logged (should contain 'inner_function')
-        log_text = '\n'.join(record.message for record in caplog.records)
-        # The traceback should be logged somewhere
-        assert any('Traceback' in record.message or 'inner_function' in record.message
-                   for record in caplog.records), \
-            f"Expected traceback in logs, got: {log_text}"
+        # When using exc_info=, the traceback is in caplog.text (formatted output)
+        # not in record.message
+        log_text = caplog.text
+        assert 'Traceback' in log_text, f"Expected 'Traceback' in logs, got: {log_text}"
+        assert 'inner_function' in log_text, f"Expected 'inner_function' in logs, got: {log_text}"
 
     @pytest.mark.asyncio
     async def test_retailer_name_included_in_error_log(self, caplog):
