@@ -143,25 +143,33 @@ class ExportService:
     @staticmethod
     def _get_fieldnames(
         stores: List[Dict[str, Any]],
-        retailer_config: Optional[Dict[str, Any]] = None
+        retailer_config: Optional[Dict[str, Any]] = None,
+        sample_size: int = 100
     ) -> List[str]:
         """
         Get field names from config or infer from data.
 
+        Takes union of fieldnames across first N records for completeness (#146).
+
         Args:
             stores: List of store dictionaries
             retailer_config: Optional retailer config with output_fields
+            sample_size: Number of stores to sample for field discovery (default: 100)
 
         Returns:
-            List of field names to include in export
+            List of field names to include in export (sorted for determinism)
         """
         # Try to get from config
         if retailer_config and 'output_fields' in retailer_config:
             return retailer_config['output_fields']
 
-        # Infer from first store
+        # Infer from first N stores (union of all fields) (#146)
         if stores:
-            return list(stores[0].keys())
+            all_fields = set()
+            for store in stores[:sample_size]:
+                all_fields.update(store.keys())
+            # Return sorted for deterministic column order
+            return sorted(all_fields)
 
         # Fallback to defaults
         return ExportService.DEFAULT_FIELDS
