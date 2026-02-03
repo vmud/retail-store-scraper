@@ -104,7 +104,13 @@
       "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper diff --staged)",
       "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper log --oneline -5)",
       "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper diff .claude/settings.local.json)",
-      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper add .claude/settings.local.json .claude/hooks/validate-yaml.sh .claude/skills/validate-output/SKILL.md .claude/skills/compare-runs/SKILL.md)"
+      "Bash(git -C /Users/vmud/Documents/dev/projects/retail-store-scraper add .claude/settings.local.json .claude/hooks/validate-yaml.sh .claude/skills/validate-output/SKILL.md .claude/skills/compare-runs/SKILL.md)",
+      "Bash(unset:*)",
+      "Bash(gh auth:*)",
+      "mcp__plugin_github_github__pull_request_read",
+      "mcp__plugin_github_github__list_pull_requests",
+      "Bash(gh repo view:*)",
+      "Bash(git log:*)"
     ]
   },
   "hooks": {

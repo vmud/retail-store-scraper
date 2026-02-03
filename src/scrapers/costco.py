@@ -191,9 +191,17 @@ def _extract_warehouses_from_page(html: str) -> List[Dict[str, Any]]:
                 json_match = re.search(r'(\{.*"warehouses?".*\})', script_text, re.DOTALL)
                 if json_match:
                     data = json.loads(json_match.group(1))
-                    if isinstance(data, dict) and 'warehouses' in data:
-                        for w in data['warehouses']:
-                            warehouses.append(_normalize_warehouse_json(w))
+                    if isinstance(data, dict):
+                        warehouses_data = None
+                        if 'warehouses' in data:
+                            warehouses_data = data['warehouses']
+                        elif 'warehouse' in data:
+                            warehouses_data = data['warehouse']
+                        if isinstance(warehouses_data, dict):
+                            warehouses_data = [warehouses_data]
+                        if isinstance(warehouses_data, list):
+                            for w in warehouses_data:
+                                warehouses.append(_normalize_warehouse_json(w))
             except (json.JSONDecodeError, KeyError) as e:
                 logger.debug(f"Could not parse embedded JSON: {e}")
 
@@ -224,10 +232,14 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         Normalized warehouse dictionary
 
     Note:
-        Uses 'or' chaining instead of nested .get() defaults to properly handle
-        null JSON values. dict.get(key, default) returns None if key exists with
-        null value, but 'or' will fall through to the next option.
+        Uses None-coalescing for fields like coordinates to preserve valid
+        falsy values (e.g., 0.0) while still falling back on null JSON values.
     """
+    def _coalesce_none(*values: Any) -> Any:
+        for value in values:
+            if value is not None:
+                return value
+        return None
     name = data.get('name') or data.get('displayName') or ''
     return {
         'store_id': str(data.get('storeNumber') or data.get('locationId') or data.get('id') or ''),
@@ -237,8 +249,8 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         'state': data.get('state') or data.get('stateCode') or '',
         'zip': data.get('zip') or data.get('zipCode') or data.get('postalCode') or '',
         'country': data.get('country') or data.get('countryCode') or 'US',
-        'latitude': data.get('latitude') or data.get('lat'),
-        'longitude': data.get('longitude') or data.get('lng') or data.get('lon'),
+        'latitude': _coalesce_none(data.get('latitude'), data.get('lat')),
+        'longitude': _coalesce_none(data.get('longitude'), data.get('lng'), data.get('lon')),
         'phone': data.get('phone') or data.get('phoneNumber') or '',
         'url': data.get('url') or data.get('detailsUrl') or '',
         'services': data.get('services') or [],
@@ -312,7 +324,8 @@ def _fetch_by_zip_codes(
             if store_id and store_id not in all_warehouses:
                 all_warehouses[store_id] = w
 
-        utils.random_delay(retailer_config, kwargs.get('proxy_mode'))
+        min_delay, max_delay = utils.select_delays(retailer_config, kwargs.get('proxy_mode'))
+        utils.random_delay(min_delay, max_delay)
 
     return list(all_warehouses.values())
 
@@ -338,30 +351,45 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
     """
     stores = []
     checkpoints_used = False
-    proxy_client = None
+    completed_store_ids = set()
 
     limit = kwargs.get('limit')
     test_mode = kwargs.get('test_mode', False)
     proxy_mode = kwargs.get('proxy_mode', 'web_scraper_api')  # Default to web_scraper_api for Costco
+    resume = kwargs.get('resume', False)
 
     if test_mode:
         limit = 10
 
+    # Checkpoint setup
+    retailer_name = retailer.lower()
+    checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
+    checkpoint_interval = retailer_config.get('checkpoint_interval', config.CHECKPOINT_INTERVAL)
+
+    # Load checkpoint if resuming
+    if resume:
+        checkpoint = utils.load_checkpoint(checkpoint_path)
+        if checkpoint:
+            stores = checkpoint.get('stores', [])
+            completed_store_ids = set(checkpoint.get('completed_store_ids', []))
+            logger.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} warehouses already collected")
+            checkpoints_used = True
+
     logger.info(f"Starting Costco scraper (limit={limit}, proxy_mode={proxy_mode})")
 
+    # Initialize proxy client
+    proxy_config = ProxyConfig.from_env()
+    if proxy_mode == 'web_scraper_api':
+        proxy_config.mode = ProxyMode.WEB_SCRAPER_API
+        proxy_config.render_js = True
+    elif proxy_mode == 'residential':
+        proxy_config.mode = ProxyMode.RESIDENTIAL
+    else:
+        proxy_config.mode = ProxyMode.DIRECT
+
+    proxy_client = ProxyClient(proxy_config)
+
     try:
-        # Initialize proxy client
-        proxy_config = ProxyConfig.from_env()
-        if proxy_mode == 'web_scraper_api':
-            proxy_config.mode = ProxyMode.WEB_SCRAPER_API
-            proxy_config.render_js = True
-        elif proxy_mode == 'residential':
-            proxy_config.mode = ProxyMode.RESIDENTIAL
-        else:
-            proxy_config.mode = ProxyMode.DIRECT
-
-        proxy_client = ProxyClient(proxy_config)
-
         # Step 1: Fetch main locations page to discover warehouses
         logger.info("Fetching Costco warehouse locations page...")
         try:
@@ -377,11 +405,17 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
                 # Fall back to zip code search
                 warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
             else:
-                warehouses = _extract_warehouses_from_page(response.text)
+                try:
+                    warehouses = _extract_warehouses_from_page(response.text)
+                except Exception as e:
+                    logger.error(f"Error extracting warehouses from locations page: {e}")
+                    logger.info("Falling back to zip code search after extraction error")
+                    warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
 
         except Exception as e:
             logger.error(f"Error fetching locations page: {e}")
-            warehouses = []
+            logger.info("Falling back to zip code search after fetch error")
+            warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, **kwargs)
 
         # Step 2: Deduplicate and limit
         unique_warehouses = {}
@@ -398,7 +432,14 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
         # For now, use the data we have from the list page
         scraped_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        for store_id, data in unique_warehouses.items():
+        # Filter out already completed store IDs (for resume support)
+        pending_warehouses = {
+            sid: data for sid, data in unique_warehouses.items()
+            if sid not in completed_store_ids
+        }
+        logger.info(f"Processing {len(pending_warehouses)} pending warehouses (skipping {len(completed_store_ids)} already completed)")
+
+        for i, (store_id, data) in enumerate(pending_warehouses.items(), 1):
             # Create CostcoWarehouse object
             try:
                 # Parse address if we only have address_text
@@ -431,13 +472,34 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
                 validation = utils.validate_store_data(store_dict)
                 if validation.is_valid:
                     stores.append(store_dict)
+                    completed_store_ids.add(store_id)
                 else:
                     logger.debug(f"Invalid warehouse {store_id}: {validation.errors}")
+
+                # Checkpoint at intervals
+                if i % checkpoint_interval == 0:
+                    utils.save_checkpoint({
+                        'completed_count': len(stores),
+                        'completed_store_ids': list(completed_store_ids),
+                        'stores': stores,
+                        'last_updated': datetime.now(timezone.utc).isoformat()
+                    }, checkpoint_path)
+                    logger.debug(f"Checkpoint saved: {len(stores)} warehouses")
 
             except Exception as e:
                 logger.warning(f"Error creating warehouse object for {store_id}: {e}")
 
         logger.info(f"Costco scraper complete: {len(stores)} valid warehouses")
+
+        # Save final checkpoint
+        if stores:
+            utils.save_checkpoint({
+                'completed_count': len(stores),
+                'completed_store_ids': list(completed_store_ids),
+                'stores': stores,
+                'last_updated': datetime.now(timezone.utc).isoformat()
+            }, checkpoint_path)
+            logger.debug(f"Final checkpoint saved: {len(stores)} warehouses")
 
         return {
             'stores': stores,
@@ -446,10 +508,6 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
         }
 
     finally:
-        # Clean up proxy client session
-        if proxy_client and hasattr(proxy_client, 'close'):
-            try:
-                proxy_client.close()
-                logger.debug("Closed proxy client session")
-            except Exception as e:
-                logger.warning(f"Error closing proxy client session: {e}")
+        # Clean up proxy client session to prevent resource leak
+        proxy_client.close()
+        logger.debug("Closed proxy client session")
