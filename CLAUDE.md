@@ -8,11 +8,17 @@ Multi-retailer web scraper that collects retail store locations from Verizon, AT
 
 ## Environment Setup
 
-Requires Python 3.8-3.11:
+Requires Python 3.8-3.11. Use the self-healing setup script for automated environment configuration:
 ```bash
+# Recommended: automated setup with diagnostics and auto-fix
+python scripts/setup.py
+
+# Or manual setup:
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Use `/project-setup` skill in Claude Code for guided setup assistance.
 
 ## Common Commands
 
@@ -141,6 +147,11 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   ├── cloud_storage.py        # GCS integration for backup/sync
 │   ├── run_tracker.py          # Run metadata and state tracking
 │   └── scraper_manager.py      # Process lifecycle management
+├── src/setup/                  # Self-healing project setup
+│   ├── probe.py                # Environment probing (Python, venv, packages, etc.)
+│   ├── fix.py                  # Idempotent auto-fix functions
+│   ├── verify.py               # Test suite verification
+│   └── runner.py               # Main orchestration with checkpoints
 ├── src/change_detector.py      # Detects new/closed/modified stores between runs
 └── config/
     ├── retailers.yaml          # Global config: proxy settings, per-retailer overrides
@@ -296,6 +307,10 @@ tests/
 │   ├── test_bestbuy.py
 │   ├── test_cricket.py
 │   └── test_bell.py
+├── test_setup/              # Setup module tests
+│   ├── test_probe.py        # Environment probing tests
+│   ├── test_fix.py          # Auto-fix function tests
+│   └── test_runner.py       # Orchestration tests
 ├── test_change_detector.py  # Change detection tests
 ├── test_proxy_client.py     # Proxy integration tests
 ├── test_export_service.py   # Export format tests
