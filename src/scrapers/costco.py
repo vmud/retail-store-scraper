@@ -191,9 +191,16 @@ def _extract_warehouses_from_page(html: str) -> List[Dict[str, Any]]:
                     data = json.loads(json_match.group(1))
                     if isinstance(data, dict):
                         # Handle both singular and plural keys
-                        warehouse_list = data.get('warehouses') or data.get('warehouse')
-                        if warehouse_list:
-                            for w in warehouse_list:
+                        warehouses_data = None
+                        if 'warehouses' in data:
+                            warehouses_data = data['warehouses']
+                        elif 'warehouse' in data:
+                            warehouses_data = data['warehouse']
+                        # Handle single warehouse (dict) vs list of warehouses
+                        if isinstance(warehouses_data, dict):
+                            warehouses_data = [warehouses_data]
+                        if isinstance(warehouses_data, list):
+                            for w in warehouses_data:
                                 warehouses.append(_normalize_warehouse_json(w))
             except (json.JSONDecodeError, KeyError) as e:
                 logger.debug(f"Could not parse embedded JSON: {e}")
@@ -225,10 +232,14 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         Normalized warehouse dictionary
 
     Note:
-        Uses 'or' chaining instead of nested .get() defaults to properly handle
-        null JSON values. dict.get(key, default) returns None if key exists with
-        null value, but 'or' will fall through to the next option.
+        Uses None-coalescing for fields like coordinates to preserve valid
+        falsy values (e.g., 0.0) while still falling back on null JSON values.
     """
+    def _coalesce_none(*values: Any) -> Any:
+        for value in values:
+            if value is not None:
+                return value
+        return None
     name = data.get('name') or data.get('displayName') or ''
     return {
         'store_id': str(data.get('storeNumber') or data.get('locationId') or data.get('id') or ''),
@@ -238,8 +249,8 @@ def _normalize_warehouse_json(data: Dict[str, Any]) -> Dict[str, Any]:
         'state': data.get('state') or data.get('stateCode') or '',
         'zip': data.get('zip') or data.get('zipCode') or data.get('postalCode') or '',
         'country': data.get('country') or data.get('countryCode') or 'US',
-        'latitude': data.get('latitude') or data.get('lat'),
-        'longitude': data.get('longitude') or data.get('lng') or data.get('lon'),
+        'latitude': _coalesce_none(data.get('latitude'), data.get('lat')),
+        'longitude': _coalesce_none(data.get('longitude'), data.get('lng'), data.get('lon')),
         'phone': data.get('phone') or data.get('phoneNumber') or '',
         'url': data.get('url') or data.get('detailsUrl') or '',
         'services': data.get('services') or [],
@@ -397,12 +408,13 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
                 try:
                     warehouses = _extract_warehouses_from_page(response.text)
                 except Exception as parse_err:
-                    logger.warning(f"Error parsing locations page: {parse_err}, falling back to zip code search")
+                    logger.warning(f"Error parsing locations page: {parse_err}")
+                    logger.info("Falling back to zip code search after extraction error")
                     warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, proxy_mode=proxy_mode)
 
         except Exception as e:
             logger.error(f"Error fetching locations page: {e}")
-            # Fall back to zip code search on network/fetch errors
+            logger.info("Falling back to zip code search after fetch error")
             warehouses = _fetch_by_zip_codes(proxy_client, retailer_config, limit, proxy_mode=proxy_mode)
 
         # Step 2: Deduplicate and limit
