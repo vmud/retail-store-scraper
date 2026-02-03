@@ -130,11 +130,11 @@ class ChangeDetector:
         self,
         stores: List[Dict[str, Any]]
     ) -> tuple:
-        """Build store index and fingerprint maps with stable key generation (#57).
+        """Build store index and fingerprint maps with collision handling (#148).
 
         Uses deterministic identity-hash-based keys that remain stable across runs,
-        even when comparison fields change. The full fingerprint (including comparison
-        fields) is tracked separately for detecting modifications.
+        even when comparison fields change. When multiple stores have the same key
+        (multi-tenant or data issues), stores them with suffixes to prevent data loss.
 
         Returns:
             Tuple of (stores_by_key dict, fingerprints_by_key dict, collision_count)
@@ -142,35 +142,35 @@ class ChangeDetector:
         stores_by_key = {}
         fingerprints_by_key = {}
         collision_count = 0
-        seen_keys = {}
 
         for store in stores:
             # Compute identity hash for stable key generation (address-based stores only)
             identity_hash = self.compute_identity_hash(store)
             # Compute full fingerprint for change detection (includes comparison fields)
             fingerprint = self.compute_fingerprint(store)
-            
+
             # Keys use identity hash to remain stable when comparison fields change
             key = self._get_store_key(store, identity_hash[:8])
-            
-            # Track collisions for logging purposes
-            if key in seen_keys:
+
+            # Handle collision by appending numeric suffix (#148)
+            if key in stores_by_key:
                 collision_count += 1
+                suffix = 1
+                while f"{key}::{suffix}" in stores_by_key:
+                    suffix += 1
+                key = f"{key}::{suffix}"
                 logging.debug(
-                    f"Key collision detected: '{key}' appears multiple times. "
-                    f"This suggests stores have identical identity fields."
+                    f"Key collision detected, using disambiguated key: '{key}'"
                 )
-            
+
             stores_by_key[key] = store
             # Store full fingerprint for change detection
             fingerprints_by_key[key] = fingerprint
-            seen_keys[key] = True
 
         if collision_count > 0:
             logging.warning(
-                f"[{self.retailer}] {collision_count} true key collision(s) detected "
-                f"(stores with identical identity fields). "
-                f"Consider adding more unique identifiers to store data."
+                f"[{self.retailer}] {collision_count} key collision(s) resolved with suffixes. "
+                f"This may indicate duplicate data or stores with identical identity fields."
             )
 
         return stores_by_key, fingerprints_by_key, collision_count

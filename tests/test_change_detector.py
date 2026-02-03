@@ -916,3 +916,107 @@ class TestEdgeCases:
 
         assert output_dir.exists()
         assert history_dir.exists()
+
+
+class TestMultiTenantLocations:
+    """Tests for multi-tenant location handling (#148)."""
+
+    def _setup_previous_data(self, detector, stores):
+        """Helper to set up previous data for change detection tests."""
+        import json
+        previous_path = detector.output_dir / 'stores_previous.json'
+        previous_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(previous_path, 'w', encoding='utf-8') as f:
+            json.dump(stores, f)
+
+    def test_multiple_stores_at_same_address_preserved(self, temp_data_dir):
+        """Multiple stores at the same address should not be dropped."""
+        detector = ChangeDetector('test_retailer', temp_data_dir)
+
+        # Two different stores at the same address (mall scenario)
+        stores = [
+            {
+                'name': 'Store A',
+                'street_address': '123 Mall Way',
+                'city': 'Anytown',
+                'state': 'CA',
+                'zip': '12345',
+                'phone': '555-0001',
+            },
+            {
+                'name': 'Store B',  # Different name
+                'street_address': '123 Mall Way',  # Same address
+                'city': 'Anytown',
+                'state': 'CA',
+                'zip': '12345',
+                'phone': '555-0002',  # Different phone
+            },
+        ]
+
+        stores_by_key, fingerprints, collision_count = detector._build_store_index(stores)
+
+        # Both stores should be preserved
+        assert len(stores_by_key) == 2, f"Expected 2 stores, got {len(stores_by_key)}"
+
+        # Both store names should be findable
+        store_names = [s['name'] for s in stores_by_key.values()]
+        assert 'Store A' in store_names
+        assert 'Store B' in store_names
+
+    def test_true_duplicates_logged_as_collision(self, temp_data_dir):
+        """Stores with identical identity fields should log collision."""
+        detector = ChangeDetector('test_retailer', temp_data_dir)
+
+        # True duplicates (all identity fields match)
+        stores = [
+            {
+                'name': 'Identical Store',
+                'street_address': '123 Main St',
+                'city': 'Anytown',
+                'state': 'CA',
+                'zip': '12345',
+                'phone': '555-0001',
+            },
+            {
+                'name': 'Identical Store',  # Same name
+                'street_address': '123 Main St',  # Same address
+                'city': 'Anytown',
+                'state': 'CA',
+                'zip': '12345',
+                'phone': '555-0001',  # Same phone
+            },
+        ]
+
+        stores_by_key, fingerprints, collision_count = detector._build_store_index(stores)
+
+        # Should report 1 collision (true duplicate) but still preserve both
+        assert collision_count == 1
+        # Both should be preserved with suffix
+        assert len(stores_by_key) == 2
+
+    def test_change_detection_handles_multi_tenant(self, temp_data_dir):
+        """Change detection should correctly identify changes at multi-tenant locations."""
+        detector = ChangeDetector('test_retailer', temp_data_dir)
+
+        previous_stores = [
+            {'store_id': '1', 'name': 'Store A', 'street_address': '123 Mall', 'city': 'X', 'state': 'CA', 'zip': '12345', 'phone': '555-0001'},
+            {'store_id': '2', 'name': 'Store B', 'street_address': '123 Mall', 'city': 'X', 'state': 'CA', 'zip': '12345', 'phone': '555-0002'},
+        ]
+
+        current_stores = [
+            {'store_id': '1', 'name': 'Store A', 'street_address': '123 Mall', 'city': 'X', 'state': 'CA', 'zip': '12345', 'phone': '555-0001'},
+            {'store_id': '2', 'name': 'Store B', 'street_address': '123 Mall', 'city': 'X', 'state': 'CA', 'zip': '12345', 'phone': '555-0002'},
+            {'store_id': '3', 'name': 'Store C', 'street_address': '123 Mall', 'city': 'X', 'state': 'CA', 'zip': '12345', 'phone': '555-0003'},
+        ]
+
+        # Set up previous data using helper
+        self._setup_previous_data(detector, previous_stores)
+
+        # Run change detection
+        report = detector.detect_changes(current_stores)
+
+        # Should detect Store C as new
+        assert len(report.new_stores) == 1
+        assert report.new_stores[0]['store_id'] == '3'
+        # Should have 2 unchanged
+        assert report.unchanged_count == 2
