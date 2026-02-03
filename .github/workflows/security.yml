@@ -62,23 +62,6 @@ jobs:
           pip install -r requirements.txt
           safety check --full-report || true
 
-  codeql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: python
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: "/language:python"
+  # Note: CodeQL analysis is handled by GitHub's default setup (repo settings)
+  # which provides weekly scheduled scans and main branch analysis.
+  # See: Settings → Security → Code scanning → CodeQL analysis
