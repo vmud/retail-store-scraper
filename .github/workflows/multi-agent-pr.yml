@@ -1,0 +1,282 @@
+name: Multi-Agent PR Coordination
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  detect-agent:
+    name: Detect Agent & Label PR
+    runs-on: ubuntu-latest
+    outputs:
+      agent: ${{ steps.detect.outputs.agent }}
+    steps:
+      - name: Detect agent from branch name
+        id: detect
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          AGENT="unknown"
+
+          if [[ "$BRANCH" =~ /cc[0-9]- ]]; then
+            AGENT="claude-code"
+          elif [[ "$BRANCH" =~ /cursor- ]]; then
+            AGENT="cursor"
+          elif [[ "$BRANCH" =~ /copilot- ]]; then
+            AGENT="copilot"
+          elif [[ "$BRANCH" =~ /gemini- ]]; then
+            AGENT="gemini"
+          elif [[ "$BRANCH" =~ /aider- ]]; then
+            AGENT="aider"
+          elif [[ "$BRANCH" =~ /human- ]]; then
+            AGENT="human"
+          fi
+
+          echo "agent=$AGENT" >> $GITHUB_OUTPUT
+          echo "Detected agent: $AGENT from branch: $BRANCH"
+
+      - name: Apply agent label
+        if: steps.detect.outputs.agent != 'unknown'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const agent = '${{ steps.detect.outputs.agent }}';
+            const label = `agent:${agent}`;
+
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [label]
+              });
+              console.log(`Added label: ${label}`);
+            } catch (error) {
+              // Label might not exist, create it
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: 'c5def5',
+                  description: `PR created by ${agent}`
+                });
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  labels: [label]
+                });
+              } catch (createError) {
+                console.log(`Could not create/add label: ${createError.message}`);
+              }
+            }
+
+  check-conflicts:
+    name: Check PR Conflicts
+    runs-on: ubuntu-latest
+    needs: detect-agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all open PR branches
+        run: |
+          # Get list of open PRs (excluding current)
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          echo "Current PR: #$PR_NUMBER"
+          echo "Checking for conflicts with other open PRs..."
+
+          # Fetch the base branch
+          git fetch origin ${{ github.base_ref }}
+
+      - name: Check merge conflicts with base
+        id: base-conflict
+        run: |
+          git fetch origin ${{ github.head_ref }}
+          git checkout FETCH_HEAD
+
+          # Try to merge base branch
+          if git merge --no-commit --no-ff origin/${{ github.base_ref }} 2>/dev/null; then
+            echo "conflict=false" >> $GITHUB_OUTPUT
+            echo "No conflicts with base branch"
+            git merge --abort 2>/dev/null || true
+          else
+            echo "conflict=true" >> $GITHUB_OUTPUT
+            echo "Conflicts detected with base branch"
+            git merge --abort 2>/dev/null || true
+          fi
+
+      - name: Check conflicts with other open PRs
+        id: pr-conflicts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const currentPR = context.issue.number;
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              base: '${{ github.base_ref }}'
+            });
+
+            const otherPRs = prs.filter(pr => pr.number !== currentPR);
+            console.log(`Found ${otherPRs.length} other open PRs targeting ${context.payload.pull_request.base.ref}`);
+
+            const conflictPRs = [];
+            for (const pr of otherPRs) {
+              // Get the files changed in each PR
+              const { data: currentFiles } = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: currentPR
+              });
+
+              const { data: otherFiles } = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number
+              });
+
+              const currentFilenames = new Set(currentFiles.map(f => f.filename));
+              const overlapping = otherFiles.filter(f => currentFilenames.has(f.filename));
+
+              if (overlapping.length > 0) {
+                conflictPRs.push({
+                  number: pr.number,
+                  title: pr.title,
+                  files: overlapping.map(f => f.filename)
+                });
+              }
+            }
+
+            if (conflictPRs.length > 0) {
+              let message = '## Potential Conflicts Detected\n\n';
+              message += 'This PR modifies files that are also modified in other open PRs:\n\n';
+
+              for (const pr of conflictPRs) {
+                message += `### PR #${pr.number}: ${pr.title}\n`;
+                message += 'Overlapping files:\n';
+                for (const file of pr.files) {
+                  message += `- \`${file}\`\n`;
+                }
+                message += '\n';
+              }
+
+              message += '**Recommendation**: Coordinate with the authors of these PRs to avoid merge conflicts.\n';
+
+              // Add conflict label
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: currentPR,
+                  labels: ['conflict:potential']
+                });
+              } catch (e) {
+                console.log('Could not add conflict label');
+              }
+
+              // Post comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: currentPR,
+                body: message
+              });
+
+              core.setOutput('has_conflicts', 'true');
+              core.setOutput('conflict_count', conflictPRs.length);
+            } else {
+              console.log('No file overlaps with other open PRs');
+              core.setOutput('has_conflicts', 'false');
+              core.setOutput('conflict_count', '0');
+            }
+
+      - name: Add needs-rebase label if conflicting with base
+        if: steps.base-conflict.outputs.conflict == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['needs:rebase']
+              });
+            } catch (e) {
+              // Create label if it doesn't exist
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'needs:rebase',
+                  color: 'fbca04',
+                  description: 'PR needs to be rebased on latest main'
+                });
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  labels: ['needs:rebase']
+                });
+              } catch (createError) {
+                console.log('Could not create/add label');
+              }
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '## Merge Conflict with Base Branch\n\nThis PR has merge conflicts with `${{ github.base_ref }}`. Please merge the latest `${{ github.base_ref }}` into your branch to resolve conflicts.\n\n```bash\ngit fetch origin ${{ github.base_ref }}\ngit merge origin/${{ github.base_ref }}\n# Resolve conflicts\ngit push\n```'
+            });
+
+  run-tests:
+    name: Run Test Suite
+    runs-on: ubuntu-latest
+    needs: [detect-agent, check-conflicts]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short
+
+  summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [detect-agent, check-conflicts, run-tests]
+    if: always()
+    steps:
+      - name: Generate summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const agent = '${{ needs.detect-agent.outputs.agent }}';
+            const testsResult = '${{ needs.run-tests.result }}';
+
+            let summary = `## Multi-Agent PR Check Summary\n\n`;
+            summary += `| Check | Status |\n`;
+            summary += `|-------|--------|\n`;
+            summary += `| Agent Detection | ${agent !== 'unknown' ? '✅ ' + agent : '⚠️ Unknown'} |\n`;
+            summary += `| Tests | ${testsResult === 'success' ? '✅ Passed' : '❌ Failed'} |\n`;
+
+            console.log(summary);

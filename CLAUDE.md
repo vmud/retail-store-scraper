@@ -309,6 +309,16 @@ tests/
         └── proxy.py, status.py
 ```
 
+## Multi-Agent Development
+
+This repository supports parallel development by multiple AI agents. See `.claude/rules/devops-workflow.md` for comprehensive multi-agent workflow rules.
+
+**Quick Reference:**
+- Use git worktrees for isolation: `git worktree add ../retail-store-scraper--{branch} -b {type}/{agent}-{task}`
+- Agent IDs: `cc1`, `cc2` (Claude Code), `cursor`, `copilot`, `gemini`, `aider`, `human`
+- Include agent ID in commits: `Agent: cc1`
+- High-conflict files (coordinate before editing): `run.py`, `config/retailers.yaml`, `CLAUDE.md`, `requirements.txt`
+
 ## Deployment
 
 Deployment tools in `deploy/`:

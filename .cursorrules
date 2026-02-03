@@ -1,0 +1,111 @@
+# Cursor Multi-Agent DevOps Rules
+
+This project uses multiple AI coding agents in parallel. Follow these rules to prevent conflicts.
+
+## Core Architecture: Git Worktree Isolation
+
+Every agent works in its own worktree. Never share working directories.
+
+```
+~/dev/projects/
+├── retail-store-scraper/                    # Hub (main, read-only reference)
+├── retail-store-scraper--feat-cursor-task/  # Your worktree
+└── retail-store-scraper--feat-cc1-export/   # Another agent's worktree
+```
+
+## Before Starting Work
+
+```bash
+# 1. Go to hub, sync main
+cd ~/dev/projects/retail-store-scraper
+git checkout main && git pull
+
+# 2. Create your worktree
+git worktree add ../retail-store-scraper--{type}-cursor-{task} -b {type}/cursor-{task}
+
+# 3. Work in worktree
+cd ../retail-store-scraper--{type}-cursor-{task}
+```
+
+## Branch Naming
+
+```
+{type}/cursor-{short-description}
+```
+
+Types: `feat/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`
+
+Examples:
+- `feat/cursor-dashboard`
+- `fix/cursor-memory-leak`
+- `refactor/cursor-utils`
+
+## During Work
+
+### Commits
+
+```bash
+git commit -m "{type}: {description}
+
+Agent: cursor
+Co-Authored-By: Cursor <noreply@cursor.com>"
+```
+
+Commit after each logical unit. Push every 2-3 commits.
+
+### High-Conflict Files (Extra Caution)
+
+- `run.py` - main entry point
+- `config/retailers.yaml` - shared config
+- `CLAUDE.md` - project instructions
+- `requirements.txt` - dependencies
+
+Check if another agent is editing these before modifying.
+
+### Syncing with Main
+
+Use merge, not rebase:
+
+```bash
+git fetch origin main
+git merge origin/main
+# Resolve any conflicts
+git push
+```
+
+## Creating PRs
+
+```bash
+gh pr create --title "{type}: {description}" --body "## Summary
+- Changes made
+
+## Agent
+cursor
+
+## Test plan
+- [ ] Tests to run
+"
+```
+
+## After PR Merge
+
+```bash
+cd ~/dev/projects/retail-store-scraper
+git worktree remove ../retail-store-scraper--{branch}
+git branch -d {branch}
+git fetch --prune
+```
+
+## Quick Reference
+
+| Action | Command |
+|--------|---------|
+| Start work | `git worktree add ../{repo}--{branch} -b {branch}` |
+| First push | `git push -u origin {branch}` |
+| Sync main | `git fetch origin main && git merge origin/main` |
+| Create PR | `gh pr create --title "..." --body "..."` |
+| Cleanup | `git worktree remove ../{worktree}` |
+
+## Full Documentation
+
+See `.claude/rules/devops-workflow.md` for complete multi-agent workflow rules.
