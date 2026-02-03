@@ -68,8 +68,10 @@ def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = 10*1024*1
             handler.close()
 
     # Idempotency check for console handler (#143): skip if one already exists
+    # Note: FileHandler extends StreamHandler, so we must exclude it to avoid
+    # incorrectly treating file handlers as console handlers
     has_console_handler = any(
-        isinstance(h, logging.StreamHandler) and not isinstance(h, RotatingFileHandler)
+        isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         for h in root_logger.handlers
     )
 
