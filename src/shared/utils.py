@@ -43,7 +43,7 @@ def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = 10*1024*1
     """Setup logging configuration with rotation (#118).
 
     This function is idempotent - calling it multiple times will not add
-    duplicate handlers.
+    duplicate handlers (#143).
 
     Args:
         log_file: Path to log file
@@ -55,38 +55,49 @@ def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = 10*1024*1
     root_logger = logging.getLogger()
     log_path = Path(log_file)
 
-    # Idempotency check: skip if handler exists with matching configuration
+    # Idempotency check for file handler: skip if handler exists with matching configuration
+    has_file_handler = False
     for handler in root_logger.handlers[:]:  # Copy list to allow modification during iteration
         if isinstance(handler, RotatingFileHandler) and handler.baseFilename == str(log_path.absolute()):
             # Check if configuration matches
             if handler.maxBytes == max_bytes and handler.backupCount == backup_count:
-                return  # Already configured correctly
+                has_file_handler = True
+                break
             # Configuration mismatch - remove old handler to reconfigure
             root_logger.removeHandler(handler)
             handler.close()
 
+    # Idempotency check for console handler (#143): skip if one already exists
+    has_console_handler = any(
+        isinstance(h, logging.StreamHandler) and not isinstance(h, RotatingFileHandler)
+        for h in root_logger.handlers
+    )
+
+    # Return early if both handlers already exist
+    if has_file_handler and has_console_handler:
+        return
+
     # Ensure log directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Configure logging with rotating file handler (#118)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-    # Create rotating file handler
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=max_bytes,
-        backupCount=backup_count
-    )
-    file_handler.setFormatter(formatter)
-
-    # Create console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
-    # Configure root logger
     root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
+
+    # Add file handler if needed
+    if not has_file_handler:
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=max_bytes,
+            backupCount=backup_count
+        )
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
+    # Add console handler if needed (#143)
+    if not has_console_handler:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
 
 
 def get_headers(user_agent: str = None, base_url: str = None) -> Dict[str, str]:
