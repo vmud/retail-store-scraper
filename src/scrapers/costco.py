@@ -509,5 +509,9 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
 
     finally:
         # Clean up proxy client session to prevent resource leak
-        proxy_client.close()
-        logger.debug("Closed proxy client session")
+        if proxy_client and hasattr(proxy_client, 'close'):
+            try:
+                proxy_client.close()
+                logger.debug("Closed proxy client session")
+            except Exception as e:
+                logger.warning(f"Error closing proxy client session: {e}")
