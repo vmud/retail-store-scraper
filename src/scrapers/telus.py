@@ -201,11 +201,20 @@ def fetch_all_stores(session, retailer: str = 'telus') -> List[TelusStore]:
     try:
         data = response.json()
 
+        # Handle null/None response (#147)
+        if data is None:
+            raise RuntimeError(f"[{retailer}] API returned null response")
+
         if data.get('status') != 'SUCCESS':
             # Explicit failure on API error status (#147)
             raise RuntimeError(f"[{retailer}] API returned error status: {data.get('status')}")
 
-        locations = data.get('response', {}).get('locations', [])
+        # Handle null 'response' field explicitly (#147)
+        response_data = data.get('response')
+        if response_data is None:
+            raise RuntimeError(f"[{retailer}] API returned null 'response' field")
+
+        locations = response_data.get('locations', [])
         logging.info(f"[{retailer}] API returned {len(locations)} locations")
 
         stores = []
