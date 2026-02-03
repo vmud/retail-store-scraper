@@ -14,6 +14,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.change_detector import ChangeDetector, ChangeReport
 
 
+def setup_previous_data(detector, stores):
+    """Helper to set up previous data for change detection tests.
+
+    The change detector reads from stores_previous.json, so we need to
+    directly write to that file to simulate a previous run's data.
+    """
+    previous_path = detector.output_dir / 'stores_previous.json'
+    previous_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(previous_path, 'w', encoding='utf-8') as f:
+        json.dump(stores, f)
+
+
 @pytest.fixture
 def temp_data_dir():
     """Create a temporary data directory for tests"""
@@ -166,17 +178,6 @@ class TestFingerprintComputation:
 class TestChangeDetection:
     """Test change detection logic"""
 
-    def _setup_previous_data(self, detector, stores):
-        """Helper to set up previous data for change detection tests.
-
-        The change detector reads from stores_previous.json, so we need to
-        directly write to that file to simulate a previous run's data.
-        """
-        previous_path = detector.output_dir / 'stores_previous.json'
-        previous_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(previous_path, 'w', encoding='utf-8') as f:
-            json.dump(stores, f)
-
     def test_first_run_all_new(self, temp_data_dir, sample_stores):
         """First run should report all stores as new"""
         detector = ChangeDetector('verizon', temp_data_dir)
@@ -195,7 +196,7 @@ class TestChangeDetection:
         detector = ChangeDetector('verizon', temp_data_dir)
 
         # Set up previous data with only first 2 stores
-        self._setup_previous_data(detector, sample_stores[:2])
+        setup_previous_data(detector, sample_stores[:2])
 
         # Detect changes with all 3 stores
         report = detector.detect_changes(sample_stores)
@@ -210,7 +211,7 @@ class TestChangeDetection:
         detector = ChangeDetector('verizon', temp_data_dir)
 
         # Set up previous data with all stores
-        self._setup_previous_data(detector, sample_stores)
+        setup_previous_data(detector, sample_stores)
 
         # Detect changes with fewer stores (one closed)
         report = detector.detect_changes(sample_stores[:2])
@@ -225,7 +226,7 @@ class TestChangeDetection:
         detector = ChangeDetector('verizon', temp_data_dir)
 
         # Set up previous data
-        self._setup_previous_data(detector, sample_stores)
+        setup_previous_data(detector, sample_stores)
 
         # Modify a store (change comparison field, not identity field)
         modified_stores = [s.copy() for s in sample_stores]
@@ -243,7 +244,7 @@ class TestChangeDetection:
         detector = ChangeDetector('verizon', temp_data_dir)
 
         # Set up previous data
-        self._setup_previous_data(detector, sample_stores)
+        setup_previous_data(detector, sample_stores)
 
         # Detect changes with same data
         report = detector.detect_changes(sample_stores)
@@ -432,13 +433,6 @@ class TestFilePersistence:
 class TestKeyCollisionHandling:
     """Test key collision handling with fingerprint suffixes"""
 
-    def _setup_previous_data(self, detector, stores):
-        """Helper to set up previous data for change detection tests."""
-        previous_path = detector.output_dir / 'stores_previous.json'
-        previous_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(previous_path, 'w', encoding='utf-8') as f:
-            json.dump(stores, f)
-
     def test_all_address_based_stores_get_suffixes(self, temp_data_dir):
         """All stores using address-based keys should get fingerprint suffixes for stability"""
         detector = ChangeDetector('verizon', temp_data_dir)
@@ -624,7 +618,7 @@ class TestKeyCollisionHandling:
         ]
         
         # Simulate first run - set up previous data
-        self._setup_previous_data(detector, stores_run1)
+        setup_previous_data(detector, stores_run1)
         
         # Simulate second run with same stores in different order
         # This should compare against the saved previous version
@@ -700,7 +694,7 @@ class TestKeyCollisionHandling:
         )
         
         # Verify change detection works correctly
-        self._setup_previous_data(detector, [store_original])
+        setup_previous_data(detector, [store_original])
         report = detector.detect_changes([store_modified])
         
         # Should detect 1 modification, not closed + new
@@ -853,7 +847,7 @@ class TestKeyCollisionHandling:
         )
         
         # Verify with actual change detection
-        self._setup_previous_data(detector, stores_run1)
+        setup_previous_data(detector, stores_run1)
         report = detector.detect_changes(stores_run2)
         
         # Should detect exactly 1 new store, 0 closed, 0 modified
@@ -920,14 +914,6 @@ class TestEdgeCases:
 
 class TestMultiTenantLocations:
     """Tests for multi-tenant location handling (#148)."""
-
-    def _setup_previous_data(self, detector, stores):
-        """Helper to set up previous data for change detection tests."""
-        import json
-        previous_path = detector.output_dir / 'stores_previous.json'
-        previous_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(previous_path, 'w', encoding='utf-8') as f:
-            json.dump(stores, f)
 
     def test_multiple_stores_at_same_address_preserved(self, temp_data_dir):
         """Multiple stores at the same address should not be dropped."""
@@ -1010,7 +996,7 @@ class TestMultiTenantLocations:
         ]
 
         # Set up previous data using helper
-        self._setup_previous_data(detector, previous_stores)
+        setup_previous_data(detector, previous_stores)
 
         # Run change detection
         report = detector.detect_changes(current_stores)
