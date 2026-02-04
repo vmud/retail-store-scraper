@@ -66,6 +66,11 @@ from .session_factory import (
     create_session_factory,
 )
 
+from .scrape_runner import (
+    ScrapeRunner,
+    ScraperContext,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -118,4 +123,7 @@ __all__ = [
     'DEFAULT_CACHE_EXPIRY_DAYS',
     # Session factory
     'create_session_factory',
+    # Scrape runner (unified orchestration)
+    'ScrapeRunner',
+    'ScraperContext',
 ]
