@@ -18,6 +18,9 @@ from src.scrapers.verizon import (
     _fetch_cities_for_state_worker,
     _fetch_stores_for_city_worker,
     _request_counter,
+    save_discovery_checkpoint,
+    load_discovery_checkpoint,
+    clear_discovery_checkpoint,
 )
 from src.shared.request_counter import check_pause_logic
 from src.shared.session_factory import create_session_factory
@@ -291,10 +294,16 @@ class TestVerizonCheckpoint:
         mock_cache.get.return_value = None  # Force discovery (no URL cache)
         mock_cache_class.return_value = mock_cache
 
-        mock_load.return_value = {
-            'stores': [{'store_id': '123', 'name': 'Existing Store'}],
-            'completed_urls': ['https://www.verizon.com/stores/texas/dallas/store-123/']
-        }
+        # Mock returns different values for scrape_progress vs discovery_checkpoint
+        def load_side_effect(filepath):
+            if 'scrape_progress' in filepath:
+                return {
+                    'stores': [{'store_id': '123', 'name': 'Existing Store'}],
+                    'completed_urls': ['https://www.verizon.com/stores/texas/dallas/store-123/']
+                }
+            return None  # No discovery checkpoint
+
+        mock_load.side_effect = load_side_effect
         # Must have non-empty stores for checkpoints_used to be True
         mock_states.return_value = [{'name': 'Texas', 'url': 'https://www.verizon.com/stores/state/texas/'}]
         mock_cities.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://www.verizon.com/stores/texas/dallas/'}]
@@ -302,7 +311,8 @@ class TestVerizonCheckpoint:
 
         result = run(mock_session, {'checkpoint_interval': 100}, retailer='verizon', resume=True)
 
-        mock_load.assert_called_once()
+        # Should call load twice: once for scrape_progress, once for discovery_checkpoint
+        assert mock_load.call_count == 2
         assert result['checkpoints_used'] is True
 
     @patch('src.scrapers.verizon.URLCache')
@@ -438,6 +448,195 @@ class TestVerizonErrorHandling:
         store = extract_store_details(mock_session, 'https://www.verizon.com/stores/texas/dallas/store-123/')
 
         assert store is None
+
+
+class TestDiscoveryCheckpoint:
+    """Tests for discovery phase checkpointing functionality."""
+
+    def test_save_and_load_discovery_checkpoint(self, tmp_path, monkeypatch):
+        """Test saving and loading discovery checkpoint."""
+        # Create temp data directory
+        data_dir = tmp_path / "data" / "verizon"
+        data_dir.mkdir(parents=True)
+
+        # Monkeypatch the data directory
+        import src.shared.utils
+        original_save = src.shared.utils.save_checkpoint
+        original_load = src.shared.utils.load_checkpoint
+
+        def mock_save(data, filepath):
+            # Redirect to temp path
+            new_path = str(tmp_path / filepath.replace('data/', ''))
+            return original_save(data, new_path)
+
+        def mock_load(filepath):
+            # Redirect to temp path
+            new_path = str(tmp_path / filepath.replace('data/', ''))
+            return original_load(new_path)
+
+        monkeypatch.setattr('src.scrapers.verizon.utils.save_checkpoint', mock_save)
+        monkeypatch.setattr('src.scrapers.verizon.utils.load_checkpoint', mock_load)
+
+        # Test data
+        checkpoint_data = {
+            'phase': 2,
+            'all_states': [{'name': 'Texas', 'url': 'https://verizon.com/stores/state/texas/'}],
+            'all_cities': [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://verizon.com/stores/texas/dallas/'}],
+            'timestamp': '2026-02-04T12:00:00'
+        }
+
+        # Save checkpoint
+        save_discovery_checkpoint('verizon', checkpoint_data)
+
+        # Load checkpoint
+        loaded = load_discovery_checkpoint('verizon')
+
+        assert loaded is not None
+        assert loaded['phase'] == 2
+        assert len(loaded['all_states']) == 1
+        assert len(loaded['all_cities']) == 1
+        assert loaded['all_states'][0]['name'] == 'Texas'
+
+    def test_load_nonexistent_discovery_checkpoint(self):
+        """Test loading checkpoint when none exists."""
+        with patch('src.scrapers.verizon.utils.load_checkpoint') as mock_load:
+            mock_load.return_value = None
+
+            result = load_discovery_checkpoint('verizon')
+
+            assert result is None
+
+    def test_clear_discovery_checkpoint(self, tmp_path):
+        """Test clearing discovery checkpoint."""
+        # Create checkpoint file
+        checkpoint_dir = tmp_path / "data" / "verizon" / "checkpoints"
+        checkpoint_dir.mkdir(parents=True)
+        checkpoint_file = checkpoint_dir / "discovery_checkpoint.json"
+        checkpoint_file.write_text('{"phase": 1}')
+
+        with patch('src.scrapers.verizon.Path') as mock_path:
+            mock_file = Mock()
+            mock_file.exists.return_value = True
+            mock_file.unlink = Mock()
+            mock_path.return_value = mock_file
+
+            clear_discovery_checkpoint('verizon')
+
+            mock_file.unlink.assert_called_once()
+
+    @patch('src.scrapers.verizon.URLCache')
+    @patch('src.scrapers.verizon.load_discovery_checkpoint')
+    @patch('src.scrapers.verizon.save_discovery_checkpoint')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_run_saves_discovery_checkpoint_phase1(
+        self, mock_reset, mock_get_stores, mock_get_cities, mock_get_states,
+        mock_save_checkpoint, mock_load_checkpoint, mock_cache_class, mock_session
+    ):
+        """Test that Phase 1 checkpoint is saved when resume=True."""
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None
+        mock_cache.set = Mock()
+        mock_cache_class.return_value = mock_cache
+
+        mock_load_checkpoint.return_value = None  # No existing checkpoint
+        mock_get_states.return_value = [{'name': 'Texas', 'url': 'https://verizon.com/stores/state/texas/'}]
+        mock_get_cities.return_value = []
+        mock_get_stores.return_value = []
+
+        run(mock_session, {'checkpoint_interval': 100, 'discovery_workers': 1}, retailer='verizon', resume=True)
+
+        # Should have saved Phase 1 checkpoint
+        assert mock_save_checkpoint.call_count >= 1
+        first_call = mock_save_checkpoint.call_args_list[0]
+        assert first_call[0][1]['phase'] == 1
+        assert 'all_states' in first_call[0][1]
+
+    @patch('src.scrapers.verizon.URLCache')
+    @patch('src.scrapers.verizon.load_discovery_checkpoint')
+    @patch('src.scrapers.verizon.save_discovery_checkpoint')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_run_resumes_from_phase1_checkpoint(
+        self, mock_reset, mock_get_stores, mock_get_cities, mock_get_states,
+        mock_save_checkpoint, mock_load_checkpoint, mock_cache_class, mock_session
+    ):
+        """Test resuming from Phase 1 checkpoint."""
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None
+        mock_cache.set = Mock()
+        mock_cache_class.return_value = mock_cache
+
+        # Simulate existing Phase 1 checkpoint
+        mock_load_checkpoint.return_value = {
+            'phase': 1,
+            'all_states': [{'name': 'Texas', 'url': 'https://verizon.com/stores/state/texas/'}],
+            'timestamp': '2026-02-04T10:00:00'
+        }
+        mock_get_cities.return_value = []
+        mock_get_stores.return_value = []
+
+        run(mock_session, {'checkpoint_interval': 100, 'discovery_workers': 1}, retailer='verizon', resume=True)
+
+        # Should NOT call get_all_states (resumed from checkpoint)
+        mock_get_states.assert_not_called()
+
+    @patch('src.scrapers.verizon.URLCache')
+    @patch('src.scrapers.verizon.load_discovery_checkpoint')
+    @patch('src.scrapers.verizon.save_discovery_checkpoint')
+    @patch('src.scrapers.verizon.clear_discovery_checkpoint')
+    @patch('src.scrapers.verizon.get_all_states')
+    @patch('src.scrapers.verizon.get_cities_for_state')
+    @patch('src.scrapers.verizon.get_stores_for_city')
+    @patch('src.scrapers.verizon.extract_store_details')
+    @patch('src.scrapers.verizon.reset_request_counter')
+    def test_run_clears_checkpoint_after_discovery(
+        self, mock_reset, mock_extract, mock_get_stores, mock_get_cities,
+        mock_get_states, mock_clear_checkpoint, mock_save_checkpoint,
+        mock_load_checkpoint, mock_cache_class, mock_session
+    ):
+        """Test that discovery checkpoint is cleared after successful discovery."""
+        # Setup URLCache mock
+        mock_cache = Mock()
+        mock_cache.get.return_value = None
+        mock_cache.set = Mock()
+        mock_cache_class.return_value = mock_cache
+
+        mock_load_checkpoint.return_value = {
+            'phase': 1,
+            'all_states': [{'name': 'Texas', 'url': 'https://verizon.com/stores/state/texas/'}],
+        }
+        mock_get_cities.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://verizon.com/stores/texas/dallas/'}]
+        mock_get_stores.return_value = [{'city': 'Dallas', 'state': 'Texas', 'url': 'https://verizon.com/stores/texas/dallas/store-1/'}]
+        mock_extract.return_value = {
+            'name': 'Test Store',
+            'street_address': '123 Main St',
+            'city': 'Dallas',
+            'state': 'TX',
+            'zip': '75001',
+            'country': 'US',
+            'latitude': '32.77',
+            'longitude': '-96.79',
+            'phone': '555-1234',
+            'url': 'https://verizon.com/stores/texas/dallas/store-1/',
+            'sub_channel': 'COR',
+            'dealer_name': None,
+            'store_location': 'dallas',
+            'retailer_store_number': None,
+            'verizon_uid': '123',
+            'scraped_at': '2026-02-04T12:00:00'
+        }
+
+        run(mock_session, {'checkpoint_interval': 100, 'discovery_workers': 1}, retailer='verizon', resume=True)
+
+        # Should clear checkpoint after discovery completes
+        mock_clear_checkpoint.assert_called_once_with('verizon')
 
 
 class TestParallelDiscovery:
