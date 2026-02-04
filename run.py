@@ -31,7 +31,8 @@ from src.shared.utils import (
     setup_logging,
     load_retailer_config,
     create_proxied_session,
-    close_all_proxy_clients
+    close_all_proxy_clients,
+    configure_concurrency_from_yaml
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
 from src.shared.constants import WORKERS
@@ -712,6 +713,9 @@ def main():
         for error in config_errors:
             print(f"  - {error}")
         return 1
+
+    # Configure global concurrency manager from retailers.yaml (#153)
+    configure_concurrency_from_yaml()
 
     # Load config for CLI validation (need to check YAML proxy mode for --render-js)
     with open("config/retailers.yaml", 'r', encoding='utf-8') as f:

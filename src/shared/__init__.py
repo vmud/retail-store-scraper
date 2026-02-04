@@ -26,6 +26,8 @@ from .utils import (
     # Per-retailer proxy configuration
     get_retailer_proxy_config,
     load_retailer_config,
+    # Concurrency configuration
+    configure_concurrency_from_yaml,
 )
 
 from .proxy_client import (
@@ -66,6 +68,11 @@ from .session_factory import (
     create_session_factory,
 )
 
+from .concurrency import (
+    GlobalConcurrencyManager,
+    ConcurrencyConfig,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -98,6 +105,8 @@ __all__ = [
     # Per-retailer proxy configuration
     'get_retailer_proxy_config',
     'load_retailer_config',
+    # Concurrency configuration
+    'configure_concurrency_from_yaml',
     # Scraper management
     'ScraperManager',
     'get_scraper_manager',
@@ -118,4 +127,7 @@ __all__ = [
     'DEFAULT_CACHE_EXPIRY_DAYS',
     # Session factory
     'create_session_factory',
+    # Concurrency management
+    'GlobalConcurrencyManager',
+    'ConcurrencyConfig',
 ]

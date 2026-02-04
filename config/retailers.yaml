@@ -2,6 +2,34 @@
 # This file contains configuration for all supported retailers
 
 # =============================================================================
+# CONCURRENCY CONFIGURATION (Global Limits - Issue #153)
+# =============================================================================
+# Prevents CPU oversubscription when multiple scrapers run concurrently.
+# Coordinates resource usage across all retailers and proxy rate limits.
+
+concurrency:
+  # Maximum concurrent workers across ALL retailers
+  global_max_workers: 10
+
+  # Per-retailer worker limits (overrides default if specified)
+  per_retailer_max:
+    verizon: 7      # High parallelism with proxy
+    target: 5       # API-based, can handle more
+    walmart: 3      # JS rendering is resource-heavy
+    att: 5          # Sitemap-based, lightweight
+    tmobile: 5      # Sitemap-based
+    bestbuy: 5      # Web Scraper API
+    cricket: 5      # API-based geo search
+    bell: 1         # Respects crawl-delay: 10
+    telus: 3        # Single API call, minimal
+    costco: 3       # Akamai protection, conservative
+    samsclub: 3     # Hybrid mode
+
+  # Proxy rate limiting (requests per second)
+  # Applies when using residential or web_scraper_api modes
+  proxy_rate_limit: 10.0
+
+# =============================================================================
 # CLOUD STORAGE CONFIGURATION (GCS Integration)
 # =============================================================================
 # Sync scraped data to Google Cloud Storage for backup and team access.
