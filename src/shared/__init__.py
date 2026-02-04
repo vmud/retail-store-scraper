@@ -66,6 +66,12 @@ from .session_factory import (
     create_session_factory,
 )
 
+from .store_serializer import (
+    Store,
+    StoreSerializer,
+    normalize_store_dict,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -118,4 +124,8 @@ __all__ = [
     'DEFAULT_CACHE_EXPIRY_DAYS',
     # Session factory
     'create_session_factory',
+    # Store schema and serialization
+    'Store',
+    'StoreSerializer',
+    'normalize_store_dict',
 ]
