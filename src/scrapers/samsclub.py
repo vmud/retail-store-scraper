@@ -367,9 +367,10 @@ def extract_club_details(client, url: str, retailer: str = 'samsclub', request_c
                 return None
             html = response.text
 
-        # Track request if counter is provided
+        # Track request and apply pause logic if counter is provided (only on success)
         if request_counter:
             request_counter.increment()
+            check_pause_logic(request_counter, retailer=retailer)
 
         return _extract_club_data_from_page(html, url, retailer)
 
@@ -485,10 +486,6 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
         for i, url in enumerate(remaining_urls, 1):
             club_obj = extract_club_details(club_client, url, retailer_name, request_counter=request_counter)
-
-            # Apply pause logic for anti-blocking (counter incremented inside extract_club_details)
-            if request_counter:
-                check_pause_logic(request_counter, retailer=retailer_name, config=yaml_config)
 
             if club_obj:
                 clubs.append(club_obj.to_dict())
