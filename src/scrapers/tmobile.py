@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import threading
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dataclasses import dataclass, asdict

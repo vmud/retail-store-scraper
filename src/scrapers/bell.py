@@ -9,7 +9,7 @@ Bell uses storelocator.bell.ca with:
 import json
 import logging
 import re
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
