@@ -134,38 +134,56 @@ class ChangeDetector:
 
         Uses deterministic identity-hash-based keys that remain stable across runs,
         even when comparison fields change. When multiple stores have the same key
-        (multi-tenant or data issues), stores them with suffixes to prevent data loss.
+        (multi-tenant or data issues), all stores get deterministic suffixes based
+        on a hash of ALL fields to prevent data loss and ensure order-independence.
 
         Returns:
             Tuple of (stores_by_key dict, fingerprints_by_key dict, collision_count)
         """
+        # First pass: detect all collisions
+        base_key_groups = {}  # Map base_key -> list of (index, store)
+
+        for idx, store in enumerate(stores):
+            # Compute identity hash for stable key generation (address-based stores only)
+            identity_hash = self.compute_identity_hash(store)
+            # Keys use identity hash to remain stable when comparison fields change
+            base_key = self._get_store_key(store, identity_hash[:8])
+
+            if base_key not in base_key_groups:
+                base_key_groups[base_key] = []
+            base_key_groups[base_key].append((idx, store))
+
+        # Second pass: assign keys with deterministic suffixes for collisions
         stores_by_key = {}
         fingerprints_by_key = {}
         collision_count = 0
 
-        for store in stores:
-            # Compute identity hash for stable key generation (address-based stores only)
-            identity_hash = self.compute_identity_hash(store)
-            # Compute full fingerprint for change detection (includes comparison fields)
-            fingerprint = self.compute_fingerprint(store)
+        for base_key, group_stores in base_key_groups.items():
+            if len(group_stores) == 1:
+                # No collision - use base key as-is
+                _, store = group_stores[0]
+                fingerprint = self.compute_fingerprint(store)
+                stores_by_key[base_key] = store
+                fingerprints_by_key[base_key] = fingerprint
+            else:
+                # Collision detected - all stores in group get deterministic suffixes
+                collision_count += len(group_stores) - 1
 
-            # Keys use identity hash to remain stable when comparison fields change
-            key = self._get_store_key(store, identity_hash[:8])
+                for idx, store in group_stores:
+                    # Use deterministic hash of ALL fields for stable disambiguation
+                    full_hash = self._get_deterministic_store_hash(store)
+                    key = f"{base_key}::col:{full_hash}"
 
-            # Handle collision by appending numeric suffix (#148)
-            if key in stores_by_key:
-                collision_count += 1
-                suffix = 1
-                while f"{key}::{suffix}" in stores_by_key:
-                    suffix += 1
-                key = f"{key}::{suffix}"
-                logging.debug(
-                    f"Key collision detected, using disambiguated key: '{key}'"
-                )
+                    # Handle true duplicates (identical stores) by adding index suffix
+                    if key in stores_by_key:
+                        key = f"{key}::{idx}"
+                        logging.debug(f"True duplicate detected, using index suffix: '{key}'")
 
-            stores_by_key[key] = store
-            # Store full fingerprint for change detection
-            fingerprints_by_key[key] = fingerprint
+                    fingerprint = self.compute_fingerprint(store)
+
+                    stores_by_key[key] = store
+                    fingerprints_by_key[key] = fingerprint
+                    logging.debug(f"Key collision resolved with deterministic suffix: '{key}'")
 
         if collision_count > 0:
             logging.warning(
@@ -175,16 +193,35 @@ class ChangeDetector:
 
         return stores_by_key, fingerprints_by_key, collision_count
 
+    def _get_deterministic_store_hash(self, store: Dict[str, Any]) -> str:
+        """Generate a deterministic hash unique to this store instance.
+
+        Uses all available fields (sorted) to ensure two different stores
+        always get different hashes, even if identity fields are identical.
+        This provides stable disambiguation for true collisions.
+
+        Args:
+            store: Store dictionary
+
+        Returns:
+            Full SHA256 hash string (64 hex characters)
+        """
+        # Include ALL fields for maximum uniqueness
+        all_fields = sorted(store.keys())
+        data = {k: store.get(k, '') for k in all_fields}
+        json_str = json.dumps(data, sort_keys=True, default=str)
+        return hashlib.sha256(json_str.encode()).hexdigest()
+
     def compute_identity_hash(self, store: Dict[str, Any]) -> str:
         """Compute a hash of ONLY identity fields for stable key generation.
-        
+
         This hash is used for address-based key suffixes and remains stable
         when comparison fields (phone, status, etc.) change. This prevents
         false positives in change detection.
-        
+
         Args:
             store: Store dictionary
-            
+
         Returns:
             SHA256 hash of identity fields only
         """
@@ -196,7 +233,7 @@ class ChangeDetector:
                 data[k] = store.get('zip') or store.get('postal_code', '')
             elif k in store:
                 data[k] = store.get(k, '')
-        
+
         # Sort keys for consistent hashing
         json_str = json.dumps(data, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
