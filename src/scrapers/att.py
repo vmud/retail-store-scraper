@@ -320,7 +320,7 @@ def extract_store_details(
         logging.debug(f"[{retailer}] Extracted store: %s (%s%s)", store.name, sub_channel, dealer_info)
         return store
 
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as e:
         logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}", exc_info=True)
         return None
 

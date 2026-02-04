@@ -277,7 +277,7 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
                     if isinstance(first_script, list) and first_script:
                         first_type = first_script[0].get('@type', 'Unknown') if isinstance(first_script[0], dict) else 'Unknown'
                     logging.debug(f"[{retailer}] Skipping {url}: No Store found (first @type: '{first_type}')")
-                except (json.JSONDecodeError, KeyError, TypeError):
+                except (json.JSONDecodeError, KeyError, TypeError, AttributeError, IndexError):
                     logging.debug(f"[{retailer}] Skipping {url}: No Store found")
             return None
 

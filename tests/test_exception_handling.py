@@ -470,9 +470,9 @@ class TestSafetyNetExceptionHandling:
         config = {'proxy': {'mode': 'direct'}}
         mock_delays.return_value = (2.0, 5.0)
 
-        # Simulate unexpected exception type
-        with patch('src.scrapers.att.URLCache', side_effect=KeyboardInterrupt("User interrupted")):
-            with pytest.raises(KeyboardInterrupt):
+        # Simulate unexpected exception type (RuntimeError not in safety net)
+        with patch('src.scrapers.att.URLCache', side_effect=RuntimeError("Unexpected cache error")):
+            with pytest.raises(RuntimeError):
                 # run() should re-raise after logging
                 from src.scrapers.att import run
                 run(mock_session, config, retailer='att')
