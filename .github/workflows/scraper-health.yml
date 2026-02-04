@@ -56,19 +56,27 @@ jobs:
           if selected:
               print(f'Testing selected retailers: {sorted(selected)}')
 
+          # Use browser-like headers to avoid bot detection on health checks
+          headers = {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          }
+
           for name, cfg in retailers.items():
               if selected and name not in selected:
                   continue
               if not cfg.get('enabled', True):
                   continue
 
-              base_url = cfg.get('base_url', '')
-              if not base_url:
+              # Use health_check_url if available (for bot-protected sites)
+              # Otherwise fall back to base_url
+              health_url = cfg.get('health_check_url') or cfg.get('base_url', '')
+              if not health_url:
                   continue
 
-              print(f'Testing {name}: {base_url}')
+              print(f'Testing {name}: {health_url}')
               try:
-                  resp = requests.get(base_url, timeout=10, allow_redirects=True)
+                  resp = requests.get(health_url, timeout=15, allow_redirects=True, headers=headers)
                   if resp.status_code >= 400:
                       failures.append(f'{name}: HTTP {resp.status_code}')
                       print(f'  ❌ HTTP {resp.status_code}')
