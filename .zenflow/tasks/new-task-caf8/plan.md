@@ -251,7 +251,7 @@ Do not make assumptions on important decisions — get clarification first.
 
 **Files Modified:**
 - ✅ `dashboard/static/dashboard.js` - Added configuration management functions (openConfigModal, closeConfigModal, saveConfig, validateConfigSyntax, showModalAlert, showNotification)
-- ✅ `dashboard/static/dashboard.css` - Added modal, alert, notification, and config editor styles  
+- ✅ `dashboard/static/dashboard.css` - Added modal, alert, notification, and config editor styles
 - ✅ `dashboard/templates/index.html` - Added configuration modal markup
 
 **Features Implemented:**

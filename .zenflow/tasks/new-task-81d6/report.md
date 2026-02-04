@@ -38,17 +38,17 @@ Modified proxy client management to support per-retailer instances:
 
 Updated CLI to support per-retailer proxy configuration:
 
-- **Modified `run_retailer_async()`**: 
+- **Modified `run_retailer_async()`**:
   - Added `cli_proxy_override` parameter
   - Loads retailer config using `load_retailer_config()`
   - Creates proxied session with `create_proxied_session()`
   - Added structured logging with `[retailer]` prefix
 
-- **Modified `run_all_retailers()`**: 
+- **Modified `run_all_retailers()`**:
   - Added `cli_proxy_override` parameter
   - Passes override to all retailer tasks
 
-- **Updated `main()`**: 
+- **Updated `main()`**:
   - Extracts CLI proxy override from args
   - Passes override through async function calls
   - Added cleanup in finally block to close all proxy clients
@@ -183,14 +183,14 @@ python run.py --help
 
 ## Success Criteria Met
 
-✅ Each retailer can have its own proxy mode in `retailers.yaml`  
-✅ Multi-retailer runs automatically switch proxy modes per retailer  
-✅ CLI `--proxy` flag overrides all retailer-specific settings  
-✅ Existing environment variable and CLI workflows still work  
-✅ No breaking changes to existing scraper APIs (scrapers unchanged)  
-✅ Proper cleanup of all proxy clients on shutdown  
-✅ Graceful error handling with fallback to direct mode  
-✅ Clear logging with `[retailer]` prefixes for debugging  
+✅ Each retailer can have its own proxy mode in `retailers.yaml`
+✅ Multi-retailer runs automatically switch proxy modes per retailer
+✅ CLI `--proxy` flag overrides all retailer-specific settings
+✅ Existing environment variable and CLI workflows still work
+✅ No breaking changes to existing scraper APIs (scrapers unchanged)
+✅ Proper cleanup of all proxy clients on shutdown
+✅ Graceful error handling with fallback to direct mode
+✅ Clear logging with `[retailer]` prefixes for debugging
 
 ## Conclusion
 

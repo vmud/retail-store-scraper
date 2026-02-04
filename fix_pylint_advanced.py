@@ -114,14 +114,14 @@ def fix_naming_conventions(filepath):
 
 def fix_superfluous_parens(filepath):
     """Fix unnecessary parentheses after 'not' keyword.
-    
+
     WARNING: This function is disabled due to safety concerns.
     Removing parentheses after 'not' can change boolean logic semantics.
     For example: 'not (a or b)' != 'not a or b' due to operator precedence.
-    
+
     Original: not (a or b) evaluates as NOT(a OR b)
     Incorrect: not a or b evaluates as (NOT a) OR b
-    
+
     Manual review is required for such changes.
     """
     # DISABLED: This transformation is unsafe and can introduce logic bugs

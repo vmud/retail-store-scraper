@@ -1,6 +1,6 @@
 # Integration Testing Report
-**Date**: 2026-01-17  
-**Task**: Proxy Config Integration - Scraper Integration  
+**Date**: 2026-01-17
+**Task**: Proxy Config Integration - Scraper Integration
 **Updated**: 2026-01-17 01:08 (Critical Bug Fix Applied)
 
 ## Executive Summary
@@ -181,9 +181,9 @@ data/{retailer}/
 ## Bug Fixes During Testing
 
 ### Bug #1: NoneType AttributeError in utils.get_with_retry()
-**File**: `src/shared/utils.py:131`  
-**Symptom**: `AttributeError: 'NoneType' object has no attribute 'status_code'`  
-**Cause**: `session.get()` can return None but code assumed it always returns Response  
+**File**: `src/shared/utils.py:131`
+**Symptom**: `AttributeError: 'NoneType' object has no attribute 'status_code'`
+**Cause**: `session.get()` can return None but code assumed it always returns Response
 **Fix**: Added None check before accessing response attributes
 ```python
 if response is None:
@@ -195,14 +195,14 @@ if response is None:
 ---
 
 ### Bug #2: Directory Mismatch Between Checkpoints and Outputs (CRITICAL)
-**Files**: All scrapers + `run.py:223`  
+**Files**: All scrapers + `run.py:223`
 **Symptom**: Checkpoints and outputs created in different directories
 - Checkpoints: `data/at&t/`, `data/best buy/`, `data/t-mobile/`
 - Outputs: `data/att/`, `data/bestbuy/`, `data/tmobile/`
 
 **Root Cause**: Scrapers used `config.get('name', ...).lower()` (display name) while run.py used internal retailer name for outputs
 
-**Impact**: 
+**Impact**:
 - Resume functionality broken for affected retailers (att, bestbuy, tmobile)
 - Duplicate directory structure
 - Inconsistent data organization
@@ -324,17 +324,17 @@ Once Oxylabs credentials are available:
 
 All scrapers successfully integrated with:
 - Standardized `run()` entry point interface
-- Proper session/proxy client handling  
+- Proper session/proxy client handling
 - Checkpoint/resume functionality (now working correctly)
 - Standardized output formats (JSON/CSV)
 - Unified directory structure (checkpoints + outputs)
 - Error handling and logging
 
-**Bugs Found & Fixed**: 
+**Bugs Found & Fixed**:
 1. ✅ **Bug #1**: utils.py None response handling (fixed in utils.py:131-133)
 2. ✅ **Bug #2 (CRITICAL)**: Directory mismatch between checkpoints and outputs (fixed in run.py + all scrapers)
 
-**Non-Integration Issues**: 
+**Non-Integration Issues**:
 - 2 website structure changes (walmart, tmobile) - scraper logic needs updating, not integration bugs
 
 **Resume Functionality**: ✅ Verified working on Target (3→8) and AT&T (3→8)

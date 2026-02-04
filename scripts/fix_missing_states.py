@@ -233,7 +233,7 @@ def main():
     if not existing_file.exists():
         logger.error(f"Existing stores file not found: {existing_file}")
         return
-    
+
     with open(existing_file, 'r') as f:
         existing_stores = json.load(f)
 

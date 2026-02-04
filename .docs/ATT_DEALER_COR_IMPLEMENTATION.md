@@ -1,6 +1,6 @@
 # AT&T Store Type Classification Implementation
 
-**Date:** January 17, 2026  
+**Date:** January 17, 2026
 **Feature:** Differentiate between Corporate (COR) and Dealer stores in AT&T scraper
 
 ## Overview
@@ -59,7 +59,7 @@ The `_extract_store_type_and_dealer()` function:
 def _extract_store_type_and_dealer(html_content: str) -> tuple:
     """
     Extract store type (COR or Dealer) and dealer name from AT&T store page HTML.
-    
+
     Returns:
         Tuple of (sub_channel, dealer_name)
         - sub_channel: "COR" or "Dealer"

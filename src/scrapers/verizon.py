@@ -138,7 +138,7 @@ def get_state_url(slug: str) -> str:
 def _scrape_states_from_html(session: requests.Session, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Scrape state URLs from the main stores page HTML.
     Returns empty list if scraping fails.
-    
+
     Args:
         session: Requests session object
         yaml_config: Retailer configuration dict from retailers.yaml (optional)
@@ -275,7 +275,7 @@ def _generate_states_programmatically(retailer: str = 'verizon') -> List[Dict[st
 def get_all_states(session: requests.Session, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all US state URLs by scraping from the main stores page.
     Falls back to programmatic generation if scraping fails.
-    
+
     Args:
         session: Requests session object
         yaml_config: Retailer configuration dict from retailers.yaml (optional)
@@ -298,7 +298,7 @@ def get_all_states(session: requests.Session, yaml_config: dict = None, retailer
 
 def get_cities_for_state(session: requests.Session, state_url: str, state_name: str, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all city URLs for a given state
-    
+
     Args:
         session: Requests session object
         state_url: URL of the state page
@@ -406,7 +406,7 @@ def get_cities_for_state(session: requests.Session, state_url: str, state_name: 
 
 def get_stores_for_city(session: requests.Session, city_url: str, city_name: str, state_name: str, yaml_config: dict = None, retailer: str = 'verizon') -> List[Dict[str, str]]:
     """Get all store URLs for a given city
-    
+
     Args:
         session: Requests session object
         city_url: URL of the city page
@@ -489,10 +489,10 @@ def get_stores_for_city(session: requests.Session, city_url: str, city_name: str
 def parse_url_components(url: str) -> Dict[str, Optional[str]]:
     """
     Parse all components from Verizon store URL slug into discrete fields.
-    
+
     Args:
         url: Store URL (e.g., 'https://www.verizon.com/stores/alabama/victra-arab-1402922/')
-    
+
     Returns:
         Dictionary with keys:
             - sub_channel: "COR", "Dealer", or "Retail"
@@ -500,18 +500,18 @@ def parse_url_components(url: str) -> Dict[str, Optional[str]]:
             - store_location: Location name from slug
             - retailer_store_number: Store number (Best Buy) or None
             - verizon_uid: Verizon unique identifier
-    
+
     Examples:
         'cellular-sales-albertville-1407222' →
             {'sub_channel': 'Dealer', 'dealer_name': 'Cellular Sales',
              'store_location': 'albertville', 'retailer_store_number': None,
              'verizon_uid': '1407222'}
-        
+
         'best-buy-0793-dothan-n00000360018' →
             {'sub_channel': 'Retail', 'dealer_name': 'Best Buy',
              'store_location': 'dothan', 'retailer_store_number': '0793',
              'verizon_uid': 'n00000360018'}
-        
+
         'alabaster-1135614' →
             {'sub_channel': 'COR', 'dealer_name': None,
              'store_location': 'alabaster', 'retailer_store_number': None,
@@ -665,7 +665,7 @@ def _validate_store_data(store_data: Dict[str, Any], store_url: str) -> bool:
 
 def extract_store_details(session: requests.Session, store_url: str, yaml_config: dict = None, retailer: str = 'verizon') -> Optional[Dict[str, Any]]:
     """Extract structured store data from JSON-LD on store detail page
-    
+
     Args:
         session: Requests session object
         store_url: URL of the store page
@@ -915,12 +915,12 @@ def run(session, config: dict, **kwargs) -> dict:
             kwargs['_target_slugs'] = target_slugs
 
         reset_request_counter()
-        
+
         # Auto-select delays based on proxy mode for optimal performance
         proxy_mode = config.get('proxy', {}).get('mode', 'direct')
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
         logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
-        
+
         # Get parallel workers count (default: WORKERS.PROXIED_WORKERS for residential proxy, WORKERS.DIRECT_WORKERS for direct)
         default_workers = WORKERS.PROXIED_WORKERS if proxy_mode in ('residential', 'web_scraper_api') else WORKERS.DIRECT_WORKERS
         parallel_workers = config.get('parallel_workers', default_workers)
@@ -931,16 +931,16 @@ def run(session, config: dict, **kwargs) -> dict:
         discovery_workers = config.get('discovery_workers', default_discovery_workers)
 
         logging.info(f"[{retailer_name}] Discovery workers: {discovery_workers}, Extraction workers: {parallel_workers}")
-        
+
         checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
         # Increase checkpoint interval when using parallel workers (less frequent saves)
         base_checkpoint_interval = config.get('checkpoint_interval', 10)
         checkpoint_interval = base_checkpoint_interval * max(1, parallel_workers) if parallel_workers > 1 else base_checkpoint_interval
-        
+
         stores = []
         completed_urls = set()
         checkpoints_used = False
-        
+
         if resume:
             checkpoint = utils.load_checkpoint(checkpoint_path)
             if checkpoint:
@@ -948,7 +948,7 @@ def run(session, config: dict, **kwargs) -> dict:
                 completed_urls = set(checkpoint.get('completed_urls', []))
                 logging.info(f"[{retailer_name}] Resuming from checkpoint: {len(stores)} stores already collected")
                 checkpoints_used = True
-        
+
         # Try to load cached URLs (skip discovery phases if cache is valid)
         # Note: Skip cache when targeting specific states
         target_slugs = kwargs.get('_target_slugs')
@@ -968,7 +968,7 @@ def run(session, config: dict, **kwargs) -> dict:
                 logging.info(f"[{retailer_name}] Filtered to {len(all_states)} target states: {[s['name'] for s in all_states]}")
             else:
                 logging.info(f"[{retailer_name}] Found {len(all_states)} states")
-            
+
             # Create session factory for parallel workers (each worker needs its own session)
             session_factory = create_session_factory(config)
 
@@ -1057,13 +1057,13 @@ def run(session, config: dict, **kwargs) -> dict:
                 url_cache.set(all_store_urls)
         else:
             logging.info(f"[{retailer_name}] Skipped discovery phases (using cached URLs)")
-        
+
         if not all_store_urls:
             logging.warning(f"[{retailer_name}] No store URLs found")
             return {'stores': [], 'count': 0, 'checkpoints_used': False}
-        
+
         remaining_urls = [url for url in all_store_urls if url not in completed_urls]
-        
+
         if limit:
             logging.info(f"[{retailer_name}] Limited to {limit} stores")
             total_needed = limit - len(stores)
@@ -1071,18 +1071,18 @@ def run(session, config: dict, **kwargs) -> dict:
                 remaining_urls = remaining_urls[:total_needed]
             else:
                 remaining_urls = []
-        
+
         total_to_process = len(remaining_urls)
         logging.info(f"[{retailer_name}] Phase 4: Extracting store details ({total_to_process} URLs)")
-        
+
         # Use parallel extraction if workers > 1
         if parallel_workers > 1 and total_to_process > 0:
             logging.info(f"[{retailer_name}] Using parallel extraction with {parallel_workers} workers")
-            
+
             # Thread-safe counter for progress
             processed_count = [0]  # Use list for mutable closure
             processed_lock = threading.Lock()
-            
+
             with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
                 # Process in batches to limit memory usage
                 batch_size = config.get('extraction_batch_size', 500)
@@ -1125,11 +1125,11 @@ def run(session, config: dict, **kwargs) -> dict:
                 if store_data:
                     stores.append(store_data)
                     completed_urls.add(url)
-                
+
                 # Progress logging every 100 stores
                 if i % 100 == 0:
                     logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
-                
+
                 if i % checkpoint_interval == 0:
                     utils.save_checkpoint({
                         'completed_count': len(stores),
@@ -1138,7 +1138,7 @@ def run(session, config: dict, **kwargs) -> dict:
                         'last_updated': datetime.now().isoformat()
                     }, checkpoint_path)
                     logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores processed")
-        
+
         if stores:
             utils.save_checkpoint({
                 'completed_count': len(stores),
@@ -1180,7 +1180,7 @@ def run(session, config: dict, **kwargs) -> dict:
             'count': len(stores),
             'checkpoints_used': checkpoints_used
         }
-        
+
     except Exception as e:
         logging.error(f"[{retailer_name}] Fatal error: {e}", exc_info=True)
         raise

@@ -74,7 +74,7 @@ for retailer in retailers:
         }), 400
 ```
 
-**Purpose**: 
+**Purpose**:
 - Prevent path traversal attacks (`../`, `./`, etc.)
 - Enforce consistent naming convention
 - Match validation pattern used elsewhere in the API

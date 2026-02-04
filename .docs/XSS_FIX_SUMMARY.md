@@ -2,8 +2,8 @@
 
 ## Issue Verified ✅
 
-**File:** `dashboard/static/dashboard.js`  
-**Function:** `displayLogs()`  
+**File:** `dashboard/static/dashboard.js`
+**Function:** `displayLogs()`
 **Lines:** 467, 481, 486, 502, 505
 
 ### Vulnerability Confirmed
@@ -121,11 +121,11 @@ Result: All HTML tags and special characters are displayed as text, not executed
 
 ## Impact
 
-**Severity:** 🔴 CRITICAL  
-**Status:** ✅ FIXED  
+**Severity:** 🔴 CRITICAL
+**Status:** ✅ FIXED
 **CVSS Score:** 8.8 (High)
 
-**Before:** Remote code execution possible via log viewing  
+**Before:** Remote code execution possible via log viewing
 **After:** All XSS attacks blocked by HTML entity encoding
 
 ---

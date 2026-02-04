@@ -17,13 +17,41 @@ updates:
     commit-message:
       prefix: "deps"
     groups:
+      # Security-critical packages get their own PRs for visibility
+      security-critical:
+        patterns:
+          - "aiohttp"
+          - "requests"
+          - "urllib3"
+          - "certifi"
+          - "cryptography"
+          - "defusedxml"
+        update-types:
+          - "minor"
+          - "patch"
+          - "major"
       # Group minor/patch updates together
       python-minor:
         patterns:
           - "*"
+        exclude-patterns:
+          - "aiohttp"
+          - "requests"
+          - "urllib3"
+          - "certifi"
+          - "cryptography"
+          - "defusedxml"
         update-types:
           - "minor"
           - "patch"
+    # Allow major version updates for security-critical packages
+    allow:
+      - dependency-name: "aiohttp"
+      - dependency-name: "requests"
+      - dependency-name: "urllib3"
+      - dependency-name: "certifi"
+      - dependency-name: "cryptography"
+      - dependency-name: "defusedxml"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"

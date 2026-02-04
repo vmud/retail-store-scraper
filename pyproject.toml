@@ -1,0 +1,39 @@
+# pyproject.toml - Project configuration and tool settings
+
+[project]
+name = "retail-store-scraper"
+version = "1.0.0"
+description = "Multi-retailer web scraper for store locations"
+requires-python = ">=3.9,<3.15"
+
+[tool.bandit]
+# Directories to exclude from scanning
+exclude_dirs = ["tests", "venv", ".venv", "build", "dist"]
+
+# Severity level (LOW, MEDIUM, HIGH)
+# We scan everything but only fail CI on HIGH severity
+skips = []  # Don't skip any checks - flag everything for review
+
+# Test files can use assert statements
+[tool.bandit.assert_used]
+skips = ["*_test.py", "test_*.py", "**/tests/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.pylint.messages_control]
+# Existing pylint configuration (if any)
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pydocstyle]
+convention = "google"
+add-ignore = ["D100", "D104"]  # Missing module/package docstrings

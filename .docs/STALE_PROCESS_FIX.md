@@ -45,23 +45,23 @@ if retailer in self._processes:
 ```python
 def _is_process_running_unsafe(self, retailer: str) -> bool:
     """Check if process is running without acquiring lock (internal use only)
-    
+
     Args:
         retailer: Retailer name
-    
+
     Returns:
         True if running, False otherwise
-    
+
     Note:
         This method assumes the caller already holds self._lock
     """
     if retailer not in self._processes:
         return False
-    
+
     process_info = self._processes[retailer]
     process = process_info.get("process")
     pid = process_info["pid"]
-    
+
     if process:
         # Check subprocess.Popen object
         return process.poll() is None
@@ -79,34 +79,34 @@ def _is_process_running_unsafe(self, retailer: str) -> bool:
 ```python
 def _cleanup_process_unsafe(self, retailer: str) -> None:
     """Clean up exited process without acquiring lock (internal use only)
-    
+
     Args:
         retailer: Retailer name
-    
+
     Note:
         This method assumes the caller already holds self._lock
     """
     if retailer not in self._processes:
         return
-    
+
     process_info = self._processes[retailer]
     process = process_info.get("process")
     pid = process_info["pid"]
     run_id = process_info["run_id"]
-    
+
     exit_code = None
     if process:
         exit_code = process.returncode
-    
+
     logger.info(f"Cleaning up exited scraper for {retailer} (PID: {pid}, exit code: {exit_code})")
-    
+
     # Update run tracker
     tracker = RunTracker(retailer, run_id=run_id)
     if exit_code == 0:
         tracker.complete()
     else:
         tracker.fail(f"Process exited with code {exit_code or 'unknown'}")
-    
+
     # Remove from tracking
     del self._processes[retailer]
 ```

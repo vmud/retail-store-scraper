@@ -552,10 +552,10 @@ pylint --disable=all --enable=E,F src/
    ```bash
    # Test scraper
    python run.py --retailer newretailer --test
-   
+
    # Run unit tests
    pytest tests/test_scrapers/test_newretailer.py -v
-   
+
    # Lint code
    pylint src/scrapers/newretailer.py
    ```

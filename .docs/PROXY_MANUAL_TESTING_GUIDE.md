@@ -543,7 +543,7 @@ All manual tests should meet these criteria:
 
 ---
 
-**Testing Completed:** [Date]  
-**Tested By:** [Your Name]  
-**Issues Found:** [Number]  
+**Testing Completed:** [Date]
+**Tested By:** [Your Name]
+**Issues Found:** [Number]
 **Status:** [PASS/FAIL]

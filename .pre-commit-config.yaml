@@ -1,0 +1,49 @@
+# Pre-commit hooks for proactive security scanning
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Security: Bandit static analysis
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.7
+    hooks:
+      - id: bandit
+        args: ['-c', 'pyproject.toml', '-r', 'src/', 'run.py']
+        exclude: ^tests/
+
+  # Security: Secret detection
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # Security: Safety dependency vulnerability check
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.3
+    hooks:
+      - id: python-safety-dependencies-check
+        files: requirements.txt
+
+  # Custom: Ban unsafe imports (xml.etree, pickle, eval, exec)
+  - repo: local
+    hooks:
+      - id: ban-unsafe-imports
+        name: Ban unsafe imports (xml.etree, pickle, etc.)
+        entry: python scripts/check_unsafe_imports.py
+        language: python
+        types: [python]
+        exclude: ^tests/
+
+  # Code quality: Basic Python checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']

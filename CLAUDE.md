@@ -8,7 +8,7 @@ Multi-retailer web scraper that collects retail store locations from Verizon, AT
 
 ## Environment Setup
 
-Requires Python 3.8-3.11. Use the self-healing setup script for automated environment configuration:
+Requires Python 3.9-3.14. Use the self-healing setup script for automated environment configuration:
 ```bash
 # Recommended: automated setup with diagnostics and auto-fix
 python scripts/setup.py
@@ -402,6 +402,54 @@ pydocstyle --convention=google --add-ignore=D100,D104 src/shared/
 - `Yields:` - For generator functions
 - `Examples:` - Usage examples (optional)
 - `Note:` - Important notes (optional)
+
+## Security Review Checklist
+
+When reviewing code or implementing features, verify the following:
+
+### Dependencies
+- [ ] No new dependencies with known CVEs (`safety check`)
+- [ ] Dependencies pinned to specific versions in requirements.txt
+- [ ] Major version bumps reviewed for breaking changes
+- [ ] Security-critical packages (aiohttp, requests, cryptography) at latest versions
+
+### Imports
+- [ ] No `xml.etree` - use `defusedxml` for XML parsing
+- [ ] No `pickle` or `marshal` - use `json` for serialization
+- [ ] No `eval()` or `exec()` anywhere in production code
+- [ ] No `os.system()` - use `subprocess.run()` with `shell=False`
+
+### Secrets
+- [ ] No hardcoded API keys, passwords, or tokens
+- [ ] Secrets loaded from environment variables only
+- [ ] `.env.example` updated when adding new secrets
+- [ ] Test files use mock/fake credentials (not real ones)
+
+### Data Handling
+- [ ] User/external input validated before use
+- [ ] URLs validated before making requests
+- [ ] File paths sanitized (no path traversal via `../`)
+- [ ] JSON/XML from external sources parsed safely
+
+### Cryptography
+- [ ] SHA256+ for security-sensitive hashing (not MD5/SHA1)
+- [ ] MD5 only used for non-security purposes (cache keys, checksums)
+- [ ] `secrets.compare_digest()` for constant-time token comparison
+- [ ] No custom cryptography implementations
+
+### Pre-Commit Hooks
+```bash
+# Install hooks (one-time setup)
+pip install pre-commit
+pre-commit install
+
+# Run all hooks manually
+pre-commit run --all-files
+
+# Run specific hook
+pre-commit run bandit --all-files
+pre-commit run detect-secrets --all-files
+```
 
 ## 1Password / Credentials
 

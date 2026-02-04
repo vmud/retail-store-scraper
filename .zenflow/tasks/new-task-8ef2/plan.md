@@ -42,7 +42,7 @@ Implement the `run()` function in one scraper as a reference implementation.
 - Support `limit` parameter
 - Return dict with `stores`, `count`, `checkpoints_used`
 
-**Verification**: 
+**Verification**:
 - Syntax check: `python -m py_compile src/scrapers/walmart.py` ✓
 - Read code to verify interface matches spec ✓
 

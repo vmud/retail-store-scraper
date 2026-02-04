@@ -76,7 +76,7 @@ if command -v python3 &> /dev/null; then
             SYNTAX_ERRORS=$((SYNTAX_ERRORS + 1))
         fi
     done
-    
+
     if [ $SYNTAX_ERRORS -eq 0 ]; then
         echo -e "${GREEN}✓ No Python syntax errors found${NC}"
     else
@@ -118,7 +118,7 @@ if command -v docker &> /dev/null; then
         echo -e "${RED}✗ Dockerfile not found${NC}"
         ERRORS=$((ERRORS + 1))
     fi
-    
+
     # Validate docker-compose.yml
     if docker compose config > /dev/null 2>&1; then
         echo -e "${GREEN}✓ docker-compose.yml is valid${NC}"
@@ -126,7 +126,7 @@ if command -v docker &> /dev/null; then
         echo -e "${RED}✗ docker-compose.yml has errors${NC}"
         ERRORS=$((ERRORS + 1))
     fi
-    
+
     echo -e "${YELLOW}  Note: Full Docker build not tested (run 'docker compose build' to verify)${NC}"
 else
     echo -e "${YELLOW}⚠ Docker not found, skipping Docker validation${NC}"
@@ -197,14 +197,14 @@ if [ -f ".gitignore" ]; then
         "__pycache__"
         ".env"
     )
-    
+
     MISSING_PATTERNS=()
     for pattern in "${GITIGNORE_PATTERNS[@]}"; do
         if ! grep -q "$pattern" .gitignore; then
             MISSING_PATTERNS+=("$pattern")
         fi
     done
-    
+
     if [ ${#MISSING_PATTERNS[@]} -eq 0 ]; then
         echo -e "${GREEN}✓ .gitignore is complete${NC}"
     else

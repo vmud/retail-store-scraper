@@ -318,7 +318,7 @@ class ProxyClient:
             self.config.mode = ProxyMode.DIRECT
 
         logging.info(f"ProxyClient initialized in {self.config.mode.value} mode")
-        
+
         # Log credential status for debugging (without exposing actual credentials)
         if self.config.mode != ProxyMode.DIRECT:
             username = self.config.username
@@ -346,7 +346,7 @@ class ProxyClient:
 
     def _build_residential_proxy_url(self) -> str:
         """Build residential proxy URL with authentication and targeting
-        
+
         Format according to Oxylabs documentation:
         - Basic: customer-{username}
         - Country: customer-{username}-cc-{country}
@@ -358,7 +358,7 @@ class ProxyClient:
         username = self.config.username
         if not username.startswith('customer-'):
             username = f'customer-{username}'
-        
+
         username_parts = [username]
 
         # Add country targeting (cc-COUNTRY_CODE format)
@@ -506,7 +506,7 @@ class ProxyClient:
         )
 
         elapsed = time.time() - start_time
-        
+
         # Check for residential proxy authentication errors
         if self.config.mode == ProxyMode.RESIDENTIAL and response.status_code == 407:
             logging.error(f"[residential] Proxy authentication failed (407) - verify OXYLABS_RESIDENTIAL credentials")
@@ -592,7 +592,7 @@ class ProxyClient:
                     job_id=api_response.get("job_id"),
                     credits_used=api_response.get("credits_used"),
                 )
-        
+
         # Handle credential errors explicitly
         if response.status_code in (401, 403):
             logging.error(f"[web_scraper_api] Authentication failed ({response.status_code}) - verify OXYLABS_SCRAPER_API credentials")

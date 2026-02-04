@@ -369,7 +369,7 @@ geography: united_states
 audience: field_marketing_planning, retail_analytics, llm_context
 version: 1.0
 created: 2025-02
-data_sources: 
+data_sources:
   - public_company_filings
   - industry_reports
   - retail_channel_knowledge

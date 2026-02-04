@@ -266,13 +266,13 @@ class ChangeDetector:
 
     def compute_fingerprint(self, store: Dict[str, Any]) -> str:
         """Compute a fingerprint hash of a store's key attributes.
-        
+
         This includes both identity and comparison fields, so it changes
         when any important field changes. Used for detecting modifications.
-        
+
         Args:
             store: Store dictionary
-            
+
         Returns:
             SHA256 hash of all relevant fields (identity + comparison)
         """
@@ -286,7 +286,7 @@ class ChangeDetector:
             if field not in seen:
                 seen.add(field)
                 unique_fields.append(field)
-        
+
         # Normalize postal code field (some scrapers use 'zip', others 'postal_code')
         data = {}
         for k in unique_fields:

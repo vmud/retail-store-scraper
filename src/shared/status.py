@@ -80,17 +80,17 @@ def get_retailer_status(retailer: str) -> Dict[str, Any]:
     """
     config = load_retailers_config()
     retailer_config = config.get(retailer, {})
-    
+
     if not retailer_config:
         return {
             "retailer": retailer,
             "enabled": False,
             "error": "Retailer not found in configuration"
         }
-    
+
     discovery_method = retailer_config.get('discovery_method', 'sitemap')
     enabled = retailer_config.get('enabled', False)
-    
+
     status = {
         "retailer": retailer,
         "name": retailer_config.get('name', retailer.title()),
@@ -101,7 +101,7 @@ def get_retailer_status(retailer: str) -> Dict[str, Any]:
         "scraper_active": False,
         "last_updated": None,
     }
-    
+
     # Calculate status based on discovery method
     if discovery_method == "html_crawl":
         # Verizon-style 4-phase discovery
@@ -109,16 +109,16 @@ def get_retailer_status(retailer: str) -> Dict[str, Any]:
     else:
         # Sitemap-based 2-phase discovery (att, target, tmobile, walmart, bestbuy)
         status["phases"] = _get_sitemap_status(retailer)
-    
+
     # Calculate overall progress
     status["overall_progress"] = _calculate_overall_progress(status["phases"])
-    
+
     # Check if scraper is active
     status["scraper_active"] = _check_scraper_active(retailer, status["phases"])
-    
+
     # Get last updated timestamp
     status["last_updated"] = _get_last_updated(retailer, status["phases"])
-    
+
     return status
 
 
@@ -143,7 +143,7 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
         "phase3_urls": {"name": "Store URLs", "total": 0, "completed": 0, "status": "pending", "last_updated": None},
         "phase4_extract": {"name": "Extract Details", "total": 0, "completed": 0, "status": "pending", "last_updated": None},
     }
-    
+
     # Phase 1: States
     states_path = get_checkpoint_path(retailer, "states")
     if states_path.exists():
@@ -159,7 +159,7 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
                 ).isoformat()
         except Exception:
             pass
-    
+
     # Phase 2: Cities
     cities_path = get_checkpoint_path(retailer, "cities")
     if cities_path.exists():
@@ -173,14 +173,14 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
                 phases["phase2_cities"]["last_updated"] = datetime.fromtimestamp(
                     cities_path.stat().st_mtime
                 ).isoformat()
-                
+
                 if phases["phase1_states"]["total"] > 0:
                     phases["phase2_cities"]["total"] = phases["phase1_states"]["total"]
                     if len(completed_states) >= phases["phase1_states"]["total"]:
                         phases["phase2_cities"]["status"] = "complete"
         except Exception:
             pass
-    
+
     # Phase 3: Store URLs
     stores_path = get_checkpoint_path(retailer, "store_urls")
     if stores_path.exists():
@@ -196,12 +196,12 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
                 phases["phase3_urls"]["last_updated"] = datetime.fromtimestamp(
                     stores_path.stat().st_mtime
                 ).isoformat()
-                
+
                 if len(stores) > 0 and len(completed_cities) >= len(stores):
                     phases["phase3_urls"]["status"] = "complete"
         except Exception:
             pass
-    
+
     # Phase 4: Store extraction
     output_path = get_checkpoint_path(retailer, "output_csv")
     if output_path.exists():
@@ -214,14 +214,14 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
             phases["phase4_extract"]["last_updated"] = datetime.fromtimestamp(
                 output_path.stat().st_mtime
             ).isoformat()
-            
+
             if phases["phase3_urls"]["total"] > 0:
                 phases["phase4_extract"]["total"] = phases["phase3_urls"]["total"]
                 if count >= phases["phase3_urls"]["total"]:
                     phases["phase4_extract"]["status"] = "complete"
         except Exception:
             pass
-    
+
     return phases
 
 
@@ -242,14 +242,14 @@ def _get_sitemap_status(retailer: str) -> Dict[str, Any]:
         "phase1_sitemap": {"name": "Sitemap Discovery", "total": 0, "completed": 0, "status": "pending", "last_updated": None},
         "phase2_extract": {"name": "Extract Details", "total": 0, "completed": 0, "status": "pending", "last_updated": None},
     }
-    
+
     # Phase 1: Sitemap URLs
     sitemap_path = get_checkpoint_path(retailer, "sitemap_urls")
     if sitemap_path.exists():
         try:
             with open(sitemap_path, 'r', encoding='utf-8') as f:
                 sitemap_data = json.load(f)
-            
+
             if isinstance(sitemap_data, dict):
                 urls = sitemap_data.get('urls', [])
                 phases["phase1_sitemap"]["total"] = len(urls)
@@ -267,7 +267,7 @@ def _get_sitemap_status(retailer: str) -> Dict[str, Any]:
                 ).isoformat()
         except Exception:
             pass
-    
+
     # Phase 2: Store extraction
     output_path = get_checkpoint_path(retailer, "output_csv")
     if output_path.exists():
@@ -280,14 +280,14 @@ def _get_sitemap_status(retailer: str) -> Dict[str, Any]:
             phases["phase2_extract"]["last_updated"] = datetime.fromtimestamp(
                 output_path.stat().st_mtime
             ).isoformat()
-            
+
             if phases["phase1_sitemap"]["total"] > 0:
                 phases["phase2_extract"]["total"] = phases["phase1_sitemap"]["total"]
                 if count >= phases["phase1_sitemap"]["total"]:
                     phases["phase2_extract"]["status"] = "complete"
         except Exception:
             pass
-    
+
     return phases
 
 
@@ -302,13 +302,13 @@ def _calculate_overall_progress(phases: Dict[str, Any]) -> float:
     """
     total_weight = 0
     weighted_sum = 0
-    
+
     for _phase_key, phase_data in phases.items():
         if phase_data["total"] > 0:
             weight = 1.0
             total_weight += weight
             weighted_sum += (phase_data["completed"] / phase_data["total"]) * weight
-    
+
     if total_weight > 0:
         return round((weighted_sum / total_weight) * 100, 1)
     return 0.0
@@ -326,7 +326,7 @@ def _check_scraper_active(retailer: str, phases: Dict[str, Any]) -> bool:
     """
     current_time = time.time()
     active_threshold = STATUS.ACTIVE_THRESHOLD_SECONDS  # 5 minutes
-    
+
     for phase_data in phases.values():
         last_updated = phase_data.get("last_updated")
         if last_updated:
@@ -337,7 +337,7 @@ def _check_scraper_active(retailer: str, phases: Dict[str, Any]) -> bool:
                     return True
             except Exception:
                 pass
-    
+
     return False
 
 
@@ -353,7 +353,7 @@ def _get_last_updated(retailer: str, phases: Dict[str, Any]) -> Optional[str]:
     """
     latest = None
     latest_ts = 0
-    
+
     for phase_data in phases.values():
         last_updated = phase_data.get("last_updated")
         if last_updated:
@@ -365,7 +365,7 @@ def _get_last_updated(retailer: str, phases: Dict[str, Any]) -> Optional[str]:
                     latest = last_updated
             except Exception:
                 pass
-    
+
     return latest
 
 
@@ -377,7 +377,7 @@ def get_all_retailers_status() -> Dict[str, Any]:
     """
     config = load_retailers_config()
     retailers = list(config.keys())
-    
+
     global_stats = {
         "total_retailers": len(retailers),
         "active_scrapers": 0,
@@ -386,40 +386,40 @@ def get_all_retailers_status() -> Dict[str, Any]:
         "overall_progress": 0.0,
         "last_updated": None,
     }
-    
+
     retailers_status = {}
-    
+
     for retailer in retailers:
         status = get_retailer_status(retailer)
         retailers_status[retailer] = status
-        
+
         if status["enabled"]:
             global_stats["enabled_retailers"] += 1
-        
+
         if status["scraper_active"]:
             global_stats["active_scrapers"] += 1
-        
+
         # Count stores from final extraction phase
         for phase_key, phase_data in status["phases"].items():
             if "extract" in phase_key.lower():
                 global_stats["total_stores"] += phase_data["completed"]
-        
+
         # Track latest update across all retailers
         if status["last_updated"]:
             if not global_stats["last_updated"] or status["last_updated"] > global_stats["last_updated"]:
                 global_stats["last_updated"] = status["last_updated"]
-    
+
     # Calculate average progress across enabled retailers
     if global_stats["enabled_retailers"] > 0:
         total_progress = sum(
-            status["overall_progress"] 
-            for status in retailers_status.values() 
+            status["overall_progress"]
+            for status in retailers_status.values()
             if status["enabled"]
         )
         global_stats["overall_progress"] = round(
             total_progress / global_stats["enabled_retailers"], 1
         )
-    
+
     return {
         "global": global_stats,
         "retailers": retailers_status

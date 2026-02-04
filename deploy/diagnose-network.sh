@@ -33,7 +33,7 @@ if command -v docker &> /dev/null; then
         echo -e "${RED}✗ Dashboard container not found${NC}"
         echo "  Fix: docker compose up -d"
     fi
-    
+
     # Show container details
     echo ""
     docker compose ps

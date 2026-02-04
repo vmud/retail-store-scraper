@@ -9,8 +9,11 @@ on:
   pull_request:
     branches: [main, master]
   schedule:
-    # Run weekly on Mondays at 9am UTC
+    # Run weekly on Mondays at 9am UTC (regular scans)
     - cron: '0 9 * * 1'
+    # Run quarterly on first day of Jan, Apr, Jul, Oct at 9am UTC (deep audit)
+    - cron: '0 9 1 1,4,7,10 *'
+  workflow_dispatch:  # Allow manual trigger for quarterly audit
 
 jobs:
   bandit:
@@ -49,7 +52,7 @@ jobs:
           # Skip B324 (hashlib/md5) - we use MD5 for non-security purposes (caching, ID generation)
           bandit -r src/ --severity-level high --skip B324
           bandit run.py --severity-level high --skip B324
-          
+
   dependency-check:
     name: Dependency Vulnerability Check
     runs-on: ubuntu-latest
@@ -69,6 +72,40 @@ jobs:
         run: |
           pip install -r requirements.txt
           safety check --full-report
+
+  # Quarterly deep security audit with pip-audit
+  quarterly-audit:
+    name: Quarterly Security Audit
+    runs-on: ubuntu-latest
+    # Run on first day of each quarter (Jan 1, Apr 1, Jul 1, Oct 1)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pip-audit (strict mode)
+        run: |
+          echo "## Quarterly Security Audit Report" >> $GITHUB_STEP_SUMMARY
+          echo "Date: $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          pip-audit --strict --desc on --format markdown >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          pip-audit --strict
+
+      - name: Check for outdated packages
+        run: |
+          echo "## Outdated Packages" >> $GITHUB_STEP_SUMMARY
+          pip list --outdated --format=markdown >> $GITHUB_STEP_SUMMARY || true
 
   # Note: CodeQL analysis is handled by GitHub's default setup (repo settings)
   # which provides weekly scheduled scans and main branch analysis.

@@ -14,7 +14,7 @@ from src.shared.proxy_client import ProxyConfig, ProxyMode
 
 class TestProxyConfigFromEnv:
     """Test ProxyConfig.from_env() method"""
-    
+
     def test_from_env_default_direct_mode(self):
         """Test default mode is DIRECT when no env vars set"""
         with patch.dict(os.environ, {}, clear=True):
@@ -24,7 +24,7 @@ class TestProxyConfigFromEnv:
             assert config.residential_password == ""
             assert config.scraper_api_username == ""
             assert config.scraper_api_password == ""
-    
+
     def test_from_env_residential_mode_specific_credentials(self):
         """Test residential mode with mode-specific credentials"""
         env_vars = {
@@ -39,7 +39,7 @@ class TestProxyConfigFromEnv:
             assert config.residential_password == "res_pass"
             assert config.username == "res_user"
             assert config.password == "res_pass"
-    
+
     def test_from_env_residential_mode_legacy_credentials(self):
         """Test residential mode with legacy fallback credentials"""
         env_vars = {
@@ -54,7 +54,7 @@ class TestProxyConfigFromEnv:
             assert config.residential_password == "legacy_pass"
             assert config.username == "legacy_user"
             assert config.password == "legacy_pass"
-    
+
     def test_from_env_web_scraper_api_mode_specific_credentials(self):
         """Test web_scraper_api mode with mode-specific credentials"""
         env_vars = {
@@ -69,7 +69,7 @@ class TestProxyConfigFromEnv:
             assert config.scraper_api_password == "api_pass"
             assert config.username == "api_user"
             assert config.password == "api_pass"
-    
+
     def test_from_env_scraper_api_alias(self):
         """Test 'scraper_api' alias maps to WEB_SCRAPER_API mode"""
         env_vars = {
@@ -80,7 +80,7 @@ class TestProxyConfigFromEnv:
         with patch.dict(os.environ, env_vars, clear=True):
             config = ProxyConfig.from_env()
             assert config.mode == ProxyMode.WEB_SCRAPER_API
-    
+
     def test_from_env_invalid_mode_defaults_to_direct(self):
         """Test invalid mode string defaults to DIRECT"""
         env_vars = {
@@ -89,7 +89,7 @@ class TestProxyConfigFromEnv:
         with patch.dict(os.environ, env_vars, clear=True):
             config = ProxyConfig.from_env()
             assert config.mode == ProxyMode.DIRECT
-    
+
     def test_from_env_credential_priority_specific_over_legacy(self):
         """Test mode-specific credentials take priority over legacy"""
         env_vars = {
@@ -103,7 +103,7 @@ class TestProxyConfigFromEnv:
             config = ProxyConfig.from_env()
             assert config.residential_username == "specific_user"
             assert config.residential_password == "specific_pass"
-    
+
     def test_from_env_country_code(self):
         """Test country code loading from env"""
         env_vars = {
@@ -112,7 +112,7 @@ class TestProxyConfigFromEnv:
         with patch.dict(os.environ, env_vars, clear=True):
             config = ProxyConfig.from_env()
             assert config.country_code == "de"
-    
+
     def test_from_env_render_js_true(self):
         """Test render_js boolean parsing"""
         env_vars = {
@@ -121,14 +121,14 @@ class TestProxyConfigFromEnv:
         with patch.dict(os.environ, env_vars, clear=True):
             config = ProxyConfig.from_env()
             assert config.render_js is True
-        
+
         env_vars = {
             "OXYLABS_RENDER_JS": "false",
         }
         with patch.dict(os.environ, env_vars, clear=True):
             config = ProxyConfig.from_env()
             assert config.render_js is False
-    
+
     def test_from_env_timeout_and_retries(self):
         """Test numeric settings parsing"""
         env_vars = {
@@ -143,13 +143,13 @@ class TestProxyConfigFromEnv:
 
 class TestProxyConfigFromDict:
     """Test ProxyConfig.from_dict() method"""
-    
+
     def test_from_dict_direct_mode(self):
         """Test direct mode from dict"""
         data = {"mode": "direct"}
         config = ProxyConfig.from_dict(data)
         assert config.mode == ProxyMode.DIRECT
-    
+
     def test_from_dict_residential_with_explicit_credentials(self):
         """Test residential mode with explicit credentials in dict"""
         data = {
@@ -164,7 +164,7 @@ class TestProxyConfigFromDict:
             assert config.residential_username == "dict_user"
             assert config.residential_password == "dict_pass"
             assert config.country_code == "gb"
-    
+
     def test_from_dict_web_scraper_api_with_settings(self):
         """Test web_scraper_api with render settings"""
         data = {
@@ -179,7 +179,7 @@ class TestProxyConfigFromDict:
             assert config.mode == ProxyMode.WEB_SCRAPER_API
             assert config.render_js is True
             assert config.parse is True
-    
+
     def test_from_dict_legacy_username_password_residential(self):
         """Test legacy username/password keys for residential mode"""
         data = {
@@ -191,7 +191,7 @@ class TestProxyConfigFromDict:
             config = ProxyConfig.from_dict(data)
             assert config.residential_username == "legacy_user"
             assert config.residential_password == "legacy_pass"
-    
+
     def test_from_dict_legacy_username_password_web_scraper_api(self):
         """Test legacy username/password keys for web_scraper_api mode"""
         data = {
@@ -203,7 +203,7 @@ class TestProxyConfigFromDict:
             config = ProxyConfig.from_dict(data)
             assert config.scraper_api_username == "api_user"
             assert config.scraper_api_password == "api_pass"
-    
+
     def test_from_dict_falls_back_to_env_credentials(self):
         """Test dict config falls back to env credentials when not specified"""
         env_vars = {
@@ -219,7 +219,7 @@ class TestProxyConfigFromDict:
             assert config.residential_username == "env_user"
             assert config.residential_password == "env_pass"
             assert config.country_code == "fr"
-    
+
     def test_from_dict_all_settings(self):
         """Test loading all possible settings from dict"""
         data = {
@@ -252,12 +252,12 @@ class TestProxyConfigFromDict:
 
 class TestProxyConfigValidation:
     """Test ProxyConfig.validate() method"""
-    
+
     def test_validate_direct_mode_always_valid(self):
         """Test direct mode is always valid (no credentials needed)"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
         assert config.validate() is True
-    
+
     def test_validate_residential_mode_with_credentials(self):
         """Test residential mode is valid with credentials"""
         config = ProxyConfig(
@@ -266,7 +266,7 @@ class TestProxyConfigValidation:
             residential_password="pass"
         )
         assert config.validate() is True
-    
+
     def test_validate_residential_mode_missing_username(self):
         """Test residential mode is invalid without username"""
         config = ProxyConfig(
@@ -275,7 +275,7 @@ class TestProxyConfigValidation:
             residential_password="pass"
         )
         assert config.validate() is False
-    
+
     def test_validate_residential_mode_missing_password(self):
         """Test residential mode is invalid without password"""
         config = ProxyConfig(
@@ -284,7 +284,7 @@ class TestProxyConfigValidation:
             residential_password=""
         )
         assert config.validate() is False
-    
+
     def test_validate_web_scraper_api_mode_with_credentials(self):
         """Test web_scraper_api mode is valid with credentials"""
         config = ProxyConfig(
@@ -293,7 +293,7 @@ class TestProxyConfigValidation:
             scraper_api_password="pass"
         )
         assert config.validate() is True
-    
+
     def test_validate_web_scraper_api_mode_missing_credentials(self):
         """Test web_scraper_api mode is invalid without credentials"""
         config = ProxyConfig(
@@ -306,12 +306,12 @@ class TestProxyConfigValidation:
 
 class TestProxyConfigProperties:
     """Test ProxyConfig username/password properties"""
-    
+
     def test_username_property_direct_mode(self):
         """Test username property returns empty string for direct mode"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
         assert config.username == ""
-    
+
     def test_username_property_residential_mode(self):
         """Test username property returns residential username"""
         config = ProxyConfig(
@@ -320,7 +320,7 @@ class TestProxyConfigProperties:
             scraper_api_username="api_user"
         )
         assert config.username == "res_user"
-    
+
     def test_username_property_web_scraper_api_mode(self):
         """Test username property returns scraper_api username"""
         config = ProxyConfig(
@@ -329,7 +329,7 @@ class TestProxyConfigProperties:
             scraper_api_username="api_user"
         )
         assert config.username == "api_user"
-    
+
     def test_password_property_residential_mode(self):
         """Test password property returns residential password"""
         config = ProxyConfig(
@@ -338,7 +338,7 @@ class TestProxyConfigProperties:
             scraper_api_password="api_pass"
         )
         assert config.password == "res_pass"
-    
+
     def test_password_property_web_scraper_api_mode(self):
         """Test password property returns scraper_api password"""
         config = ProxyConfig(
@@ -347,17 +347,17 @@ class TestProxyConfigProperties:
             scraper_api_password="api_pass"
         )
         assert config.password == "api_pass"
-    
+
     def test_is_enabled_direct_mode(self):
         """Test is_enabled returns False for direct mode"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
         assert config.is_enabled() is False
-    
+
     def test_is_enabled_residential_mode(self):
         """Test is_enabled returns True for residential mode"""
         config = ProxyConfig(mode=ProxyMode.RESIDENTIAL)
         assert config.is_enabled() is True
-    
+
     def test_is_enabled_web_scraper_api_mode(self):
         """Test is_enabled returns True for web_scraper_api mode"""
         config = ProxyConfig(mode=ProxyMode.WEB_SCRAPER_API)

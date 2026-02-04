@@ -288,7 +288,7 @@ from oxylabs import AsyncClient
 
 async def main():
     client = AsyncClient('YOUR_USERNAME', 'YOUR_PASSWORD')
-    
+
     tasks = [
         client.universal.scrape_url(
             'https://example.com',
@@ -301,7 +301,7 @@ async def main():
             poll_interval=5,
         ),
     ]
-    
+
     for future in asyncio.as_completed(tasks):
         result = await future
         print(result.raw)
@@ -689,18 +689,18 @@ class RateLimiter:
         self.time_window = time_window
         self.requests = deque()
         self.lock = Lock()
-    
+
     def wait(self):
         with self.lock:
             now = time.time()
             # Remove old requests
             while self.requests and self.requests[0] < now - self.time_window:
                 self.requests.popleft()
-            
+
             if len(self.requests) >= self.max_requests:
                 sleep_time = self.requests[0] - (now - self.time_window)
                 time.sleep(sleep_time)
-            
+
             self.requests.append(time.time())
 ```
 
@@ -774,7 +774,7 @@ def scrape_with_error_handling(payload):
             json=payload,
             timeout=180,
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             # Check for parser errors
@@ -785,7 +785,7 @@ def scrape_with_error_handling(payload):
                     if 'browser_instructions_warnings' in result:
                         print(f"Warnings: {result['browser_instructions_warnings']}")
             return data
-        
+
         elif response.status_code == 401:
             raise Exception("Authentication failed")
         elif response.status_code == 429:
@@ -795,7 +795,7 @@ def scrape_with_error_handling(payload):
             raise Exception(f"Bad request: {error_data}")
         else:
             response.raise_for_status()
-            
+
     except RequestException as e:
         print(f"Request failed: {e}")
         raise

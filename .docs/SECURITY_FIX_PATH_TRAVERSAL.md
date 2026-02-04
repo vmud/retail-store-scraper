@@ -21,7 +21,7 @@ expected_base = Path(f"data/{retailer}/logs").resolve()
 ```
 
 When `retailer = ".."`, this becomes:
-- `expected_base = Path("data/../logs").resolve()` 
+- `expected_base = Path("data/../logs").resolve()`
 - Which resolves to the parent directory's `logs/` folder
 - The check `str(log_file_resolved).startswith(str(expected_base))` would pass
 - Allowing access to files outside the intended `data/` directory

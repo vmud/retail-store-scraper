@@ -7,7 +7,7 @@
 
 ### Language & Dependencies
 - **Language**: Python 3.11
-- **Key Libraries**: 
+- **Key Libraries**:
   - `requests` for HTTP (sync)
   - `asyncio` for concurrent execution
   - Custom `ProxyClient` and `ProxyResponse` classes
@@ -29,10 +29,10 @@ The critical gap is in `run.py:194-234`:
 async def run_retailer_async(retailer: str, ...) -> dict:
     # Creates session ✅
     session = create_proxied_session(retailer_config)
-    
+
     # Loads scraper module ✅
     scraper_module = get_scraper_module(retailer)
-    
+
     # Missing: No call to scraper with session ❌
     # Just returns placeholder result
 ```
@@ -46,7 +46,7 @@ Each scraper module has:
 
 **Gap**: Sessions are created but never passed to scrapers because there's no defined entry point interface.
 
-**Impact**: 
+**Impact**:
 - Scrapers cannot run
 - Proxy configuration is not utilized
 - CLI flags like `--limit`, `--resume` have no effect
@@ -58,12 +58,12 @@ Each scraper module has:
 Create a standardized entry point that all scrapers must implement:
 
 ```python
-def run(session: Union[requests.Session, ProxyClient], 
-        config: dict, 
+def run(session: Union[requests.Session, ProxyClient],
+        config: dict,
         **kwargs) -> dict:
     """
     Standard scraper entry point.
-    
+
     Args:
         session: Configured session (requests.Session or ProxyClient)
         config: Retailer configuration dict from retailers.yaml
@@ -71,7 +71,7 @@ def run(session: Union[requests.Session, ProxyClient],
             - resume: bool - Resume from checkpoint
             - limit: int - Max stores to process
             - incremental: bool - Only process changes
-    
+
     Returns:
         dict with keys:
             - stores: List[dict] - Scraped store data
@@ -108,22 +108,22 @@ Modify `run_retailer_async()` in `run.py:194-234` to:
 def run(session, config, **kwargs):
     """Standard interface for sitemap-based scrapers"""
     limit = kwargs.get('limit')
-    
+
     # Reset request counter
     reset_request_counter()
-    
+
     # Discovery phase
     store_urls = get_store_urls_from_sitemap(session)
     if limit:
         store_urls = store_urls[:limit]
-    
+
     # Extraction phase
     stores = []
     for url in store_urls:
         store_obj = extract_store_details(session, url)
         if store_obj:
             stores.append(store_obj.to_dict())
-    
+
     return {
         'stores': stores,
         'count': len(stores),
@@ -137,22 +137,22 @@ def run(session, config, **kwargs):
 def run(session, config, **kwargs):
     """Standard interface for API-based scrapers"""
     limit = kwargs.get('limit')
-    
+
     # Reset request counter
     reset_request_counter()
-    
+
     # Discovery phase
     store_ids = get_all_store_ids(session)
     if limit:
         store_ids = store_ids[:limit]
-    
+
     # Extraction phase
     stores = []
     for store_info in store_ids:
         store_obj = get_store_details(session, store_info['store_id'])
         if store_obj:
             stores.append(store_obj.to_dict())
-    
+
     return {
         'stores': stores,
         'count': len(stores),
@@ -166,31 +166,31 @@ def run(session, config, **kwargs):
 def run(session, config, **kwargs):
     """Standard interface for multi-phase crawl scrapers"""
     limit = kwargs.get('limit')
-    
+
     # Reset request counter
     reset_request_counter()
-    
+
     # Phase 1-3: Hierarchical discovery
     states = get_all_states(session)
     stores = []
-    
+
     for state in states:
         cities = get_cities_for_state(session, state['url'], state['name'])
         for city in cities:
-            store_urls = get_stores_for_city(session, city['url'], 
+            store_urls = get_stores_for_city(session, city['url'],
                                              city['city'], city['state'])
             for store_url_info in store_urls:
                 store_dict = extract_store_details(session, store_url_info['url'])
                 if store_dict:
                     stores.append(store_dict)  # Already a dict
-                
+
                 if limit and len(stores) >= limit:
                     break
             if limit and len(stores) >= limit:
                 break
         if limit and len(stores) >= limit:
             break
-    
+
     return {
         'stores': stores,
         'count': len(stores),
@@ -227,10 +227,10 @@ Integrate existing checkpoint utilities with specific implementation details:
 def run(session, config, **kwargs):
     resume = kwargs.get('resume', False)
     checkpoint_path = f"data/{retailer_name}/checkpoints/scrape_progress.json"
-    
+
     stores = []
     completed_urls = set()
-    
+
     # Load checkpoint if resuming
     if resume:
         checkpoint = utils.load_checkpoint(checkpoint_path)
@@ -238,18 +238,18 @@ def run(session, config, **kwargs):
             stores = checkpoint.get('stores', [])
             completed_urls = set(checkpoint.get('completed_urls', []))
             logging.info(f"Resuming from checkpoint: {len(stores)} stores already collected")
-    
+
     # Discovery phase (skip already completed)
     all_urls = get_store_urls_from_sitemap(session)
     remaining_urls = [url for url in all_urls if url not in completed_urls]
-    
+
     # Process remaining URLs
     for i, url in enumerate(remaining_urls):
         store = extract_store_details(session, url)
         if store:
             stores.append(store.to_dict())
             completed_urls.add(url)
-        
+
         # Save checkpoint periodically
         if (i + 1) % checkpoint_interval == 0:
             utils.save_checkpoint({
@@ -258,7 +258,7 @@ def run(session, config, **kwargs):
                 'stores': stores,
                 'last_updated': datetime.now().isoformat()
             }, checkpoint_path)
-    
+
     return {
         'stores': stores,
         'count': len(stores),
@@ -291,25 +291,25 @@ data/
 ```python
 async def run_retailer_async(retailer: str, ...):
     # ... existing session creation ...
-    
+
     # Call scraper
     result = scraper_module.run(session, retailer_config, **kwargs)
-    
+
     # Extract data
     stores = result.get('stores', [])
     count = result.get('count', 0)
-    
+
     # Save outputs
     output_dir = f"data/{retailer}/output"
     json_path = f"{output_dir}/stores_latest.json"
     csv_path = f"{output_dir}/stores_latest.csv"
-    
+
     utils.save_to_json(stores, json_path)
-    
+
     # Get fieldnames from config or use default
     fieldnames = retailer_config.get('output_fields')
     utils.save_to_csv(stores, csv_path, fieldnames=fieldnames)
-    
+
     # Update result dict
     result_dict = {
         'retailer': retailer,
@@ -317,7 +317,7 @@ async def run_retailer_async(retailer: str, ...):
         'stores': count,
         'error': None
     }
-    
+
     return result_dict
 ```
 
@@ -360,9 +360,9 @@ Each scraper has a global `_request_counter` that needs proper handling:
 def run(session, config, **kwargs):
     # IMPORTANT: Reset counter at start of run
     reset_request_counter()
-    
+
     # ... scraping logic ...
-    
+
     # Counter is automatically incremented in helper functions
     # (get_store_urls_from_sitemap, extract_store_details, etc.)
 ```

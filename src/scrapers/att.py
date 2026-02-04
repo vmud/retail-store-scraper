@@ -124,11 +124,11 @@ def _extract_store_type_and_dealer(html_content: str) -> tuple:
         r"storeMasterDealer:\s*(['\"])([^'\"]+)\1",
         html_content
     )
-    
+
     # Group 1 is the quote character, group 2 is the actual value
     display_type = display_type_match.group(2) if display_type_match else None
     dealer_raw = dealer_match.group(2) if dealer_match else None
-    
+
     # Determine sub_channel and dealer_name based on display type
     if display_type == "AT&T Retail":
         # Corporate store
@@ -147,7 +147,7 @@ def _extract_store_type_and_dealer(html_content: str) -> tuple:
         logging.debug(f"[att] Unknown display type: {display_type}, defaulting to COR")
         sub_channel = "COR"
         dealer_name = None
-    
+
     return sub_channel, dealer_name
 
 
