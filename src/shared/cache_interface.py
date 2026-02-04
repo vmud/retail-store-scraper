@@ -216,12 +216,13 @@ class CacheInterface(ABC, Generic[T]):
                 return None
 
             cache_time = datetime.fromisoformat(cached_at)
-            age_days = (datetime.now() - cache_time).days
+            age = datetime.now() - cache_time
+            age_days = age.days
 
             return {
                 'cached_at': cached_at,
                 'age_days': age_days,
-                'expired': age_days * 86400 > self.ttl.total_seconds()
+                'expired': age.total_seconds() > self.ttl.total_seconds()
             }
 
         except (json.JSONDecodeError, KeyError, ValueError):
