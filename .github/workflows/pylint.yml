@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.9", "3.10", "3.11"]
     steps:
     - uses: actions/checkout@v6
     - name: Set up Python ${{ matrix.python-version }}
@@ -33,7 +33,5 @@ jobs:
         pip install -r requirements.txt
     - name: Analysing the code with pylint
       run: |
-        # Disable unknown-option-value (W0012) for Python 3.8 compatibility
-        # (too-many-positional-arguments not recognized in older pylint)
         # Use --fail-under=9.5 to allow minor issues in test code while catching major problems
-        pylint $(git ls-files '*.py') --disable=unknown-option-value --fail-under=9.5
+        pylint $(git ls-files '*.py') --fail-under=9.5
