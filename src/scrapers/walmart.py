@@ -16,6 +16,7 @@ import requests
 from config import walmart_config
 from src.shared import utils
 from src.shared.cache import URLCache
+from src.shared.constants import CACHE
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
 
@@ -29,7 +30,7 @@ _request_counter = RequestCounter()
 # =============================================================================
 
 # Default response cache expiry: 30 days (store pages rarely change structure)
-RESPONSE_CACHE_EXPIRY_DAYS = 30
+RESPONSE_CACHE_EXPIRY_DAYS = CACHE.RESPONSE_CACHE_EXPIRY_DAYS
 
 
 def _get_response_cache_dir(retailer: str) -> Path:
@@ -63,7 +64,7 @@ def _get_cached_response(url: str, retailer: str) -> Optional[str]:
             cached_time = datetime.fromisoformat(cached_at)
             age = datetime.now() - cached_time
 
-            if age < timedelta(days=RESPONSE_CACHE_EXPIRY_DAYS):
+            if age < timedelta(days=CACHE.RESPONSE_CACHE_EXPIRY_DAYS):
                 logging.debug(f"[{retailer}] Cache hit for {url}")
                 return data.get('html')
             else:

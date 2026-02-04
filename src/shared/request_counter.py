@@ -5,6 +5,8 @@ import random
 import threading
 import time
 
+from src.shared.constants import PAUSE
+
 
 class RequestCounter:
     """Thread-safe request counter for tracking requests across scrapers.
@@ -57,12 +59,12 @@ def check_pause_logic(
     counter: RequestCounter,
     retailer: str = None,
     config: dict = None,
-    pause_50_requests: int = 50,
-    pause_50_min: float = 30,
-    pause_50_max: float = 60,
-    pause_200_requests: int = 200,
-    pause_200_min: float = 120,
-    pause_200_max: float = 180,
+    pause_50_requests: int = PAUSE.SHORT_THRESHOLD,
+    pause_50_min: float = PAUSE.SHORT_MIN_SECONDS,
+    pause_50_max: float = PAUSE.SHORT_MAX_SECONDS,
+    pause_200_requests: int = PAUSE.LONG_THRESHOLD,
+    pause_200_min: float = PAUSE.LONG_MIN_SECONDS,
+    pause_200_max: float = PAUSE.LONG_MAX_SECONDS,
 ) -> None:
     """Check if we need to pause based on request count (#71).
 
@@ -89,8 +91,8 @@ def check_pause_logic(
         pause_200_min = config.get('pause_200_min', pause_200_min)
         pause_200_max = config.get('pause_200_max', pause_200_max)
 
-    # Skip if pauses are effectively disabled (>= 999999)
-    if pause_50_requests >= 999999 and pause_200_requests >= 999999:
+    # Skip if pauses are effectively disabled
+    if pause_50_requests >= PAUSE.DISABLED_THRESHOLD and pause_200_requests >= PAUSE.DISABLED_THRESHOLD:
         return
 
     count = counter.count

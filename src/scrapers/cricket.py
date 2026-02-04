@@ -23,6 +23,7 @@ from typing import List, Dict, Any, Optional, Set, Tuple
 
 from config import cricket_config as config
 from src.shared import utils
+from src.shared.constants import TEST_MODE
 from src.shared.session_factory import create_session_factory
 
 
@@ -342,7 +343,7 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
         # Reduce grid for test mode (quick validation)
         if test_mode:
-            grid_spacing = 200  # Fewer points for quick testing
+            grid_spacing = TEST_MODE.GRID_SPACING_MILES  # Fewer points for quick testing
             logging.info(f"[{retailer_name}] Test mode: using {grid_spacing}-mile grid spacing")
 
         # Generate grid points

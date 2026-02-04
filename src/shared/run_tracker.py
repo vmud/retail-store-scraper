@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from .utils import save_checkpoint, load_checkpoint
+from src.shared.constants import RUN_HISTORY
 
 
 class RunTracker:
@@ -190,7 +191,7 @@ class RunTracker:
         return self.metadata.copy()
 
 
-def get_run_history(retailer: str, limit: int = 10) -> List[Dict[str, Any]]:
+def get_run_history(retailer: str, limit: int = RUN_HISTORY.HISTORY_LIMIT) -> List[Dict[str, Any]]:
     """Get historical runs for a retailer
     
     Args:
@@ -269,7 +270,7 @@ def get_active_run(retailer: str) -> Optional[Dict[str, Any]]:
     return running_runs[0][1]
 
 
-def cleanup_old_runs(retailer: str, keep: int = 20) -> int:
+def cleanup_old_runs(retailer: str, keep: int = RUN_HISTORY.CLEANUP_KEEP) -> int:
     """Clean up old run files, keeping only the most recent
     
     Args:

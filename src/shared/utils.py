@@ -18,13 +18,17 @@ import requests
 # Import proxy client for Oxylabs integration
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode, ProxyResponse, redact_credentials
 
+# Import centralized constants (Issue #171)
+from src.shared.constants import HTTP, LOGGING, VALIDATION
 
-# Default configuration values (can be overridden per-retailer)
-DEFAULT_MIN_DELAY = 2.0
-DEFAULT_MAX_DELAY = 5.0
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_TIMEOUT = 30
-DEFAULT_RATE_LIMIT_BASE_WAIT = 30
+
+# Default configuration values - backward compatible aliases to centralized constants
+# These can be overridden per-retailer in config/retailers.yaml
+DEFAULT_MIN_DELAY = HTTP.MIN_DELAY
+DEFAULT_MAX_DELAY = HTTP.MAX_DELAY
+DEFAULT_MAX_RETRIES = HTTP.MAX_RETRIES
+DEFAULT_TIMEOUT = HTTP.TIMEOUT
+DEFAULT_RATE_LIMIT_BASE_WAIT = HTTP.RATE_LIMIT_BASE_WAIT
 
 # Default user agents for rotation
 DEFAULT_USER_AGENTS = [
@@ -42,7 +46,7 @@ _proxy_clients_lock = threading.Lock()
 _logging_lock = threading.Lock()
 
 
-def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = 10*1024*1024, backup_count: int = 5) -> None:
+def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = LOGGING.MAX_BYTES, backup_count: int = LOGGING.BACKUP_COUNT) -> None:
     """Setup logging configuration with rotation (#118).
 
     This function is idempotent and thread-safe - calling it multiple times
@@ -239,12 +243,12 @@ def get_with_retry(
                 # Continue to retry instead of immediate return (#144)
 
             elif response.status_code >= 500:  # Server error
-                wait_time = 10
+                wait_time = HTTP.SERVER_ERROR_WAIT
                 logging.warning(f"Server error ({response.status_code}) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
 
             elif response.status_code == 408:  # Request timeout - might succeed on retry
-                wait_time = 10
+                wait_time = HTTP.SERVER_ERROR_WAIT
                 logging.warning(f"Request timeout (408) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
 
@@ -260,7 +264,7 @@ def get_with_retry(
 
         except requests.exceptions.RequestException as e:
             response = None  # Ensure response is None after exception
-            wait_time = 10
+            wait_time = HTTP.SERVER_ERROR_WAIT
             # Redact credentials from error messages to prevent leaking sensitive info
             safe_error = redact_credentials(str(e))
             logging.warning(f"Request error for {url}: {safe_error}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
@@ -430,10 +434,10 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
         try:
             lat_float = float(lat)
             lng_float = float(lng)
-            if not (-90 <= lat_float <= 90):
-                errors.append(f"Invalid latitude: {lat} (must be between -90 and 90)")
-            if not (-180 <= lng_float <= 180):
-                errors.append(f"Invalid longitude: {lng} (must be between -180 and 180)")
+            if not (VALIDATION.LAT_MIN <= lat_float <= VALIDATION.LAT_MAX):
+                errors.append(f"Invalid latitude: {lat} (must be between {VALIDATION.LAT_MIN} and {VALIDATION.LAT_MAX})")
+            if not (VALIDATION.LON_MIN <= lng_float <= VALIDATION.LON_MAX):
+                errors.append(f"Invalid longitude: {lng} (must be between {VALIDATION.LON_MIN} and {VALIDATION.LON_MAX})")
         except (ValueError, TypeError):
             errors.append(f"Invalid coordinate format: lat={lat}, lng={lng}")
 
@@ -441,8 +445,8 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
     postal_code = store.get('postal_code') or store.get('zip_code')
     if postal_code:
         postal_str = str(postal_code).strip()
-        if postal_str and not (len(postal_str) == 5 or len(postal_str) == 10):
-            # 10 chars for "12345-6789" format
+        if postal_str and not (len(postal_str) == VALIDATION.ZIP_LENGTH_SHORT or len(postal_str) == VALIDATION.ZIP_LENGTH_LONG):
+            # ZIP_LENGTH_LONG (10) for "12345-6789" format
             warnings.append(f"Unusual postal code format: {postal_code}")
 
     return ValidationResult(len(errors) == 0, errors, warnings)
@@ -482,10 +486,10 @@ def validate_stores_batch(
 
     if log_issues:
         if all_errors:
-            for error in all_errors[:10]:  # Limit logging to first 10
+            for error in all_errors[:VALIDATION.ERROR_LOG_LIMIT]:
                 logging.warning(error)
-            if len(all_errors) > 10:
-                logging.warning(f"... and {len(all_errors) - 10} more validation errors")
+            if len(all_errors) > VALIDATION.ERROR_LOG_LIMIT:
+                logging.warning(f"... and {len(all_errors) - VALIDATION.ERROR_LOG_LIMIT} more validation errors")
 
     return {
         'total': total,

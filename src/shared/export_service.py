@@ -12,6 +12,8 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.shared.constants import EXPORT
+
 try:
     from openpyxl import Workbook  # pylint: disable=import-error
     from openpyxl.styles import Font, Alignment  # pylint: disable=import-error
@@ -144,7 +146,7 @@ class ExportService:
     def _get_fieldnames(
         stores: List[Dict[str, Any]],
         retailer_config: Optional[Dict[str, Any]] = None,
-        sample_size: int = 100
+        sample_size: int = EXPORT.FIELD_SAMPLE_SIZE
     ) -> List[str]:
         """
         Get field names from config or infer from data.
@@ -236,7 +238,7 @@ class ExportService:
                 if cell_value:
                     max_length = max(max_length, len(str(cell_value)))
             # Cap at reasonable width
-            adjusted_width = min(max_length + 2, 50)
+            adjusted_width = min(max_length + 2, EXPORT.EXCEL_MAX_COLUMN_WIDTH)
             ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
 
         # Freeze header row
@@ -367,7 +369,7 @@ class ExportService:
                 cell_value = ws.cell(row=row_idx, column=col_idx).value
                 if cell_value:
                     max_length = max(max_length, len(str(cell_value)))
-            adjusted_width = min(max_length + 2, 50)
+            adjusted_width = min(max_length + 2, EXPORT.EXCEL_MAX_COLUMN_WIDTH)
             ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
 
         # Freeze header row
@@ -421,7 +423,7 @@ class ExportService:
             sanitized_stores = [sanitize_store_for_csv(store) for store in stores]
 
             # Create sheet with capitalized retailer name
-            sheet_name = retailer.title()[:31]  # Excel sheet names max 31 chars
+            sheet_name = retailer.title()[:EXPORT.EXCEL_SHEET_NAME_MAX]  # Excel sheet names max 31 chars
             ws = wb.create_sheet(title=sheet_name)
             sheets_created += 1
 
@@ -445,7 +447,7 @@ class ExportService:
                     cell_value = ws.cell(row=row_idx, column=col_idx).value
                     if cell_value:
                         max_length = max(max_length, len(str(cell_value)))
-                adjusted_width = min(max_length + 2, 50)
+                adjusted_width = min(max_length + 2, EXPORT.EXCEL_MAX_COLUMN_WIDTH)
                 ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
 
             # Freeze header row

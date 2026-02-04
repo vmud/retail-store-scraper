@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Iterator
 
+from src.shared.constants import STREAMING
+
 try:
     import ijson
     IJSON_AVAILABLE = True
@@ -285,7 +287,7 @@ class ChangeDetector:
         try:
             file_size = previous_path.stat().st_size
             # Use streaming for large files (>50MB) if ijson is available
-            if file_size > 50 * 1024 * 1024 and IJSON_AVAILABLE:
+            if file_size > STREAMING.LARGE_FILE_THRESHOLD_BYTES and IJSON_AVAILABLE:
                 logging.info(f"[{self.retailer}] Loading previous data with streaming parser (file size: {file_size / 1024 / 1024:.1f}MB)")
                 return list(self._load_stores_streaming(previous_path))
 

@@ -34,6 +34,7 @@ from src.shared.utils import (
     close_all_proxy_clients
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
+from src.shared.constants import WORKERS
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
 from src.shared.cloud_storage import get_cloud_storage
 from src.scrapers import get_available_retailers, get_enabled_retailers, get_scraper_module
@@ -385,7 +386,7 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
 
 
 # Thread pool executor for running synchronous scrapers without blocking the event loop
-_scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=6, thread_name_prefix='scraper')
+_scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS.EXECUTOR_MAX_WORKERS, thread_name_prefix='scraper')
 
 
 def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_module, **kwargs) -> dict:
