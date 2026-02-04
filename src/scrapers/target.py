@@ -111,8 +111,15 @@ def _extract_single_store(
         if store_obj:
             return (store_id, store_obj.to_dict())
         return (store_id, None)
+    except requests.RequestException as e:
+        logging.warning(f"[{retailer_name}] Network error extracting store {store_id}: {e}")
+        return (store_id, None)
+    except (KeyError, TypeError, AttributeError) as e:
+        logging.warning(f"[{retailer_name}] Data extraction error for store {store_id}: {e}", exc_info=True)
+        return (store_id, None)
     except Exception as e:
-        logging.warning(f"[{retailer_name}] Error extracting store {store_id}: {e}")
+        # Catch-all for worker threads to prevent crashes
+        logging.warning(f"[{retailer_name}] Unexpected error extracting store {store_id}: {e}")
         return (store_id, None)
     finally:
         # Clean up session resources
@@ -213,8 +220,8 @@ def get_all_store_ids(
     except gzip.BadGzipFile as e:
         logging.error(f"[{retailer}] Failed to decompress gzip sitemap: {e}")
         return []
-    except Exception as e:
-        logging.error(f"[{retailer}] Unexpected error processing sitemap: {e}")
+    except (UnicodeDecodeError, re.error) as e:
+        logging.error(f"[{retailer}] Error processing sitemap content: {e}")
         return []
 
 
@@ -315,8 +322,8 @@ def get_store_details(
     except json.JSONDecodeError as e:
         logging.warning(f"[{retailer}] Failed to parse JSON response for store_id={store_id}: {e}")
         return None
-    except Exception as e:
-        logging.warning(f"[{retailer}] Unexpected error processing store_id={store_id}: {e}")
+    except (KeyError, TypeError, AttributeError) as e:
+        logging.warning(f"[{retailer}] Data extraction error for store_id={store_id}: {e}", exc_info=True)
         return None
 
 

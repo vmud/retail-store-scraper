@@ -88,8 +88,12 @@ def _extract_single_store(
         if store_obj:
             return (url, store_obj.to_dict())
         return (url, None)
+    except requests.RequestException as e:
+        logging.warning(f"[{retailer_name}] Network error extracting {url}: {e}")
+        return (url, None)
     except Exception as e:
-        logging.warning(f"[{retailer_name}] Error extracting {url}: {e}")
+        # Catch-all for worker threads to prevent crashes
+        logging.warning(f"[{retailer_name}] Unexpected error extracting {url}: {e}")
         return (url, None)
     finally:
         # Clean up session resources
@@ -191,11 +195,8 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
 
             logging.info(f"[{retailer}] Found {len(all_store_urls)} retail store URLs from page {page}")
 
-        except ET.ParseError as e:
+        except (ET.ParseError, UnicodeDecodeError) as e:
             logging.error(f"[{retailer}] Failed to parse XML sitemap page {page}: {e}")
-            continue
-        except Exception as e:
-            logging.error(f"[{retailer}] Unexpected error parsing sitemap page {page}: {e}")
             continue
 
     logging.info(f"[{retailer}] Total retail store URLs collected: {len(all_store_urls)}")
@@ -276,7 +277,7 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
                     if isinstance(first_script, list) and first_script:
                         first_type = first_script[0].get('@type', 'Unknown') if isinstance(first_script[0], dict) else 'Unknown'
                     logging.debug(f"[{retailer}] Skipping {url}: No Store found (first @type: '{first_type}')")
-                except Exception:
+                except (json.JSONDecodeError, KeyError, TypeError):
                     logging.debug(f"[{retailer}] Skipping {url}: No Store found")
             return None
 
@@ -326,8 +327,8 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
         logging.debug(f"[{retailer}] Extracted store: {store.name}")
         return store
 
-    except Exception as e:
-        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
+        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}", exc_info=True)
         return None
 
 

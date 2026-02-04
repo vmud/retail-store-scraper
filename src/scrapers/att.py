@@ -77,8 +77,12 @@ def _extract_single_store(
         if store_obj:
             return (url, store_obj.to_dict())
         return (url, None)
+    except requests.RequestException as e:
+        logging.warning(f"[{retailer_name}] Network error extracting {url}: {e}")
+        return (url, None)
     except Exception as e:
-        logging.warning(f"[{retailer_name}] Error extracting {url}: {e}")
+        # Catch-all for worker threads to prevent crashes
+        logging.warning(f"[{retailer_name}] Unexpected error extracting {url}: {e}")
         return (url, None)
     finally:
         # Clean up session resources
@@ -197,11 +201,8 @@ def get_store_urls_from_sitemap(
 
         return store_urls
 
-    except ET.ParseError as e:
+    except (ET.ParseError, UnicodeDecodeError) as e:
         logging.error(f"[{retailer}] Failed to parse XML sitemap: {e}")
-        return []
-    except Exception as e:
-        logging.error(f"[{retailer}] Unexpected error parsing sitemap: {e}")
         return []
 
 
@@ -282,7 +283,7 @@ def extract_store_details(
         rating_value = None
         rating_count = None
 
-        if rating:
+        if rating and isinstance(rating, dict):
             rating_val = rating.get('ratingValue')
             if rating_val:
                 try:
@@ -319,8 +320,8 @@ def extract_store_details(
         logging.debug(f"[{retailer}] Extracted store: %s (%s%s)", store.name, sub_channel, dealer_info)
         return store
 
-    except Exception as e:
-        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}", exc_info=True)
         return None
 
 
