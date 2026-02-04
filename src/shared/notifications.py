@@ -17,6 +17,8 @@ import os
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 
+from src.shared.constants import STATUS
+
 
 __all__ = [
     'ConsoleNotifier',
@@ -25,6 +27,7 @@ __all__ = [
     'SlackNotifier',
     'get_notifier',
 ]
+
 
 
 try:
@@ -116,7 +119,7 @@ class SlackNotifier(NotificationProvider):
             response = requests.post(
                 self.webhook_url,
                 json=payload,
-                timeout=10
+                timeout=STATUS.NOTIFICATION_TIMEOUT
             )
             if response.ok:
                 logging.debug(f"Slack notification sent: {message[:50]}...")

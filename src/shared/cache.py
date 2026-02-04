@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
+from src.shared.constants import CACHE
+
 
 __all__ = [
     'DEFAULT_CACHE_EXPIRY_DAYS',
@@ -19,7 +21,7 @@ __all__ = [
 
 
 # Default cache expiry: 7 days (stores don't change location frequently)
-DEFAULT_CACHE_EXPIRY_DAYS = 7
+DEFAULT_CACHE_EXPIRY_DAYS = CACHE.URL_CACHE_EXPIRY_DAYS
 
 
 class URLCache:

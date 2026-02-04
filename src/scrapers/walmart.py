@@ -16,6 +16,7 @@ import requests
 from config import walmart_config
 from src.shared import utils
 from src.shared.cache import URLCache
+from src.shared.constants import CACHE
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
 
@@ -28,8 +29,8 @@ _request_counter = RequestCounter()
 # RESPONSE CACHING - Avoid expensive Web Scraper API re-fetches
 # =============================================================================
 
-# Default response cache expiry: 30 days (store pages rarely change structure)
-RESPONSE_CACHE_EXPIRY_DAYS = 30
+# Default response cache expiry in days (store pages rarely change structure)
+RESPONSE_CACHE_EXPIRY_DAYS = CACHE.RESPONSE_CACHE_EXPIRY_DAYS
 
 
 def _get_response_cache_dir(retailer: str) -> Path:

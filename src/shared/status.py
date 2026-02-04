@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from src.shared.constants import STATUS
+
 
 __all__ = [
     'CONFIG_PATH',
@@ -17,6 +19,7 @@ __all__ = [
     'get_retailer_status',
     'load_retailers_config',
 ]
+
 
 
 CONFIG_PATH = "config/retailers.yaml"
@@ -322,7 +325,7 @@ def _check_scraper_active(retailer: str, phases: Dict[str, Any]) -> bool:
         True if scraper is active, False otherwise.
     """
     current_time = time.time()
-    active_threshold = 300  # 5 minutes
+    active_threshold = STATUS.ACTIVE_THRESHOLD_SECONDS  # 5 minutes
     
     for phase_data in phases.values():
         last_updated = phase_data.get("last_updated")

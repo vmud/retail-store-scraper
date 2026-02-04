@@ -137,6 +137,7 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   └── bell.py                 # Sitemap + JSON-LD (Canadian)
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
+│   ├── constants.py            # Centralized magic numbers (HTTP, CACHE, PAUSE, WORKERS, etc.) (#171)
 │   ├── cache.py                # URL caching (URLCache, RichURLCache)
 │   ├── session_factory.py      # Thread-safe session creation for parallel workers
 │   ├── proxy_client.py         # Oxylabs proxy abstraction (ProxyMode, ProxyClient)
@@ -166,12 +167,21 @@ def run(session, retailer_config, retailer: str, **kwargs) -> dict:
     # Returns: {'stores': [...], 'count': int, 'checkpoints_used': bool}
 ```
 
-### Key Defaults (from utils.py)
+### Key Defaults (from constants.py - Issue #171)
 
-- `DEFAULT_MIN_DELAY = 2.0` / `DEFAULT_MAX_DELAY = 5.0` - delay between requests
-- `DEFAULT_MAX_RETRIES = 3` - HTTP retry attempts
-- `DEFAULT_TIMEOUT = 30` - request timeout in seconds
-- `DEFAULT_RATE_LIMIT_BASE_WAIT = 30` - wait time on 429 errors
+Magic numbers are centralized in `src/shared/constants.py` as frozen dataclasses:
+- `HTTP.MIN_DELAY = 2.0` / `HTTP.MAX_DELAY = 5.0` - delay between requests
+- `HTTP.MAX_RETRIES = 3` - HTTP retry attempts
+- `HTTP.TIMEOUT = 30` - request timeout in seconds
+- `HTTP.RATE_LIMIT_BASE_WAIT = 30` - wait time on 429 errors
+- `PAUSE.SHORT_THRESHOLD = 50` / `PAUSE.LONG_THRESHOLD = 200` - rate-limiting pauses
+- `CACHE.URL_CACHE_EXPIRY_DAYS = 7` - URL cache expiry
+- `WORKERS.PROXIED_WORKERS = 5` / `WORKERS.DIRECT_WORKERS = 1` - parallel workers
+- `EXPORT.FIELD_SAMPLE_SIZE = 100` - export field discovery
+- `TEST_MODE.STORE_LIMIT = 10` - test mode store limit
+- `VALIDATION.*` - coordinate and ZIP validation bounds
+
+See `src/shared/constants.py` for complete list. Backward-compatible aliases exist in `utils.py` for legacy code.
 
 ### Dual Delay Profiles
 

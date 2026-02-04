@@ -16,6 +16,7 @@ import requests
 from config import tmobile_config
 from src.shared import utils
 from src.shared.cache import URLCache
+from src.shared.constants import WORKERS
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
@@ -375,8 +376,8 @@ def run(session, config: dict, **kwargs) -> dict:
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
         logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
 
-        # Get parallel workers count (default: 5 for residential proxy, 1 for direct)
-        default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        # Get parallel workers count (default: WORKERS.PROXIED_WORKERS for residential proxy, WORKERS.DIRECT_WORKERS for direct)
+        default_workers = WORKERS.PROXIED_WORKERS if proxy_mode in ('residential', 'web_scraper_api') else WORKERS.DIRECT_WORKERS
         parallel_workers = config.get('parallel_workers', default_workers)
         logging.info(f"[{retailer_name}] Parallel workers: {parallel_workers}")
 
