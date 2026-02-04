@@ -80,6 +80,9 @@ def _extract_single_store(
     except requests.RequestException as e:
         logging.warning(f"[{retailer_name}] Network error extracting {url}: {e}")
         return (url, None)
+    except (KeyError, TypeError, AttributeError) as e:
+        logging.warning(f"[{retailer_name}] Data extraction error for {url}: {e}", exc_info=True)
+        return (url, None)
     except Exception as e:
         # Catch-all for worker threads to prevent crashes
         logging.warning(f"[{retailer_name}] Unexpected error extracting {url}: {e}")
