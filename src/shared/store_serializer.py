@@ -147,10 +147,18 @@ class Store:
         Returns:
             Dictionary with normalized field names
         """
+        import logging
         result = {}
         for key, value in data.items():
             # Apply alias if exists, otherwise keep original name
             canonical_key = FIELD_ALIASES.get(key, key)
+            # Warn if this would overwrite an existing value (collision detection)
+            if canonical_key in result and result[canonical_key] != value:
+                logging.warning(
+                    f"Field alias collision: both '{key}' and another key map to "
+                    f"'{canonical_key}'. Value '{result[canonical_key]}' will be "
+                    f"overwritten with '{value}'."
+                )
             result[canonical_key] = value
         return result
 
@@ -256,7 +264,7 @@ class StoreSerializer:
             Ordered list of field names
         """
         if not stores:
-            return cls.FIELD_ORDER
+            return list(cls.FIELD_ORDER)
 
         # Collect all fields from stores
         all_fields = set()
@@ -295,4 +303,8 @@ def normalize_store_dict(data: Dict[str, Any], retailer: str = None) -> Dict[str
         # If missing required fields, do basic normalization
         import logging
         logging.warning(f"Cannot create Store from data, applying basic normalization: {e}")
-        return Store._normalize_fields(data)
+        result = Store._normalize_fields(data)
+        # Add retailer if provided (matching success path behavior)
+        if retailer:
+            result['retailer'] = retailer
+        return result
