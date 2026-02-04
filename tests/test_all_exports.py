@@ -189,8 +189,7 @@ class TestAllExportsExist:
             pytest.skip(f"{module_name} does not have __all__ yet")
 
         for name in module.__all__:
-            attr = getattr(module, name, None)
-            assert attr is not None, \
+            assert hasattr(module, name), \
                 f"Cannot import '{name}' from {module_name}"
 
 
