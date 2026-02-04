@@ -306,7 +306,7 @@ def _fetch_stores_worker(
             session.close()
 
 
-def run(session, yaml_config: dict, **kwargs) -> dict:
+def run(session, retailer_config: dict, retailer: str, **kwargs) -> dict:
     """Standard scraper entry point.
 
     Cricket scraper uses geographic grid-based discovery with parallel
@@ -314,9 +314,9 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
     Args:
         session: Configured session (requests.Session or ProxyClient)
-        yaml_config: Retailer configuration dict from retailers.yaml
+        retailer_config: Retailer configuration dict from retailers.yaml
+        retailer: Retailer name for logging
         **kwargs: Additional options
-            - retailer: str - Retailer name for logging
             - limit: int - Max stores to return (for testing)
             - test: bool - Test mode (reduced grid for quick validation)
 
@@ -325,21 +325,30 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
             - stores: List[dict] - Scraped store data
             - count: int - Number of stores processed
             - checkpoints_used: bool - Always False (no checkpointing for API-based scraper)
+
+    Raises:
+        None.
+
+    Examples:
+        >>> run(session, retailer_config, "cricket", test=True)
+
+    Note:
+        Defaults are sourced from src.shared.constants.TEST_MODE.
     """
-    retailer_name = kwargs.get('retailer', 'cricket')
+    retailer_name = retailer
     limit = kwargs.get('limit')
     test_mode = kwargs.get('test', False)
 
     logging.info(f"[{retailer_name}] Starting scrape run")
 
     # Log proxy mode for visibility
-    proxy_mode = yaml_config.get('proxy', {}).get('mode', 'direct')
+    proxy_mode = retailer_config.get('proxy', {}).get('mode', 'direct')
     logging.info(f"[{retailer_name}] Using proxy mode: {proxy_mode}")
 
     try:
         # Get configuration values
-        grid_spacing = yaml_config.get('grid_spacing_miles', config.DEFAULT_GRID_SPACING_MILES)
-        parallel_workers = yaml_config.get('parallel_workers', 10)
+        grid_spacing = retailer_config.get('grid_spacing_miles', config.DEFAULT_GRID_SPACING_MILES)
+        parallel_workers = retailer_config.get('parallel_workers', 10)
 
         # Reduce grid for test mode (quick validation)
         if test_mode:
@@ -361,7 +370,7 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
         progress_lock = threading.Lock()
 
         # Create session factory for parallel workers
-        session_factory = create_session_factory(yaml_config)
+        session_factory = create_session_factory(retailer_config)
 
         # Parallel grid scanning
         logging.info(f"[{retailer_name}] Scanning grid with {parallel_workers} parallel workers")

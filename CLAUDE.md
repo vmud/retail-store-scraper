@@ -174,7 +174,7 @@ Magic numbers are centralized in `src/shared/constants.py` as frozen dataclasses
 - `HTTP.MAX_RETRIES = 3` - HTTP retry attempts
 - `HTTP.TIMEOUT = 30` - request timeout in seconds
 - `HTTP.RATE_LIMIT_BASE_WAIT = 30` - wait time on 429 errors
-- `PAUSE.SHORT_THRESHOLD = 50` / `PAUSE.LONG_THRESHOLD = 200` - rate limiting pauses
+- `PAUSE.SHORT_THRESHOLD = 50` / `PAUSE.LONG_THRESHOLD = 200` - rate-limiting pauses
 - `CACHE.URL_CACHE_EXPIRY_DAYS = 7` - URL cache expiry
 - `WORKERS.PROXIED_WORKERS = 5` / `WORKERS.DIRECT_WORKERS = 1` - parallel workers
 - `EXPORT.FIELD_SAMPLE_SIZE = 100` - export field discovery

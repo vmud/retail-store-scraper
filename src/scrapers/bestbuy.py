@@ -747,12 +747,13 @@ def _save_failed_extractions(
         logging.warning(f"[{retailer}] Failed to save failed extractions: {e}")
 
 
-def run(session, config: dict, **kwargs) -> dict:
+def run(session, retailer_config: dict, retailer: str, **kwargs) -> dict:
     """Standard scraper entry point with parallel extraction and URL caching.
 
     Args:
         session: Configured session (requests.Session or ProxyClient)
-        config: Retailer configuration dict from retailers.yaml
+        retailer_config: Retailer configuration dict from retailers.yaml
+        retailer: Retailer name for logging
         **kwargs: Additional options
             - resume: bool - Resume from checkpoint
             - limit: int - Max stores to process
@@ -764,8 +765,18 @@ def run(session, config: dict, **kwargs) -> dict:
             - stores: List[dict] - Scraped store data
             - count: int - Number of stores processed
             - checkpoints_used: bool - Whether resume was used
+
+    Raises:
+        None.
+
+    Examples:
+        >>> run(session, retailer_config, "bestbuy", resume=True)
+
+    Note:
+        Defaults are sourced from src.shared.constants (WORKERS, etc).
     """
-    retailer_name = kwargs.get('retailer', 'bestbuy')
+    retailer_name = retailer
+    config = retailer_config
     logging.info(f"[{retailer_name}] Starting scrape run")
 
     try:

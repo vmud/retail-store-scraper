@@ -29,7 +29,7 @@ _request_counter = RequestCounter()
 # RESPONSE CACHING - Avoid expensive Web Scraper API re-fetches
 # =============================================================================
 
-# Default response cache expiry: 30 days (store pages rarely change structure)
+# Default response cache expiry in days (store pages rarely change structure)
 RESPONSE_CACHE_EXPIRY_DAYS = CACHE.RESPONSE_CACHE_EXPIRY_DAYS
 
 
@@ -64,7 +64,7 @@ def _get_cached_response(url: str, retailer: str) -> Optional[str]:
             cached_time = datetime.fromisoformat(cached_at)
             age = datetime.now() - cached_time
 
-            if age < timedelta(days=CACHE.RESPONSE_CACHE_EXPIRY_DAYS):
+            if age < timedelta(days=RESPONSE_CACHE_EXPIRY_DAYS):
                 logging.debug(f"[{retailer}] Cache hit for {url}")
                 return data.get('html')
             else:
