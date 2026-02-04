@@ -20,7 +20,8 @@ from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
-# Global request counter
+# Global request counter (deprecated - kept for backwards compatibility)
+# Use instance-based counter passed to functions instead
 _request_counter = RequestCounter()
 
 
@@ -56,7 +57,8 @@ def _extract_single_store(
     url: str,
     session_factory,
     retailer_name: str,
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Worker function for parallel store extraction.
 
@@ -67,13 +69,14 @@ def _extract_single_store(
         session_factory: Callable that creates session instances
         retailer_name: Name of retailer for logging
         yaml_config: Retailer configuration from retailers.yaml
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         Tuple of (url, store_data_dict) where store_data_dict is None on failure
     """
     session = session_factory()
     try:
-        store_obj = extract_store_details(session, url, retailer_name, yaml_config)
+        store_obj = extract_store_details(session, url, retailer_name, yaml_config, request_counter)
         if store_obj:
             return (url, store_obj.to_dict())
         return (url, None)
@@ -146,7 +149,8 @@ def _extract_store_type_and_dealer(html_content: str) -> tuple:
 def get_store_urls_from_sitemap(
     session: requests.Session,
     retailer: str = 'att',
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> List[str]:
     """Fetch all store URLs from the AT&T sitemap.
 
@@ -154,6 +158,7 @@ def get_store_urls_from_sitemap(
         session: Requests session object
         retailer: Retailer name for logging
         yaml_config: Retailer configuration from retailers.yaml
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         List of store URLs (filtered to only those ending in numeric IDs)
@@ -165,8 +170,9 @@ def get_store_urls_from_sitemap(
         logging.error(f"[{retailer}] Failed to fetch sitemap")
         return []
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         # Parse XML
@@ -209,7 +215,8 @@ def extract_store_details(
     session: requests.Session,
     url: str,
     retailer: str = 'att',
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> Optional[ATTStore]:
     """Extract store data from a single AT&T store page.
 
@@ -218,6 +225,7 @@ def extract_store_details(
         url: Store page URL
         retailer: Retailer name for logging
         yaml_config: Retailer configuration from retailers.yaml
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         ATTStore object if successful, None otherwise
@@ -229,8 +237,9 @@ def extract_store_details(
         logging.warning(f"[{retailer}] Failed to fetch store details: {url}")
         return None
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -360,7 +369,9 @@ def run(session, config: dict, **kwargs) -> dict:
         resume = kwargs.get('resume', False)
         refresh_urls = kwargs.get('refresh_urls', False)
 
-        reset_request_counter()
+        # Create fresh RequestCounter instance for this run
+        request_counter = RequestCounter()
+        reset_request_counter()  # Reset global counter for backwards compatibility
 
         # Auto-select delays based on proxy mode for optimal performance
         proxy_mode = config.get('proxy', {}).get('mode', 'direct')
@@ -397,7 +408,7 @@ def run(session, config: dict, **kwargs) -> dict:
 
         if store_urls is None:
             # Cache miss or refresh requested - fetch from sitemap
-            store_urls = get_store_urls_from_sitemap(session, retailer_name, yaml_config=config)
+            store_urls = get_store_urls_from_sitemap(session, retailer_name, yaml_config=config, request_counter=request_counter)
             logging.info(f"[{retailer_name}] Found {len(store_urls)} store URLs from sitemap")
 
             # Save to cache for future runs
@@ -443,7 +454,7 @@ def run(session, config: dict, **kwargs) -> dict:
             with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
                 # Submit all extraction tasks
                 futures = {
-                    executor.submit(_extract_single_store, url, session_factory, retailer_name, config): url
+                    executor.submit(_extract_single_store, url, session_factory, retailer_name, config, request_counter): url
                     for url in remaining_urls
                 }
 
@@ -474,7 +485,7 @@ def run(session, config: dict, **kwargs) -> dict:
         else:
             # Sequential extraction (original behavior for direct mode)
             for i, url in enumerate(remaining_urls, 1):
-                store_obj = extract_store_details(session, url, retailer_name, yaml_config=config)
+                store_obj = extract_store_details(session, url, retailer_name, yaml_config=config, request_counter=request_counter)
                 if store_obj:
                     stores.append(store_obj.to_dict())
                     completed_urls.add(url)

@@ -558,7 +558,7 @@ class TestATTParallelExtraction:
 
         assert result_url == url
         assert result_data == {'store_id': '12345', 'name': 'Test Store'}
-        mock_extract.assert_called_once_with(mock_session, url, 'att', yaml_config)
+        mock_extract.assert_called_once_with(mock_session, url, 'att', yaml_config, None)
 
     @patch('src.scrapers.att.extract_store_details')
     def test_extract_single_store_failure(self, mock_extract):

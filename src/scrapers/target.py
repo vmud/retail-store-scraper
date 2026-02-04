@@ -21,7 +21,8 @@ from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
-# Global request counter
+# Global request counter (deprecated - kept for backwards compatibility)
+# Use instance-based counter passed to functions instead
 _request_counter = RequestCounter()
 
 
@@ -80,7 +81,8 @@ def _extract_single_store(
     retailer_name: str,
     yaml_config: dict = None,
     min_delay: float = None,
-    max_delay: float = None
+    max_delay: float = None,
+    request_counter: RequestCounter = None
 ) -> Tuple[int, Optional[Dict[str, Any]]]:
     """Worker function for parallel store extraction.
 
@@ -93,6 +95,7 @@ def _extract_single_store(
         yaml_config: Retailer configuration from retailers.yaml
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         Tuple of (store_id, store_data_dict) where store_data_dict is None on failure
@@ -106,7 +109,8 @@ def _extract_single_store(
             retailer_name,
             min_delay=min_delay,
             max_delay=max_delay,
-            yaml_config=yaml_config
+            yaml_config=yaml_config,
+            request_counter=request_counter
         )
         if store_obj:
             return (store_id, store_obj.to_dict())
@@ -147,7 +151,8 @@ def get_all_store_ids(
     retailer: str = 'target',
     min_delay: float = None,
     max_delay: float = None,
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> List[Dict[str, Any]]:
     """Extract all store IDs from Target's sitemap.
 
@@ -157,6 +162,7 @@ def get_all_store_ids(
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
         yaml_config: Retailer config dict (for pause settings)
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         List of store dictionaries with store_id, slug, and url
@@ -173,8 +179,9 @@ def get_all_store_ids(
         logging.error(f"[{retailer}] Failed to fetch sitemap: {target_config.SITEMAP_URL}")
         return []
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         # Check if content is already decompressed (starts with XML) or gzipped
@@ -224,7 +231,8 @@ def get_store_details(
     retailer: str = 'target',
     min_delay: float = None,
     max_delay: float = None,
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> Optional[TargetStore]:
     """Fetch detailed store info from Redsky API.
 
@@ -235,6 +243,7 @@ def get_store_details(
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
         yaml_config: Retailer config dict (for pause settings)
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         TargetStore object if successful, None otherwise
@@ -258,8 +267,9 @@ def get_store_details(
         logging.warning(f"[{retailer}] Failed to fetch store details for store_id={store_id}")
         return None
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         if response.status_code == 200:
@@ -356,7 +366,9 @@ def run(session, config: dict, **kwargs) -> dict:
         resume = kwargs.get('resume', False)
         refresh_urls = kwargs.get('refresh_urls', False)
 
-        reset_request_counter()
+        # Create fresh RequestCounter instance for this run
+        request_counter = RequestCounter()
+        reset_request_counter()  # Reset global counter for backwards compatibility
 
         # Auto-select delays based on proxy mode for optimal performance
         proxy_mode = config.get('proxy', {}).get('mode', 'direct')
@@ -399,7 +411,8 @@ def run(session, config: dict, **kwargs) -> dict:
                 retailer_name,
                 min_delay=min_delay,
                 max_delay=max_delay,
-                yaml_config=config
+                yaml_config=config,
+                request_counter=request_counter
             )
             logging.info(f"[{retailer_name}] Found {len(store_list)} store IDs from sitemap")
 
@@ -457,7 +470,8 @@ def run(session, config: dict, **kwargs) -> dict:
                         retailer_name,
                         config,
                         min_delay,
-                        max_delay
+                        max_delay,
+                        request_counter
                     ): store_info
                     for store_info in remaining_stores
                 }
@@ -504,7 +518,8 @@ def run(session, config: dict, **kwargs) -> dict:
                     retailer_name,
                     min_delay=min_delay,
                     max_delay=max_delay,
-                    yaml_config=config
+                    yaml_config=config,
+                    request_counter=request_counter
                 )
                 if store_obj:
                     stores.append(store_obj.to_dict())

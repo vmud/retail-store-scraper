@@ -30,7 +30,8 @@ from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
-# Global request counter for anti-blocking pause logic
+# Global request counter (deprecated - kept for backwards compatibility)
+# Use instance-based counter passed to functions instead
 _request_counter = RequestCounter()
 
 
@@ -329,13 +330,14 @@ def _extract_club_data_from_page(html: str, url: str, retailer: str = 'samsclub'
         return None
 
 
-def extract_club_details(client, url: str, retailer: str = 'samsclub') -> Optional[SamsClubStore]:
+def extract_club_details(client, url: str, retailer: str = 'samsclub', request_counter: RequestCounter = None) -> Optional[SamsClubStore]:
     """Extract club data from a club page.
 
     Args:
         client: ProxyClient (for Web Scraper API with JS rendering) or requests.Session
         url: Club page URL
         retailer: Retailer name for logging
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         SamsClubStore object if successful, None otherwise
@@ -364,6 +366,10 @@ def extract_club_details(client, url: str, retailer: str = 'samsclub') -> Option
                 logging.warning(f"[{retailer}] Failed to fetch {url}: {response.status_code}")
                 return None
             html = response.text
+
+        # Track request if counter is provided
+        if request_counter:
+            request_counter.increment()
 
         return _extract_club_data_from_page(html, url, retailer)
 
@@ -402,6 +408,9 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
         limit = kwargs.get('limit')
         resume = kwargs.get('resume', False)
         refresh_urls = kwargs.get('refresh_urls', False)
+
+        # Create fresh RequestCounter instance for this run
+        request_counter = RequestCounter()
 
         # Log proxy mode
         proxy_mode = yaml_config.get('proxy', {}).get('mode', 'direct')
@@ -474,11 +483,11 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
         failed_urls = []
 
         for i, url in enumerate(remaining_urls, 1):
-            club_obj = extract_club_details(club_client, url, retailer_name)
+            club_obj = extract_club_details(club_client, url, retailer_name, request_counter=request_counter)
 
-            # Track request and apply pause logic for anti-blocking
-            _request_counter.increment()
-            check_pause_logic(_request_counter, retailer=retailer_name, config=yaml_config)
+            # Apply pause logic for anti-blocking (counter incremented inside extract_club_details)
+            if request_counter:
+                check_pause_logic(request_counter, retailer=retailer_name, config=yaml_config)
 
             if club_obj:
                 clubs.append(club_obj.to_dict())
