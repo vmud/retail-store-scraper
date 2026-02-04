@@ -1,9 +1,12 @@
 """Retailer scrapers registry"""
 
+import logging
 from pathlib import Path
 from typing import Dict, List
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 # Registry of available scrapers
 SCRAPER_REGISTRY: Dict[str, str] = {
@@ -37,8 +40,9 @@ def get_enabled_retailers() -> List[str]:
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
-    except (FileNotFoundError, yaml.YAMLError):
+    except (FileNotFoundError, yaml.YAMLError) as e:
         # Fall back to all registered retailers if config can't be read
+        logger.warning(f"Failed to load retailers config from {config_path}: {e}")
         return list(SCRAPER_REGISTRY.keys())
 
     # Handle empty YAML files (safe_load returns None)
