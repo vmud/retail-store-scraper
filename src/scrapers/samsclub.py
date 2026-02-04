@@ -354,6 +354,9 @@ def extract_club_details(client, url: str, retailer: str = 'samsclub', request_c
         # Check if client is a ProxyClient (has mode attribute)
         if hasattr(client, 'mode'):
             response = client.get(url)
+            # Track request if counter is provided (count all requests, not just successful ones)
+            if request_counter:
+                request_counter.increment()
             if not response or response.status_code != 200:
                 status = response.status_code if response else 'None'
                 logging.warning(f"[{retailer}] Failed to fetch {url} (status={status})")
@@ -362,14 +365,13 @@ def extract_club_details(client, url: str, retailer: str = 'samsclub', request_c
         else:
             # Direct session - use curl-like headers to avoid bot detection
             response = client.get(url, headers=curl_headers, timeout=30)
+            # Track request if counter is provided (count all requests, not just successful ones)
+            if request_counter:
+                request_counter.increment()
             if response.status_code != 200:
                 logging.warning(f"[{retailer}] Failed to fetch {url}: {response.status_code}")
                 return None
             html = response.text
-
-        # Track request if counter is provided
-        if request_counter:
-            request_counter.increment()
 
         return _extract_club_data_from_page(html, url, retailer)
 
@@ -487,8 +489,7 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
             club_obj = extract_club_details(club_client, url, retailer_name, request_counter=request_counter)
 
             # Apply pause logic for anti-blocking (counter incremented inside extract_club_details)
-            if request_counter:
-                check_pause_logic(request_counter, retailer=retailer_name, config=yaml_config)
+            check_pause_logic(request_counter, retailer=retailer_name, config=yaml_config)
 
             if club_obj:
                 clubs.append(club_obj.to_dict())

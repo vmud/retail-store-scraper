@@ -11,7 +11,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from src.shared.request_counter import RequestCounter
 
 
