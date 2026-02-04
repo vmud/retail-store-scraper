@@ -152,8 +152,12 @@ class TestTargetRefactoring:
 
         with patch('src.scrapers.target.get_all_store_ids') as mock_get_ids, \
              patch('src.scrapers.target.get_store_details') as mock_get_details, \
+             patch('src.scrapers.target.RichURLCache') as mock_cache, \
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
+            # Ensure cache returns None so get_all_store_ids is called
+            # Target uses get_rich() not get()
+            mock_cache.return_value.get_rich.return_value = None
             mock_get_ids.return_value = []
             mock_validate.return_value = {'valid': 0, 'total': 0, 'warning_count': 0}
 
@@ -263,8 +267,11 @@ class TestATTRefactoring:
         }
 
         with patch('src.scrapers.att.get_store_urls_from_sitemap') as mock_get_urls, \
+             patch('src.scrapers.att.URLCache') as mock_cache, \
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
+            # Ensure cache returns None so get_store_urls_from_sitemap is called
+            mock_cache.return_value.get.return_value = None
             mock_get_urls.return_value = []
             mock_validate.return_value = {'valid': 0, 'total': 0, 'warning_count': 0}
 
@@ -438,8 +445,12 @@ class TestNoGlobalState:
         }
 
         with patch('src.scrapers.target.get_all_store_ids') as mock_get_ids, \
+             patch('src.scrapers.target.RichURLCache') as mock_cache, \
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
+            # Ensure cache returns None so get_all_store_ids is called
+            # Target uses get_rich() not get()
+            mock_cache.return_value.get_rich.return_value = None
             mock_get_ids.return_value = []
             mock_validate.return_value = {'valid': 0, 'total': 0, 'warning_count': 0}
 
@@ -466,8 +477,11 @@ class TestNoGlobalState:
         }
 
         with patch('src.scrapers.att.get_store_urls_from_sitemap') as mock_get_urls, \
+             patch('src.scrapers.att.URLCache') as mock_cache, \
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
+            # Ensure cache returns None so get_store_urls_from_sitemap is called
+            mock_cache.return_value.get.return_value = None
             mock_get_urls.return_value = []
             mock_validate.return_value = {'valid': 0, 'total': 0, 'warning_count': 0}
 
