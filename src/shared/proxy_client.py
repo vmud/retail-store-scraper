@@ -270,7 +270,7 @@ class ProxyResponse:
         """Check if request was successful"""
         return 200 <= self.status_code < 300
 
-    def json(self) -> Dict[str, Any]:
+    def json(self) -> Any:
         """Parse response as JSON"""
         return json.loads(self.text)
 
