@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.shared.constants import EXPORT
+from src.shared.store_schema import normalize_stores_batch
 
 
 __all__ = [
@@ -119,7 +120,8 @@ class ExportService:
         stores: List[Dict[str, Any]],
         export_format: ExportFormat,
         output_path: str,
-        retailer_config: Optional[Dict[str, Any]] = None
+        retailer_config: Optional[Dict[str, Any]] = None,
+        normalize_fields: bool = True
     ) -> None:
         """
         Export stores to a file in the specified format.
@@ -129,10 +131,16 @@ class ExportService:
             export_format: Target format (JSON, CSV, EXCEL, GEOJSON)
             output_path: Path to save the output file
             retailer_config: Optional retailer config with output_fields
+            normalize_fields: If True, normalize field names to canonical schema (default: True)
         """
         if not stores:
             logging.warning("No stores to export")
             return
+
+        # Normalize field names if requested (Issue #170)
+        if normalize_fields:
+            retailer_name = retailer_config.get('name') if retailer_config else None
+            stores = normalize_stores_batch(stores, retailer=retailer_name)
 
         # Validate output path to prevent path traversal attacks
         path = Path(output_path)

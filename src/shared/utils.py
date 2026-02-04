@@ -21,13 +21,25 @@ from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode, ProxyRe
 # Import centralized constants (Issue #171)
 from src.shared.constants import HTTP, LOGGING, VALIDATION
 
+# Import canonical field definitions and normalization (Issue #170)
+from src.shared.store_schema import (
+    CANONICAL_FIELDS,
+    FIELD_ALIASES,
+    RECOMMENDED_STORE_FIELDS,
+    REQUIRED_STORE_FIELDS,
+    normalize_store_data,
+    normalize_stores_batch,
+)
+
 __all__ = [
+    'CANONICAL_FIELDS',
     'DEFAULT_MAX_DELAY',
     'DEFAULT_MAX_RETRIES',
     'DEFAULT_MIN_DELAY',
     'DEFAULT_RATE_LIMIT_BASE_WAIT',
     'DEFAULT_TIMEOUT',
     'DEFAULT_USER_AGENTS',
+    'FIELD_ALIASES',
     'ProxiedSession',
     'RECOMMENDED_STORE_FIELDS',
     'REQUIRED_STORE_FIELDS',
@@ -43,6 +55,8 @@ __all__ = [
     'init_proxy_from_yaml',
     'load_checkpoint',
     'load_retailer_config',
+    'normalize_store_data',
+    'normalize_stores_batch',
     'random_delay',
     'save_checkpoint',
     'save_to_csv',
@@ -414,11 +428,9 @@ def save_to_json(stores: List[Dict[str, Any]], filepath: str) -> None:
 # STORE DATA VALIDATION (#103)
 # =============================================================================
 
-# Required fields that must be present and non-empty
-REQUIRED_STORE_FIELDS = {'store_id', 'name', 'street_address', 'city', 'state'}
-
-# Recommended fields that should be present for data quality
-RECOMMENDED_STORE_FIELDS = {'latitude', 'longitude', 'phone', 'url'}
+# Field definitions imported from store_schema.py (Issue #170)
+# REQUIRED_STORE_FIELDS and RECOMMENDED_STORE_FIELDS are now defined in
+# src/shared/store_schema.py and imported above for centralized management
 
 
 class ValidationResult:
