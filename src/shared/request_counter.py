@@ -66,9 +66,8 @@ def check_pause_logic(
 ) -> None:
     """Check if we need to pause based on request count (#71).
 
-    If config is provided, it can contain pause settings that override defaults:
-    pause_50_requests, pause_50_min, pause_50_max, pause_200_requests,
-    pause_200_min, pause_200_max.
+    If config is provided, it can contain keys that override the default
+    values for the pause-related arguments (e.g., `pause_50_requests`).
 
     Args:
         counter: RequestCounter instance to check
