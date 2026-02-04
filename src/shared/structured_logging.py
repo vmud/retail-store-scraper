@@ -301,8 +301,8 @@ class StructuredLogger:
         # Calculate phase duration if we tracked start time
         if phase in self._phase_start_times:
             duration_ms = (time.time() - self._phase_start_times[phase]) * 1000
-            if metadata is None:
-                metadata = {}
+            # Create a copy to avoid mutating caller's dict
+            metadata = {**metadata} if metadata else {}
             metadata['duration_ms'] = round(duration_ms, 2)
 
         event = self._create_event(
@@ -373,8 +373,8 @@ class StructuredLogger:
             phase: Current phase
             metadata: Optional checkpoint details
         """
-        if metadata is None:
-            metadata = {}
+        # Create a copy to avoid mutating caller's dict
+        metadata = {**metadata} if metadata else {}
         metadata['checkpoint_type'] = checkpoint_type
 
         event = self._create_event(
