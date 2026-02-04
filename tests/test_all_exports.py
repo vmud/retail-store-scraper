@@ -405,11 +405,12 @@ class TestModuleImportSafety:
 
         Args:
             module_name: Fully qualified module name
-        """
-        # Remove module from sys.modules if already imported
-        if module_name in sys.modules:
-            del sys.modules[module_name]
 
+        Note:
+            We don't remove modules from sys.modules before importing because
+            that would break class identity for other tests that rely on the
+            same module objects.
+        """
         # Import should not raise exceptions
         try:
             module = importlib.import_module(module_name)
