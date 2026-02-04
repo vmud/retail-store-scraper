@@ -66,6 +66,15 @@ from .session_factory import (
     create_session_factory,
 )
 
+from .structured_logging import (
+    LogEvent,
+    EventType,
+    Phase,
+    StructuredLogger,
+    MetricsAggregator,
+    create_logger,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -118,4 +127,11 @@ __all__ = [
     'DEFAULT_CACHE_EXPIRY_DAYS',
     # Session factory
     'create_session_factory',
+    # Structured logging and metrics
+    'LogEvent',
+    'EventType',
+    'Phase',
+    'StructuredLogger',
+    'MetricsAggregator',
+    'create_logger',
 ]
