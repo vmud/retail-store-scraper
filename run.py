@@ -50,7 +50,7 @@ VALID_STATE_ABBREVS = frozenset({
 })
 
 
-def validate_states(states_str: str) -> list:
+def validate_states(states_str: str) -> Optional[List[str]]:
     """Validate and parse comma-separated state abbreviations (#173).
 
     Args:
