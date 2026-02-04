@@ -159,31 +159,56 @@ class ChangeDetector:
         collision_count = 0
 
         for base_key, group_stores in base_key_groups.items():
-            if len(group_stores) == 1:
-                # No collision - use base key as-is
-                _, store = group_stores[0]
-                fingerprint = self.compute_fingerprint(store)
-                stores_by_key[base_key] = store
-                fingerprints_by_key[base_key] = fingerprint
-            else:
-                # Collision detected - all stores in group get deterministic suffixes
+            # Check if this is an address-based key (needs consistent collision format)
+            is_address_based = base_key.startswith('addr:')
+            has_collision = len(group_stores) > 1
+
+            if has_collision:
                 collision_count += len(group_stores) - 1
 
-                for idx, store in group_stores:
-                    # Use deterministic hash of ALL fields for stable disambiguation
+            # Track duplicate keys within this group for true duplicates
+            seen_keys = {}
+
+            for _, store in group_stores:
+                if is_address_based:
+                    if has_collision:
+                        # Collision: use full_hash for disambiguation
+                        full_hash = self._get_deterministic_store_hash(store)
+                        key = f"{base_key}::col:{full_hash}"
+                    else:
+                        # Single address-based store: use identity_hash for stable keys
+                        # This ensures keys remain stable when comparison fields change
+                        identity_hash = self.compute_identity_hash(store)
+                        key = f"{base_key}::col:{identity_hash}"
+
+                    # Handle true duplicates (identical stores) by adding counter suffix
+                    # Use counter instead of original index for order-independence (#148 bug 2)
+                    if key in stores_by_key:
+                        count = seen_keys.get(key, 0) + 1
+                        seen_keys[key] = count
+                        key = f"{key}::{count}"
+                        logging.debug(f"True duplicate detected, using counter suffix: '{key}'")
+                elif has_collision:
+                    # ID/URL-based stores with collision (edge case): use full_hash
                     full_hash = self._get_deterministic_store_hash(store)
                     key = f"{base_key}::col:{full_hash}"
 
-                    # Handle true duplicates (identical stores) by adding index suffix
                     if key in stores_by_key:
-                        key = f"{key}::{idx}"
-                        logging.debug(f"True duplicate detected, using index suffix: '{key}'")
+                        count = seen_keys.get(key, 0) + 1
+                        seen_keys[key] = count
+                        key = f"{key}::{count}"
+                        logging.debug(f"True duplicate detected, using counter suffix: '{key}'")
+                else:
+                    # Single ID/URL-based store - use base_key directly (already unique)
+                    key = base_key
 
-                    fingerprint = self.compute_fingerprint(store)
+                fingerprint = self.compute_fingerprint(store)
 
-                    stores_by_key[key] = store
-                    fingerprints_by_key[key] = fingerprint
-                    logging.debug(f"Key collision resolved with deterministic suffix: '{key}'")
+                stores_by_key[key] = store
+                fingerprints_by_key[key] = fingerprint
+
+            if has_collision:
+                logging.debug(f"Key collision resolved with deterministic suffixes for base_key: '{base_key}'")
 
         if collision_count > 0:
             logging.warning(
@@ -207,8 +232,8 @@ class ChangeDetector:
             Full SHA256 hash string (64 hex characters)
         """
         # Include ALL fields for maximum uniqueness
-        all_fields = sorted(store.keys())
-        data = {k: store.get(k, '') for k in all_fields}
+        # json.dumps with sort_keys=True handles key ordering
+        data = {k: store.get(k, '') for k in store}
         json_str = json.dumps(data, sort_keys=True, default=str)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
