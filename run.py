@@ -19,7 +19,7 @@ import logging
 import sys
 import os
 import json
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -321,7 +321,7 @@ def setup_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def get_retailers_to_run(args) -> List[str]:
+def get_retailers_to_run(args: argparse.Namespace) -> List[str]:
     """Determine which retailers to run based on arguments"""
     if args.retailer:
         return [args.retailer]
@@ -389,7 +389,7 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
 _scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS.EXECUTOR_MAX_WORKERS, thread_name_prefix='scraper')
 
 
-def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_module, **kwargs) -> dict:
+def _run_scraper_sync(retailer: str, retailer_config: Dict[str, Any], session: Any, scraper_module: Any, **kwargs: Any) -> Dict[str, Any]:
     """Synchronous wrapper that runs the scraper.
 
     This function is designed to be called via run_in_executor()
@@ -402,11 +402,11 @@ def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_mod
 async def run_retailer_async(
     retailer: str,
     cli_proxy_override: Optional[str] = None,
-    cli_proxy_settings: Optional[dict] = None,
+    cli_proxy_settings: Optional[Dict[str, Any]] = None,
     export_formats: Optional[List[ExportFormat]] = None,
-    cloud_manager=None,
-    **kwargs
-) -> dict:
+    cloud_manager: Optional[Any] = None,
+    **kwargs: Any
+) -> Dict[str, Any]:
     """Run a single retailer scraper asynchronously
 
     Uses ThreadPoolExecutor to run synchronous scrapers without
@@ -570,11 +570,11 @@ async def run_retailer_async(
 async def run_all_retailers(
     retailers: List[str],
     cli_proxy_override: Optional[str] = None,
-    cli_proxy_settings: Optional[dict] = None,
+    cli_proxy_settings: Optional[Dict[str, Any]] = None,
     export_formats: Optional[List[ExportFormat]] = None,
-    cloud_manager=None,
-    **kwargs
-) -> dict:
+    cloud_manager: Optional[Any] = None,
+    **kwargs: Any
+) -> Dict[str, Any]:
     """Run multiple retailers concurrently
 
     Args:
@@ -618,7 +618,7 @@ async def run_all_retailers(
     return summary
 
 
-def _get_yaml_proxy_mode(config: dict, retailer: Optional[str] = None) -> Optional[str]:
+def _get_yaml_proxy_mode(config: Dict[str, Any], retailer: Optional[str] = None) -> Optional[str]:
     """Resolve proxy mode from YAML config for a retailer or global."""
     if not config:
         return None
@@ -630,7 +630,7 @@ def _get_yaml_proxy_mode(config: dict, retailer: Optional[str] = None) -> Option
     return global_mode
 
 
-def _get_target_retailers(args) -> List[str]:
+def _get_target_retailers(args: argparse.Namespace) -> List[str]:
     """Return retailers targeted by CLI args."""
     retailer = getattr(args, 'retailer', None)
     if retailer:
@@ -641,7 +641,7 @@ def _get_target_retailers(args) -> List[str]:
     return []
 
 
-def validate_cli_options(args, config: dict = None) -> List[str]:
+def validate_cli_options(args: argparse.Namespace, config: Optional[Dict[str, Any]] = None) -> List[str]:
     """Validate CLI options for conflicts (#106).
 
     Args:
@@ -689,7 +689,7 @@ def validate_cli_options(args, config: dict = None) -> List[str]:
     return errors
 
 
-def main():
+def main() -> int:
     """Main entry point"""
     parser = setup_parser()
     args = parser.parse_args()
