@@ -59,7 +59,7 @@ def get_retailer_status(retailer: str) -> Dict[str, Any]:
     """Get status for a single retailer.
 
     Args:
-        retailer: Retailer name (verizon, att, target, tmobile, walmart, bestbuy)
+        retailer: Retailer name (e.g., 'verizon', 'att', 'target'). See `config/retailers.yaml` for a full list.
 
     Returns:
         Status dictionary with phases, progress, and metadata.
