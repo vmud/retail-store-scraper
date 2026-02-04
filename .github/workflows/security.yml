@@ -28,25 +28,28 @@ jobs:
       - name: Install Bandit
         run: pip install bandit[toml]
 
-      - name: Run Bandit
+      - name: Run Bandit on src/
         run: |
-          bandit -r src/ run.py \
-            -ll \
-            -f json \
-            -o bandit-report.json \
-            --exit-zero
+          bandit -r src/ -ll -f json -o bandit-report-src.json --exit-zero
 
-      - name: Upload Bandit Report
+      - name: Run Bandit on run.py
+        run: |
+          bandit run.py -ll -f json -o bandit-report-run.json --exit-zero
+
+      - name: Upload Bandit Reports
         uses: actions/upload-artifact@v4
         with:
           name: bandit-report
-          path: bandit-report.json
+          path: |
+            bandit-report-src.json
+            bandit-report-run.json
 
       - name: Check for high severity issues
         run: |
           # Skip B324 (hashlib/md5) - we use MD5 for non-security purposes (caching, ID generation)
-          bandit -r src/ run.py --severity-level high --skip B324
-
+          bandit -r src/ --severity-level high --skip B324
+          bandit run.py --severity-level high --skip B324
+          
   dependency-check:
     name: Dependency Vulnerability Check
     runs-on: ubuntu-latest

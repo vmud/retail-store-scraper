@@ -352,3 +352,55 @@ For configuration/setup tasks (MCP, credentials, integrations), always verify th
 ## Code Review
 
 When doing code reviews, create a structured review checklist and document findings in a markdown file before discussing with user.
+
+## Code Style
+
+### Docstrings (Google Style)
+
+All functions and methods should use Google-style docstrings:
+
+```python
+def function_name(arg1: str, arg2: int = 10) -> bool:
+    """Short one-line description.
+
+    Args:
+        arg1: Description of the first argument
+        arg2: Description with default value noted
+
+    Returns:
+        Description of return value.
+
+    Raises:
+        ValueError: When input validation fails
+    """
+```
+
+**Verification:**
+```bash
+# Check docstring compliance
+pydocstyle --convention=google --add-ignore=D100,D104 src/shared/
+
+# Common ignores:
+# D100 - Missing module docstring
+# D104 - Missing package docstring
+```
+
+**Google style sections:**
+- `Args:` - Function parameters
+- `Returns:` - Return value description
+- `Raises:` - Exceptions that may be raised
+- `Yields:` - For generator functions
+- `Examples:` - Usage examples (optional)
+- `Note:` - Important notes (optional)
+
+## 1Password / Credentials
+
+When working with 1Password CLI or service account tokens, remember that environment variables may not inherit properly in subprocesses, GUI apps, or LaunchAgents. Check `OP_SERVICE_ACCOUNT_TOKEN` availability in the execution context first.
+
+## Debugging Tips
+
+For MCP server configuration issues, check both the server's environment variable access AND how the parent process (Claude, terminal, LaunchAgent) passes those variables.
+
+## Development Workflow
+
+When implementing large features from a design plan, create all modules systematically with tests before moving to integration. Use the TUI scraping researcher project as a reference pattern.

@@ -8,86 +8,28 @@ the vulnerable stdlib xml.etree.ElementTree.
 import importlib
 import inspect
 import pytest
+from defusedxml.common import DTDForbidden, EntitiesForbidden, ExternalReferenceForbidden
 
 
-def test_att_scraper_uses_defusedxml():
-    """Verify att.py imports defusedxml.ElementTree, not xml.etree.ElementTree."""
-    from src.scrapers import att
+SCRAPER_MODULES = ["att", "tmobile", "walmart", "bell", "samsclub"]
+
+
+@pytest.mark.parametrize("scraper_name", SCRAPER_MODULES)
+def test_scraper_uses_defusedxml(scraper_name: str):
+    """Verify scraper imports defusedxml.ElementTree, not xml.etree.ElementTree."""
+    # Dynamically import the scraper module
+    scraper_module = importlib.import_module(f"src.scrapers.{scraper_name}")
 
     # Check the source code for the import
-    source = inspect.getsource(att)
+    source = inspect.getsource(scraper_module)
 
     # Should NOT have unsafe import
     assert "import xml.etree.ElementTree" not in source, \
-        "att.py still uses unsafe xml.etree.ElementTree"
+        f"{scraper_name}.py still uses unsafe xml.etree.ElementTree"
 
     # Should have safe import
     assert "import defusedxml.ElementTree" in source, \
-        "att.py does not import defusedxml.ElementTree"
-
-
-def test_tmobile_scraper_uses_defusedxml():
-    """Verify tmobile.py imports defusedxml.ElementTree, not xml.etree.ElementTree."""
-    from src.scrapers import tmobile
-
-    # Check the source code for the import
-    source = inspect.getsource(tmobile)
-
-    # Should NOT have unsafe import
-    assert "import xml.etree.ElementTree" not in source, \
-        "tmobile.py still uses unsafe xml.etree.ElementTree"
-
-    # Should have safe import
-    assert "import defusedxml.ElementTree" in source, \
-        "tmobile.py does not import defusedxml.ElementTree"
-
-
-def test_walmart_scraper_uses_defusedxml():
-    """Verify walmart.py imports defusedxml.ElementTree, not xml.etree.ElementTree."""
-    from src.scrapers import walmart
-
-    # Check the source code for the import
-    source = inspect.getsource(walmart)
-
-    # Should NOT have unsafe import
-    assert "import xml.etree.ElementTree" not in source, \
-        "walmart.py still uses unsafe xml.etree.ElementTree"
-
-    # Should have safe import
-    assert "import defusedxml.ElementTree" in source, \
-        "walmart.py does not import defusedxml.ElementTree"
-
-
-def test_bell_scraper_uses_defusedxml():
-    """Verify bell.py imports defusedxml.ElementTree, not xml.etree.ElementTree."""
-    from src.scrapers import bell
-
-    # Check the source code for the import
-    source = inspect.getsource(bell)
-
-    # Should NOT have unsafe import
-    assert "import xml.etree.ElementTree" not in source, \
-        "bell.py still uses unsafe xml.etree.ElementTree"
-
-    # Should have safe import
-    assert "import defusedxml.ElementTree" in source, \
-        "bell.py does not import defusedxml.ElementTree"
-
-
-def test_samsclub_scraper_uses_defusedxml():
-    """Verify samsclub.py imports defusedxml.ElementTree, not xml.etree.ElementTree."""
-    from src.scrapers import samsclub
-
-    # Check the source code for the import
-    source = inspect.getsource(samsclub)
-
-    # Should NOT have unsafe import
-    assert "import xml.etree.ElementTree" not in source, \
-        "samsclub.py still uses unsafe xml.etree.ElementTree"
-
-    # Should have safe import
-    assert "import defusedxml.ElementTree" in source, \
-        "samsclub.py does not import defusedxml.ElementTree"
+        f"{scraper_name}.py does not import defusedxml.ElementTree"
 
 
 def test_defusedxml_blocks_billion_laughs():
@@ -110,7 +52,7 @@ def test_defusedxml_blocks_billion_laughs():
 <lolz>&lol4;</lolz>"""
 
     # defusedxml should block this
-    with pytest.raises(ET.ParseError):
+    with pytest.raises((DTDForbidden, EntitiesForbidden)):
         ET.fromstring(malicious_xml)
 
 
@@ -129,15 +71,9 @@ def test_defusedxml_blocks_xxe_file_read():
 ]>
 <root>&xxe;</root>"""
 
-    # Parse should either raise or return empty entity
-    try:
-        root = ET.fromstring(malicious_xml)
-        # If it doesn't raise, verify the entity wasn't expanded
-        text = root.text or ""
-        assert "root:" not in text.lower(), "XXE file read was not blocked!"
-    except (ET.ParseError, Exception):
-        # Expected - parser blocked the attack
-        pass
+    # defusedxml should block this
+    with pytest.raises((EntitiesForbidden, ExternalReferenceForbidden)):
+        ET.fromstring(malicious_xml)
 
 
 def test_defusedxml_blocks_xxe_ssrf():
@@ -155,15 +91,9 @@ def test_defusedxml_blocks_xxe_ssrf():
 ]>
 <root>&xxe;</root>"""
 
-    # Parse should either raise or return empty entity
-    try:
-        root = ET.fromstring(malicious_xml)
-        # If it doesn't raise, verify the entity wasn't expanded
-        text = root.text or ""
-        assert len(text) == 0 or text.isspace(), "XXE SSRF was not blocked!"
-    except (ET.ParseError, Exception):
-        # Expected - parser blocked the attack
-        pass
+    # defusedxml should block this
+    with pytest.raises((EntitiesForbidden, ExternalReferenceForbidden)):
+        ET.fromstring(malicious_xml)
 
 
 def test_defusedxml_allows_valid_sitemap():
