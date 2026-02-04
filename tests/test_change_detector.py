@@ -928,7 +928,7 @@ class TestCollisionStability:
             f"Order [B, A]: {key_b_2}"
         )
 
-    def test_deterministic_store_hash_is_stable(self, temp_data_dir):
+    def test_identity_hash_is_stable(self, temp_data_dir):
         """Same store should always produce same identity hash.
 
         This tests the foundation of collision stability: deterministic hashing.
