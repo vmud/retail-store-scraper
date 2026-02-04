@@ -110,7 +110,7 @@ def test_defusedxml_blocks_billion_laughs():
 <lolz>&lol4;</lolz>"""
 
     # defusedxml should block this
-    with pytest.raises((ET.ParseError, Exception)):
+    with pytest.raises(ET.ParseError):
         ET.fromstring(malicious_xml)
 
 
