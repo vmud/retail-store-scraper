@@ -422,7 +422,7 @@ def get_all_store_ids(
                     store_id = store_id_match.group(1)
                 else:
                     # Generate a stable hash-based ID from URL for tracking
-                    store_id = hashlib.md5(url.encode()).hexdigest()[:6]
+                    store_id = hashlib.sha256(url.encode()).hexdigest()[:6]
 
             stores.append({
                 "store_id": store_id,
@@ -529,7 +529,7 @@ def extract_store_details(
             store_id = store_id_match.group(1)
         else:
             # Try to extract from JSON-LD or use stable hash
-            store_id = data.get('locationId') or data.get('branchCode') or hashlib.md5(url.encode()).hexdigest()[:6]
+            store_id = data.get('locationId') or data.get('branchCode') or hashlib.sha256(url.encode()).hexdigest()[:6]
 
         # Extract address components
         address = data.get('address', {})

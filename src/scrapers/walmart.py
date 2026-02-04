@@ -48,7 +48,7 @@ def _get_cached_response(url: str, retailer: str) -> Optional[str]:
         Cached HTML response if valid, None otherwise
     """
     cache_dir = _get_response_cache_dir(retailer)
-    url_hash = hashlib.md5(url.encode()).hexdigest()
+    url_hash = hashlib.sha256(url.encode()).hexdigest()
     cache_file = cache_dir / f"{url_hash}.json"
 
     if not cache_file.exists():
@@ -87,7 +87,7 @@ def _cache_response(url: str, html: str, retailer: str) -> None:
     cache_dir = _get_response_cache_dir(retailer)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    url_hash = hashlib.md5(url.encode()).hexdigest()
+    url_hash = hashlib.sha256(url.encode()).hexdigest()
     cache_file = cache_dir / f"{url_hash}.json"
 
     try:

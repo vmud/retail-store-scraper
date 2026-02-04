@@ -4,11 +4,13 @@ Cricket uses a Yext-powered store locator with a publicly accessible API.
 The scraper uses geographic grid-based discovery to find all stores.
 """
 
+import os
 import random
 
 # Yext API configuration
 YEXT_API_URL = "https://prod-cdn.us.yextapis.com/v2/accounts/me/search/query"
-API_KEY = "7f7c4d30a6fc41f51d425ed2ed177b02"
+# API key from environment variable with fallback for backward compatibility (#165)
+API_KEY = os.getenv("CRICKET_API_KEY", "7f7c4d30a6fc41f51d425ed2ed177b02")
 EXPERIENCE_KEY = "cricket-locator"
 API_VERSION = "20220511"
 LOCALE = "en"
