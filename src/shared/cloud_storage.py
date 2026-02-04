@@ -20,8 +20,8 @@ from typing import Dict, List, Optional, Any, Tuple
 __all__ = [
     'CloudStorageManager',
     'CloudStorageProvider',
-    'GCSProvider',
     'GCS_AVAILABLE',
+    'GCSProvider',
     'get_cloud_storage',
 ]
 
