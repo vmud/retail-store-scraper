@@ -24,6 +24,13 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 
+__all__ = [
+    "REQUESTS_AVAILABLE",
+    "NotificationProvider", "SlackNotifier", "ConsoleNotifier",
+    "NotificationManager", "get_notifier"
+]
+
+
 class NotificationProvider(ABC):
     """Abstract base class for notification providers."""
 

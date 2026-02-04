@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 
+__all__ = ["DEFAULT_CACHE_EXPIRY_DAYS", "URLCache", "RichURLCache"]
+
+
 # Default cache expiry: 7 days (stores don't change location frequently)
 DEFAULT_CACHE_EXPIRY_DAYS = 7
 

@@ -7,6 +7,12 @@ from datetime import datetime
 from .utils import save_checkpoint, load_checkpoint
 
 
+__all__ = [
+    "RunTracker", "get_run_history", "get_latest_run",
+    "get_active_run", "cleanup_old_runs"
+]
+
+
 class RunTracker:
     """Track metadata for scraping runs"""
     

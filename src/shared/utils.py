@@ -19,6 +19,29 @@ import requests
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode, ProxyResponse, redact_credentials
 
 
+__all__ = [
+    # Configuration constants
+    "DEFAULT_MIN_DELAY", "DEFAULT_MAX_DELAY", "DEFAULT_MAX_RETRIES",
+    "DEFAULT_TIMEOUT", "DEFAULT_RATE_LIMIT_BASE_WAIT", "DEFAULT_USER_AGENTS",
+    "REQUIRED_STORE_FIELDS", "RECOMMENDED_STORE_FIELDS",
+    # Logging
+    "setup_logging",
+    # HTTP utilities
+    "get_headers", "random_delay", "select_delays", "get_with_retry",
+    # Checkpoint utilities
+    "save_checkpoint", "load_checkpoint",
+    # Export utilities
+    "save_to_csv", "save_to_json",
+    # Validation
+    "ValidationResult", "validate_store_data", "validate_stores_batch",
+    # Proxy configuration
+    "get_retailer_proxy_config", "load_retailer_config",
+    # Proxy client utilities
+    "get_proxy_client", "get_with_proxy", "init_proxy_from_yaml",
+    "create_proxied_session", "close_proxy_client", "close_all_proxy_clients", "ProxiedSession",
+]
+
+
 # Default configuration values (can be overridden per-retailer)
 DEFAULT_MIN_DELAY = 2.0
 DEFAULT_MAX_DELAY = 5.0

@@ -6,6 +6,9 @@ import threading
 import time
 
 
+__all__ = ["RequestCounter", "check_pause_logic"]
+
+
 class RequestCounter:
     """Thread-safe request counter for tracking requests across scrapers.
 
