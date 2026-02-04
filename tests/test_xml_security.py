@@ -5,7 +5,6 @@ Tests verify that all XML-parsing scrapers use defusedxml instead of
 the vulnerable stdlib xml.etree.ElementTree.
 """
 
-import importlib
 import inspect
 import pytest
 
