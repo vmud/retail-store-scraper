@@ -13,7 +13,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from src.scrapers.walmart import run
-from src.shared.proxy_client import ProxyMode, ProxyConfig, ProxyClient
+from src.shared.proxy_client import ProxyMode
 
 
 @pytest.fixture
@@ -453,14 +453,10 @@ class TestWalmartProxyConsistency:
 
         # Should not see any calls like: ProxyConfig(mode='web_scraper_api', ...)
         # All config should come from from_dict()
-        if mock_proxy_config_class.call_count > 0:
-            # If ProxyConfig() constructor was called directly, that's the bug
-            direct_calls = [
-                call for call in mock_proxy_config_class.call_args_list
-                if call != mock_proxy_config_class.from_dict.call_args_list[0]
-            ]
-            assert len(direct_calls) == 0, \
-                "Should not create ProxyConfig directly, only via from_dict()"
+        # Direct constructor calls (e.g., ProxyConfig(...)) are tracked by call_count,
+        # while method calls (e.g., ProxyConfig.from_dict(...)) are tracked separately.
+        assert mock_proxy_config_class.call_count == 0, \
+            "Should not create ProxyConfig directly, only via from_dict()"
 
 
 class TestWalmartProxyWarnings:
