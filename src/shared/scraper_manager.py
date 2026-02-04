@@ -16,6 +16,13 @@ from datetime import datetime
 from .run_tracker import RunTracker, get_active_run
 from .status import load_retailers_config
 
+
+__all__ = [
+    'ScraperManager',
+    'get_scraper_manager',
+]
+
+
 logger = logging.getLogger(__name__)
 
 

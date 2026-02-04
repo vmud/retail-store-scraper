@@ -29,6 +29,16 @@ from typing import Optional, Dict, Any
 import requests
 
 
+__all__ = [
+    'ProxyClient',
+    'ProxyConfig',
+    'ProxyMode',
+    'ProxyResponse',
+    'create_proxy_client',
+    'redact_credentials',
+]
+
+
 def redact_credentials(text: str) -> str:
     """Redact credentials from text to prevent logging sensitive information.
 
