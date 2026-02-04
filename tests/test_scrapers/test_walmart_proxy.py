@@ -10,7 +10,7 @@ TDD Approach: These tests should FAIL before implementing the fix.
 
 import logging
 import pytest
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch
 
 from src.scrapers.walmart import run
 from src.shared.proxy_client import ProxyMode, ProxyConfig, ProxyClient
@@ -262,7 +262,7 @@ class TestWalmartRespectsWebScraperApiMode:
         call_args = mock_proxy_config_class.from_dict.call_args[0][0]
         # Should NOT override explicit False (even if it's a bad idea)
         # The default behavior only applies when render_js is not set
-        assert 'render_js' in call_args
+        assert call_args.get('render_js') is False
 
 
 class TestWalmartYamlProxySettings:
@@ -398,11 +398,10 @@ class TestWalmartProxyCredentialValidation:
 class TestWalmartProxyConsistency:
     """Test that Walmart proxy handling matches other scrapers."""
 
-    @patch('src.scrapers.target.run')
     @patch('src.scrapers.walmart.ProxyClient')
     @patch('src.scrapers.walmart.ProxyConfig')
     def test_proxy_initialization_pattern_matches_target(
-        self, mock_proxy_config_class, mock_proxy_client_class, mock_target_run,
+        self, mock_proxy_config_class, mock_proxy_client_class,
         mock_session, mock_url_cache, mock_sitemap
     ):
         """Walmart should use same proxy initialization pattern as Target."""
