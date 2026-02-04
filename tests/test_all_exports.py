@@ -158,7 +158,7 @@ class TestAllDeclarationExists:
 class TestAllExportsExist:
     """Test that all items declared in __all__ actually exist in the module."""
 
-    @pytest.mark.parametrize('module_name,expected_exports', SHARED_MODULES.items())
+    @pytest.mark.parametrize('module_name,_expected_exports', SHARED_MODULES.items())
     def test_all_exports_exist(self, module_name: str, _expected_exports: List[str]):
         """Every item in __all__ must be a real attribute.
 
@@ -175,7 +175,7 @@ class TestAllExportsExist:
             assert hasattr(module, name), \
                 f"{module_name}.__all__ contains '{name}' but it doesn't exist in the module"
 
-    @pytest.mark.parametrize('module_name,expected_exports', SHARED_MODULES.items())
+    @pytest.mark.parametrize('module_name,_expected_exports', SHARED_MODULES.items())
     def test_exports_are_importable(self, module_name: str, _expected_exports: List[str]):
         """Verify all exports can be imported successfully.
 
