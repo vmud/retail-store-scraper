@@ -17,7 +17,6 @@ __all__ = [
     'FIELD_ALIASES',
     'RECOMMENDED_STORE_FIELDS',
     'REQUIRED_STORE_FIELDS',
-    'CanonicalStoreSchema',
     'normalize_store_data',
     'normalize_stores_batch',
 ]

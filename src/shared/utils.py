@@ -464,8 +464,8 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
         if value is None or (isinstance(value, str) and not value.strip()):
             errors.append(f"Missing required field: {field}")
 
-    # Check recommended fields
-    for field in RECOMMENDED_STORE_FIELDS:
+    # Check recommended fields (exclude required fields to avoid duplicate messages)
+    for field in RECOMMENDED_STORE_FIELDS - REQUIRED_STORE_FIELDS:
         if store.get(field) is None:
             if strict:
                 errors.append(f"Missing recommended field: {field}")
@@ -486,7 +486,8 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
             errors.append(f"Invalid coordinate format: lat={lat}, lng={lng}")
 
     # Validate postal code format (US 5-digit or 9-digit)
-    postal_code = store.get('postal_code') or store.get('zip_code')
+    # Check canonical name 'zip' first, then aliases for pre-normalized data
+    postal_code = store.get('zip') or store.get('postal_code') or store.get('zip_code')
     if postal_code:
         postal_str = str(postal_code).strip()
         if postal_str and not (len(postal_str) == VALIDATION.ZIP_LENGTH_SHORT or len(postal_str) == VALIDATION.ZIP_LENGTH_LONG):
