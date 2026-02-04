@@ -161,9 +161,10 @@ class TestTargetRefactoring:
 
             # Should have called get_all_store_ids with a counter instance
             assert mock_get_ids.called
-            call_kwargs = mock_get_ids.call_args[1]
+            call_kwargs = mock_get_ids.call_args.kwargs
             # The counter should be passed as a parameter
-            assert 'request_counter' in call_kwargs or len(mock_get_ids.call_args[0]) > 0
+            assert 'request_counter' in call_kwargs
+            assert isinstance(call_kwargs['request_counter'], RequestCounter)
 
 
 class TestATTRefactoring:
@@ -347,7 +348,7 @@ class TestSamsClubRefactoring:
         assert result is None or isinstance(result, object)
 
     def test_run_creates_own_counter_instance(self):
-        """Test that run() creates its own RequestCounter instance."""
+        """Test that run() creates its own RequestCounter instance and passes it to helper functions."""
         from src.scrapers import samsclub
 
         mock_session = Mock()
@@ -357,10 +358,12 @@ class TestSamsClubRefactoring:
         }
 
         with patch('src.scrapers.samsclub.get_club_urls_from_sitemap') as mock_get_urls, \
+             patch('src.scrapers.samsclub.extract_club_details') as mock_extract, \
              patch('src.scrapers.samsclub.ProxyClient') as mock_proxy, \
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
-            mock_get_urls.return_value = []
+            mock_get_urls.return_value = ['https://www.samsclub.com/club/test-club/1234']
+            mock_extract.return_value = None  # Simulate no store data extracted
             mock_validate.return_value = {'valid': 0, 'total': 0, 'warning_count': 0}
 
             result = samsclub.run(mock_session, mock_config, retailer='samsclub')
@@ -368,6 +371,12 @@ class TestSamsClubRefactoring:
             # run() should complete without errors
             assert 'stores' in result
             assert 'count' in result
+
+            # Verify extract_club_details was called with request_counter parameter
+            assert mock_extract.called
+            call_kwargs = mock_extract.call_args.kwargs
+            assert 'request_counter' in call_kwargs
+            assert isinstance(call_kwargs['request_counter'], RequestCounter)
 
 
 class TestBackwardsCompatibility:

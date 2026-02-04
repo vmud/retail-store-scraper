@@ -31,6 +31,7 @@ pytest-cov==5.0.0  # 6.x requires Python 3.9+
 black==24.8.0      # Code formatter (24.3.0+ fixes ReDoS vulnerability)
 isort==5.13.2      # Import sorter
 mypy==1.8.0        # Type checker
+pydocstyle==6.3.0  # Docstring style checker (Google style)
 types-requests==2.31.0.20240125  # Type stubs for requests
 types-PyYAML==6.0.12.12          # Type stubs for PyYAML
 

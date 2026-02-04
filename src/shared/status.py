@@ -1,4 +1,4 @@
-"""Status calculation module for multi-retailer progress tracking"""
+"""Status calculation module for multi-retailer progress tracking."""
 
 import csv
 import json
@@ -12,7 +12,11 @@ CONFIG_PATH = "config/retailers.yaml"
 
 
 def load_retailers_config() -> Dict[str, Any]:
-    """Load retailers configuration from YAML"""
+    """Load retailers configuration from YAML.
+
+    Returns:
+        Dictionary of retailer configurations, empty dict if load fails.
+    """
     try:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
@@ -22,7 +26,7 @@ def load_retailers_config() -> Dict[str, Any]:
 
 
 def get_checkpoint_path(retailer: str, checkpoint_type: str) -> Path:
-    """Get checkpoint file path for a retailer (#68)
+    """Get checkpoint file path for a retailer (#68).
 
     Uses new naming convention (stores_latest.*) with fallback to legacy names
     for backwards compatibility with existing data.
@@ -32,7 +36,7 @@ def get_checkpoint_path(retailer: str, checkpoint_type: str) -> Path:
         checkpoint_type: Type of checkpoint (states, cities, store_urls, sitemap_urls, output_csv, output_json)
 
     Returns:
-        Path to checkpoint file
+        Path to checkpoint file.
     """
     base_path = Path(f"data/{retailer}")
 
@@ -52,13 +56,13 @@ def get_checkpoint_path(retailer: str, checkpoint_type: str) -> Path:
 
 
 def get_retailer_status(retailer: str) -> Dict[str, Any]:
-    """Get status for a single retailer
-    
+    """Get status for a single retailer.
+
     Args:
-        retailer: Retailer name (verizon, att, target, tmobile, walmart, bestbuy)
-    
+        retailer: Retailer name (e.g., 'verizon', 'att', 'target'). See `config/retailers.yaml` for a full list.
+
     Returns:
-        Status dictionary with phases, progress, and metadata
+        Status dictionary with phases, progress, and metadata.
     """
     config = load_retailers_config()
     retailer_config = config.get(retailer, {})
@@ -105,13 +109,19 @@ def get_retailer_status(retailer: str) -> Dict[str, Any]:
 
 
 def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
-    """Get status for HTML crawl method (Verizon 4-phase)
-    
+    """Get status for HTML crawl method (Verizon 4-phase).
+
     Phases:
     1. States - Discover all states
     2. Cities - Discover cities per state
     3. Store URLs - Discover store URLs per city
     4. Extract - Extract store details
+
+    Args:
+        retailer: Retailer name (e.g., 'verizon')
+
+    Returns:
+        Dictionary with status of all four phases.
     """
     phases = {
         "phase1_states": {"name": "States", "total": 0, "completed": 0, "status": "pending", "last_updated": None},
@@ -202,11 +212,17 @@ def _get_html_crawl_status(retailer: str) -> Dict[str, Any]:
 
 
 def _get_sitemap_status(retailer: str) -> Dict[str, Any]:
-    """Get status for sitemap-based method (AT&T, Target, T-Mobile, Walmart, Best Buy)
-    
+    """Get status for sitemap-based method (AT&T, Target, T-Mobile, Walmart, Best Buy).
+
     Phases:
     1. Sitemap URLs - Discover all store URLs from sitemap(s)
     2. Extract - Extract store details from each URL
+
+    Args:
+        retailer: Retailer name (e.g., 'target', 'walmart')
+
+    Returns:
+        Dictionary with status of both phases.
     """
     phases = {
         "phase1_sitemap": {"name": "Sitemap Discovery", "total": 0, "completed": 0, "status": "pending", "last_updated": None},
@@ -262,7 +278,14 @@ def _get_sitemap_status(retailer: str) -> Dict[str, Any]:
 
 
 def _calculate_overall_progress(phases: Dict[str, Any]) -> float:
-    """Calculate overall progress percentage from phases"""
+    """Calculate overall progress percentage from phases.
+
+    Args:
+        phases: Dictionary of phase statuses with total/completed counts
+
+    Returns:
+        Overall progress percentage (0.0 to 100.0).
+    """
     total_weight = 0
     weighted_sum = 0
     
@@ -278,7 +301,15 @@ def _calculate_overall_progress(phases: Dict[str, Any]) -> float:
 
 
 def _check_scraper_active(retailer: str, phases: Dict[str, Any]) -> bool:
-    """Check if scraper is currently active (any checkpoint updated in last 5 minutes)"""
+    """Check if scraper is currently active (any checkpoint updated in last 5 minutes).
+
+    Args:
+        retailer: Retailer name
+        phases: Dictionary of phase statuses with last_updated timestamps
+
+    Returns:
+        True if scraper is active, False otherwise.
+    """
     current_time = time.time()
     active_threshold = 300  # 5 minutes
     
@@ -297,7 +328,15 @@ def _check_scraper_active(retailer: str, phases: Dict[str, Any]) -> bool:
 
 
 def _get_last_updated(retailer: str, phases: Dict[str, Any]) -> Optional[str]:
-    """Get most recent update timestamp across all phases"""
+    """Get most recent update timestamp across all phases.
+
+    Args:
+        retailer: Retailer name
+        phases: Dictionary of phase statuses with last_updated timestamps
+
+    Returns:
+        ISO format timestamp of most recent update, None if no updates found.
+    """
     latest = None
     latest_ts = 0
     
@@ -317,10 +356,10 @@ def _get_last_updated(retailer: str, phases: Dict[str, Any]) -> Optional[str]:
 
 
 def get_all_retailers_status() -> Dict[str, Any]:
-    """Get status for all retailers
-    
+    """Get status for all retailers.
+
     Returns:
-        Dictionary with global stats and per-retailer status
+        Dictionary with global stats and per-retailer status.
     """
     config = load_retailers_config()
     retailers = list(config.keys())
@@ -374,5 +413,9 @@ def get_all_retailers_status() -> Dict[str, Any]:
 
 
 def get_progress_status() -> Dict[str, Any]:
-    """Legacy function - get Verizon-only status for backward compatibility"""
+    """Legacy function - get Verizon-only status for backward compatibility.
+
+    Returns:
+        Status dictionary for Verizon retailer.
+    """
     return get_retailer_status("verizon")

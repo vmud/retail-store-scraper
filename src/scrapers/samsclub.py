@@ -411,6 +411,7 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
         # Create fresh RequestCounter instance for this run
         request_counter = RequestCounter()
+        reset_request_counter()  # Reset global counter for backwards compatibility
 
         # Log proxy mode
         proxy_mode = yaml_config.get('proxy', {}).get('mode', 'direct')

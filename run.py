@@ -40,6 +40,46 @@ from src.scrapers import get_available_retailers, get_enabled_retailers, get_scr
 from src.change_detector import ChangeDetector
 
 
+# Valid US state abbreviations (50 states + DC) for CLI validation (#173)
+VALID_STATE_ABBREVS = frozenset({
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL',
+    'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME',
+    'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH',
+    'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI',
+    'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
+})
+
+
+def validate_states(states_str: str) -> Optional[List[str]]:
+    """Validate and parse comma-separated state abbreviations (#173).
+
+    Args:
+        states_str: Comma-separated state abbreviations (e.g., "MD,PA,RI")
+
+    Returns:
+        List of uppercase state abbreviations, or None if empty
+
+    Raises:
+        argparse.ArgumentTypeError: If any state abbreviation is invalid
+    """
+    if not states_str:
+        return None
+
+    states = [s.strip().upper() for s in states_str.split(',') if s.strip()]
+
+    if not states:
+        return None
+
+    invalid = [s for s in states if s not in VALID_STATE_ABBREVS]
+    if invalid:
+        raise argparse.ArgumentTypeError(
+            f"Invalid state abbreviation(s): {', '.join(invalid)}. "
+            f"Use standard 2-letter US state codes (e.g., MD, PA, RI, DC)."
+        )
+
+    return states
+
+
 def validate_config_on_startup(config_path: str = "config/retailers.yaml") -> List[str]:
     """Validate configuration file on startup (#67).
 
@@ -175,8 +215,9 @@ def setup_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--states',
-        type=str,
+        type=validate_states,
         default=None,
+        metavar='STATES',
         help='Comma-separated list of state abbreviations to scrape (Verizon only). '
              'Example: --states MD,PA,RI. Runs targeted discovery for specified states '
              'and merges results with existing data.'
@@ -812,8 +853,8 @@ def main():
     try:
         # Get refresh_urls flag (convert hyphen to underscore for attribute access)
         refresh_urls = getattr(args, 'refresh_urls', False)
-        # Parse states list if provided
-        target_states = [s.strip().upper() for s in args.states.split(',') if s.strip()] if args.states else None
+        # States are already validated and parsed by validate_states() (#173)
+        target_states = args.states
 
         if len(retailers) == 1:
             # Single retailer - run directly
