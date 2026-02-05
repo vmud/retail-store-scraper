@@ -20,18 +20,6 @@ from src.shared.constants import EXPORT
 from src.shared.store_schema import normalize_stores_batch
 
 
-__all__ = [
-    'CSV_INJECTION_CHARS',
-    'ExportFormat',
-    'ExportService',
-    'OPENPYXL_AVAILABLE',
-    'parse_format_list',
-    'sanitize_csv_value',
-    'sanitize_store_for_csv',
-]
-
-
-
 try:
     from openpyxl import Workbook  # pylint: disable=import-error
     from openpyxl.styles import Font, Alignment  # pylint: disable=import-error
@@ -39,6 +27,17 @@ try:
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
+
+
+__all__ = [
+    "CSV_INJECTION_CHARS",
+    "ExportFormat",
+    "ExportService",
+    "OPENPYXL_AVAILABLE",
+    "parse_format_list",
+    "sanitize_csv_value",
+    "sanitize_store_for_csv",
+]
 
 
 class ExportFormat(Enum):
