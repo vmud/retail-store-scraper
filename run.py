@@ -34,6 +34,13 @@ from src.shared.utils import (
     close_all_proxy_clients
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
+from src.shared.sentry_integration import (
+    init_sentry,
+    capture_scraper_error,
+    set_retailer_context,
+    add_breadcrumb,
+    flush as sentry_flush,
+)
 from src.shared.constants import WORKERS
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
 from src.shared.cloud_storage import get_cloud_storage
@@ -970,6 +977,11 @@ def main():
     setup_logging(args.log_file)
     logging.getLogger().setLevel(log_level)
 
+    # Initialize Sentry for error monitoring (if configured)
+    sentry_enabled = init_sentry()
+    if sentry_enabled:
+        logging.debug("Sentry error monitoring enabled")
+
     # Handle status command
     if args.status:
         retailers = [args.retailer] if args.retailer else None
@@ -1022,6 +1034,8 @@ def main():
         close_all_proxy_clients()
         # Shutdown thread pool executor
         _scraper_executor.shutdown(wait=False)
+        # Flush pending Sentry events before exit
+        sentry_flush(timeout=2.0)
 
 
 if __name__ == '__main__':
