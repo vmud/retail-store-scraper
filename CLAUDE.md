@@ -237,6 +237,29 @@ Proxy modes in `config/retailers.yaml`:
 - `residential` - rotating residential IPs (0.2-0.5s delays, 9.6x faster)
 - `web_scraper_api` - managed service with JS rendering
 
+### 1Password for GitHub Actions
+
+GitHub Actions can securely access secrets from 1Password using a service account.
+
+**Setup:**
+1. Create 1Password Service Account with vault access
+2. Store token as GitHub Secret: `OP_SERVICE_ACCOUNT_TOKEN`  <!-- pragma: allowlist secret -->
+3. Use `1password/load-secrets-action@v2` in workflows
+
+**Usage in workflows:**
+```yaml
+- name: Load secrets from 1Password
+  uses: 1password/load-secrets-action@v2
+  with:
+    export-env: true
+  env:
+    OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+    OXYLABS_RESIDENTIAL_USERNAME: op://DEV/OXYLABS_RESIDENTIAL/username
+    OXYLABS_RESIDENTIAL_PASSWORD: op://DEV/OXYLABS_RESIDENTIAL/credential
+```
+
+See [docs/1password-github-actions.md](docs/1password-github-actions.md) for full documentation.
+
 ### Cloud Storage (GCS)
 
 Sync scraped data to Google Cloud Storage for backup and team access.
