@@ -23,6 +23,9 @@ from src.scrapers.verizon import (
     clear_discovery_checkpoint,
     _get_discovery_checkpoint_path,
     _DISCOVERY_CHECKPOINT_FILENAME,
+    _initialize_scraper_context,
+    _handle_targeted_states,
+    _load_resume_checkpoint,
 )
 from src.shared.request_counter import check_pause_logic
 from src.shared.session_factory import create_session_factory
@@ -979,3 +982,160 @@ class TestParallelDiscovery:
         assert result1 is session1
         assert result2 is session2
         assert mock_create_session.call_count == 2
+
+
+class TestHelperFunctions:
+    """Tests for refactored helper functions from Issue #174."""
+
+    def test_initialize_scraper_context_default_values(self):
+        """Test _initialize_scraper_context with default values."""
+        config = {
+            'proxy': {'mode': 'direct'},
+            'min_delay': 2.0,
+            'max_delay': 5.0
+        }
+
+        context = _initialize_scraper_context(config, retailer='verizon')
+
+        assert context['retailer_name'] == 'verizon'
+        assert context['limit'] is None
+        assert context['resume'] is False
+        assert context['refresh_urls'] is False
+        assert context['target_states'] is None
+        assert context['proxy_mode'] == 'direct'
+        assert 'checkpoint_path' in context
+        assert 'checkpoint_interval' in context
+
+    def test_initialize_scraper_context_with_kwargs(self):
+        """Test _initialize_scraper_context with custom kwargs."""
+        config = {
+            'proxy': {'mode': 'residential'},
+            'parallel_workers': 5,
+            'discovery_workers': 10
+        }
+
+        context = _initialize_scraper_context(
+            config,
+            retailer='verizon',
+            limit=100,
+            resume=True,
+            refresh_urls=True,
+            target_states=['MD', 'PA']
+        )
+
+        assert context['retailer_name'] == 'verizon'
+        assert context['limit'] == 100
+        assert context['resume'] is True
+        assert context['refresh_urls'] is True
+        assert context['target_states'] == ['MD', 'PA']
+        assert context['proxy_mode'] == 'residential'
+        assert context['parallel_workers'] == 5
+        assert context['discovery_workers'] == 10
+
+    def test_handle_targeted_states_no_states(self):
+        """Test _handle_targeted_states with no target states."""
+        context = {
+            'target_states': None,
+            'retailer_name': 'verizon'
+        }
+
+        existing_stores, existing_urls = _handle_targeted_states(context)
+
+        assert existing_stores == []
+        assert existing_urls == set()
+
+    @patch('src.scrapers.verizon.Path')
+    def test_handle_targeted_states_with_existing_data(self, mock_path_class):
+        """Test _handle_targeted_states loads existing stores."""
+        import json as json_module
+        from unittest.mock import mock_open
+
+        context = {
+            'target_states': ['MD'],
+            'retailer_name': 'verizon'
+        }
+
+        mock_file_data = json_module.dumps([
+            {'store_id': '1', 'name': 'Store 1', 'url': 'https://example.com/store-1'},
+            {'store_id': '2', 'name': 'Store 2', 'url': 'https://example.com/store-2'}
+        ])
+
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_path_class.return_value = mock_path
+
+        with patch('builtins.open', mock_open(read_data=mock_file_data)):
+            existing_stores, existing_urls = _handle_targeted_states(context)
+
+        assert len(existing_stores) == 2
+        assert 'https://example.com/store-1' in existing_urls
+        assert 'https://example.com/store-2' in existing_urls
+        assert '_target_slugs' in context
+        assert 'maryland' in context['_target_slugs']
+
+    def test_handle_targeted_states_invalid_abbreviation(self):
+        """Test _handle_targeted_states with invalid state abbreviation."""
+        context = {
+            'target_states': ['XX', 'YY'],
+            'retailer_name': 'verizon'
+        }
+
+        existing_stores, existing_urls = _handle_targeted_states(context)
+
+        assert existing_stores == []
+        assert existing_urls == set()
+        assert context.get('_target_states_error') is True
+
+    @patch('src.scrapers.verizon.utils.load_checkpoint')
+    def test_load_resume_checkpoint_no_resume(self, mock_load):
+        """Test _load_resume_checkpoint when resume is False."""
+        context = {
+            'resume': False,
+            'checkpoint_path': 'data/verizon/checkpoints/scrape_progress.json',
+            'retailer_name': 'verizon'
+        }
+
+        stores, completed_urls, checkpoints_used = _load_resume_checkpoint(context)
+
+        assert stores == []
+        assert completed_urls == set()
+        assert checkpoints_used is False
+        mock_load.assert_not_called()
+
+    @patch('src.scrapers.verizon.utils.load_checkpoint')
+    def test_load_resume_checkpoint_with_data(self, mock_load):
+        """Test _load_resume_checkpoint loads checkpoint data."""
+        context = {
+            'resume': True,
+            'checkpoint_path': 'data/verizon/checkpoints/scrape_progress.json',
+            'retailer_name': 'verizon'
+        }
+
+        mock_load.return_value = {
+            'stores': [{'store_id': '1', 'name': 'Store 1'}],
+            'completed_urls': ['https://example.com/store-1']
+        }
+
+        stores, completed_urls, checkpoints_used = _load_resume_checkpoint(context)
+
+        assert len(stores) == 1
+        assert 'https://example.com/store-1' in completed_urls
+        assert checkpoints_used is True
+        mock_load.assert_called_once()
+
+    @patch('src.scrapers.verizon.utils.load_checkpoint')
+    def test_load_resume_checkpoint_no_checkpoint_file(self, mock_load):
+        """Test _load_resume_checkpoint when no checkpoint exists."""
+        context = {
+            'resume': True,
+            'checkpoint_path': 'data/verizon/checkpoints/scrape_progress.json',
+            'retailer_name': 'verizon'
+        }
+
+        mock_load.return_value = None
+
+        stores, completed_urls, checkpoints_used = _load_resume_checkpoint(context)
+
+        assert stores == []
+        assert completed_urls == set()
+        assert checkpoints_used is False
