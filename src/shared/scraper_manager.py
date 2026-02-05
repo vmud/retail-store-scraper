@@ -106,7 +106,7 @@ class ScraperManager:
                         # No output typically means PID doesn't exist
                         return False
                     # Other error - fall back to trusting PID check
-                    logger.debug(
+                    logger.warning(
                         f"ps returned non-zero for PID {pid} but unclear if process "
                         f"missing or tool error - falling back to PID check"
                     )
@@ -137,7 +137,7 @@ class ScraperManager:
                 )
                 if result.returncode != 0:
                     # wmic failed - fall back to trusting PID check to be safe
-                    logger.debug(
+                    logger.warning(
                         f"wmic returned non-zero for PID {pid} - unclear if process "
                         f"missing or tool error - falling back to PID check"
                     )
@@ -160,7 +160,7 @@ class ScraperManager:
                 return True
 
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
-            logger.debug(f"Could not verify process {pid}: {e} - falling back to PID-only check")
+            logger.warning(f"Could not verify process {pid}: {e} - falling back to PID-only check")
             # Fall back to PID-only check - assume process is valid if PID exists
             # We can't determine either way, so trust the existing PID check
             return True
