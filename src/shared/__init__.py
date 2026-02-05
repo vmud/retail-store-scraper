@@ -73,6 +73,14 @@ from .concurrency import (
     ConcurrencyConfig,
 )
 
+from .structured_logging import (
+    LogEvent,
+    EventType,
+    Phase,
+    StructuredLogger,
+    MetricsAggregator,
+    create_logger,
+)
 from .sentry_integration import (
     init_sentry,
     capture_scraper_error,
@@ -140,6 +148,13 @@ __all__ = [
     # Concurrency management
     'GlobalConcurrencyManager',
     'ConcurrencyConfig',
+    # Structured logging and metrics
+    'LogEvent',
+    'EventType',
+    'Phase',
+    'StructuredLogger',
+    'MetricsAggregator',
+    'create_logger',
     # Sentry integration
     'init_sentry',
     'capture_scraper_error',

@@ -14,9 +14,9 @@ from src.shared.constants import CACHE
 
 
 __all__ = [
-    'DEFAULT_CACHE_EXPIRY_DAYS',
-    'RichURLCache',
-    'URLCache',
+    "DEFAULT_CACHE_EXPIRY_DAYS",
+    "RichURLCache",
+    "URLCache",
 ]
 
 
