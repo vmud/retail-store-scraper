@@ -20,21 +20,20 @@ from typing import Optional, Dict, Any
 from src.shared.constants import STATUS
 
 
-__all__ = [
-    'ConsoleNotifier',
-    'NotificationManager',
-    'NotificationProvider',
-    'SlackNotifier',
-    'get_notifier',
-]
-
-
-
 try:
     import requests
     REQUESTS_AVAILABLE = True
 except ImportError:
     REQUESTS_AVAILABLE = False
+
+
+__all__ = [
+    "ConsoleNotifier",
+    "NotificationManager",
+    "NotificationProvider",
+    "SlackNotifier",
+    "get_notifier",
+]
 
 
 class NotificationProvider(ABC):
