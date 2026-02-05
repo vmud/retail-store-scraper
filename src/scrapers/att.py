@@ -6,11 +6,9 @@ import re
 import defusedxml.ElementTree as ET
 from datetime import datetime
 from dataclasses import dataclass, asdict
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from bs4 import BeautifulSoup
 import requests
-
-from typing import Tuple
 from config import att_config
 from src.shared import utils
 from src.shared.request_counter import RequestCounter, check_pause_logic

@@ -8,6 +8,7 @@ Addresses Issue #150: Reduce code duplication and regression risk by providing
 a single source of truth for scraper execution patterns.
 """
 
+import json
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,7 +20,7 @@ from typing import Callable, Dict, Any, List, Optional, Tuple, Union
 from src.shared import utils
 from src.shared.cache import URLCache, RichURLCache
 from src.shared.constants import WORKERS
-from src.shared.request_counter import RequestCounter, check_pause_logic
+from src.shared.request_counter import RequestCounter
 from src.shared.session_factory import create_session_factory
 
 
@@ -347,26 +348,29 @@ class ScrapeRunner:
         for i, item in enumerate(items, 1):
             item_key = item_key_func(item)
 
-            store_obj = extraction_func(
-                self.session,
-                item,
-                self.retailer,
-                yaml_config=self.config,
-                request_counter=self.request_counter,
-                **extraction_kwargs
-            )
+            try:
+                store_obj = extraction_func(
+                    self.session,
+                    item,
+                    self.retailer,
+                    yaml_config=self.config,
+                    request_counter=self.request_counter,
+                    **extraction_kwargs
+                )
 
-            if store_obj:
-                # Handle both dataclass objects and dicts
-                if hasattr(store_obj, 'to_dict'):
-                    self.stores.append(store_obj.to_dict())
-                else:
-                    self.stores.append(store_obj)
-                self.completed_items.add(item_key)
+                if store_obj:
+                    # Handle both dataclass objects and dicts
+                    if hasattr(store_obj, 'to_dict'):
+                        self.stores.append(store_obj.to_dict())
+                    else:
+                        self.stores.append(store_obj)
+                    self.completed_items.add(item_key)
 
-                # Log successful extraction every 10 stores
-                if i % 10 == 0:
-                    logging.info(f"[{self.retailer}] Extracted {len(self.stores)} stores so far ({i}/{total_to_process})")
+                    # Log successful extraction every 10 stores
+                    if i % 10 == 0:
+                        logging.info(f"[{self.retailer}] Extracted {len(self.stores)} stores so far ({i}/{total_to_process})")
+            except Exception as e:
+                logging.warning(f"[{self.retailer}] Error extracting {item_key}: {e}")
 
             # Progress logging every 100 items
             if i % 100 == 0:
@@ -384,8 +388,6 @@ class ScrapeRunner:
         Args:
             failed_items: List of items that failed extraction
         """
-        import json
-
         failed_path = Path(f"data/{self.retailer}/failed_extractions.json")
         failed_path.parent.mkdir(parents=True, exist_ok=True)
 
