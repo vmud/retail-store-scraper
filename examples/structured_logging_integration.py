@@ -44,8 +44,8 @@ def scraper_with_structured_logging(
     logger = StructuredLogger(retailer=retailer)
     metrics = MetricsAggregator()
 
-    # Log scraper start
-    logger.log_phase_start(Phase.DISCOVERY.value)
+    # Log scraper start - using EXTRACTION phase since we're processing provided URLs
+    logger.log_phase_start(Phase.EXTRACTION.value)
 
     stores = []
     for i, url in enumerate(urls):

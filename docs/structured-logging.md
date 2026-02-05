@@ -361,8 +361,16 @@ Track error rate by parsing error events:
 
 ```bash
 # Count errors in last hour
+# macOS/BSD:
 grep '"event": "error"' scraper.log | \
   jq -r 'select(.timestamp > "'$(date -u -v-1H -Iseconds)'") | .'
+
+# GNU/Linux:
+grep '"event": "error"' scraper.log | \
+  jq -r 'select(.timestamp > "'$(date -u -d '1 hour ago' --iso-8601=seconds)'") | .'
+
+# Cross-platform (Python):
+python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace('+00:00', 'Z'))"
 ```
 
 ## Trace ID Correlation

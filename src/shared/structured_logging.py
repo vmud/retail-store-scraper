@@ -33,6 +33,7 @@ Usage:
 
 import json
 import logging
+import math
 import time
 import uuid
 from dataclasses import dataclass, asdict, field
@@ -299,10 +300,10 @@ class StructuredLogger:
             metadata: Optional phase results
         """
         # Calculate phase duration if we tracked start time
+        # Create a copy to avoid mutating the caller's dictionary
+        metadata = (metadata or {}).copy()
         if phase in self._phase_start_times:
             duration_ms = (time.time() - self._phase_start_times[phase]) * 1000
-            if metadata is None:
-                metadata = {}
             metadata['duration_ms'] = round(duration_ms, 2)
 
         event = self._create_event(
@@ -373,8 +374,8 @@ class StructuredLogger:
             phase: Current phase
             metadata: Optional checkpoint details
         """
-        if metadata is None:
-            metadata = {}
+        # Create a copy to avoid mutating the caller's dictionary
+        metadata = (metadata or {}).copy()
         metadata['checkpoint_type'] = checkpoint_type
 
         event = self._create_event(
@@ -473,7 +474,7 @@ class MetricsAggregator:
 
         # Sort latencies for percentile calculation
         sorted_latencies = sorted(self.latencies)
-        p95_index = int(len(sorted_latencies) * 0.95)
+        p95_index = math.ceil(len(sorted_latencies) * 0.95) - 1
 
         return {
             'total_requests': self.total_requests,

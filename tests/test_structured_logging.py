@@ -2,7 +2,6 @@
 
 import json
 import logging
-import time
 from datetime import datetime
 from unittest.mock import Mock, patch
 
@@ -270,15 +269,14 @@ class TestStructuredLogger:
         assert log_data['phase'] == 'extraction'
         assert log_data['store_count'] == 500
 
-    def test_log_phase_end_calculates_duration(self, caplog):
+    @patch('src.shared.structured_logging.time.time')
+    def test_log_phase_end_calculates_duration(self, mock_time, caplog):
         """log_phase_end should calculate phase duration if start was logged."""
         logger = StructuredLogger(retailer='target')
+        mock_time.side_effect = [1000.0, 1000.05]  # 50ms duration
 
         # Start phase
         logger.log_phase_start('discovery')
-
-        # Simulate some work
-        time.sleep(0.01)
 
         with caplog.at_level(logging.INFO):
             logger.log_phase_end('discovery')
@@ -289,7 +287,7 @@ class TestStructuredLogger:
 
         assert 'metadata' in log_data
         assert 'duration_ms' in log_data['metadata']
-        assert log_data['metadata']['duration_ms'] > 0
+        assert log_data['metadata']['duration_ms'] == 50.0
 
     def test_log_retry(self, caplog):
         """log_retry should log retry attempt."""
@@ -344,6 +342,39 @@ class TestStructuredLogger:
         assert log_data['event'] == 'checkpoint'
         assert log_data['metadata']['checkpoint_type'] == 'save'
         assert log_data['metadata']['stores_saved'] == 100
+
+    def test_log_checkpoint_does_not_mutate_metadata(self, caplog):
+        """log_checkpoint should not mutate the caller's metadata dict."""
+        logger = StructuredLogger(retailer='cricket')
+        original_metadata = {'stores_saved': 100}
+
+        with caplog.at_level(logging.INFO):
+            logger.log_checkpoint(
+                checkpoint_type='save',
+                phase='extraction',
+                metadata=original_metadata,
+            )
+
+        # Original dict should not have 'checkpoint_type' added
+        assert 'checkpoint_type' not in original_metadata
+        assert original_metadata == {'stores_saved': 100}
+
+    @patch('src.shared.structured_logging.time.time')
+    def test_log_phase_end_does_not_mutate_metadata(self, mock_time, caplog):
+        """log_phase_end should not mutate the caller's metadata dict."""
+        logger = StructuredLogger(retailer='target')
+        mock_time.side_effect = [1000.0, 1000.05]  # 50ms duration
+        original_metadata = {'custom_field': 'value'}
+
+        # Start phase
+        logger.log_phase_start('discovery')
+
+        with caplog.at_level(logging.INFO):
+            logger.log_phase_end('discovery', metadata=original_metadata)
+
+        # Original dict should not have 'duration_ms' added
+        assert 'duration_ms' not in original_metadata
+        assert original_metadata == {'custom_field': 'value'}
 
     def test_trace_id_consistency(self, caplog):
         """All logs from same logger should have same trace_id."""
@@ -464,8 +495,22 @@ class TestMetricsAggregator:
 
         summary = metrics.get_summary()
 
-        # 95th percentile of 1-100 should be around 95 (could be 95 or 96 depending on implementation)
-        assert 94.0 <= summary['p95_latency_ms'] <= 96.0
+        # 95th percentile of 1-100 should be 95 (math.ceil(100 * 0.95) - 1 = 94, value at index 94 is 95)
+        assert summary['p95_latency_ms'] == 95.0
+
+    def test_get_summary_p95_small_sample(self):
+        """get_summary should calculate accurate P95 for small sample sizes."""
+        metrics = MetricsAggregator()
+
+        # Add only 20 requests with latencies 1-20ms
+        for i in range(1, 21):
+            metrics.add_request(status=200, latency_ms=float(i))
+
+        summary = metrics.get_summary()
+
+        # With 20 samples: math.ceil(20 * 0.95) - 1 = 19 - 1 = 18
+        # Value at index 18 in sorted list [1,2,...,20] is 19 (not 20, which would be max)
+        assert summary['p95_latency_ms'] == 19.0
 
     def test_get_summary_retry_stats(self):
         """get_summary should calculate retry statistics."""
