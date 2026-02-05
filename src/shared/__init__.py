@@ -72,6 +72,16 @@ from .store_serializer import (
     normalize_store_dict,
 )
 
+from .sentry_integration import (
+    init_sentry,
+    capture_scraper_error,
+    capture_message,
+    set_retailer_context,
+    add_breadcrumb,
+    start_transaction,
+    flush as sentry_flush,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -128,4 +138,12 @@ __all__ = [
     'Store',
     'StoreSerializer',
     'normalize_store_dict',
+    # Sentry integration
+    'init_sentry',
+    'capture_scraper_error',
+    'capture_message',
+    'set_retailer_context',
+    'add_breadcrumb',
+    'start_transaction',
+    'sentry_flush',
 ]
