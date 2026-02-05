@@ -60,6 +60,17 @@ class RequestCounter:
         with self._lock:
             return self._count
 
+    def increment_and_get(self) -> int:
+        """Increment counter and return the new count atomically.
+
+        This method is preferred over separate increment() + count calls
+        to avoid TOCTOU race conditions in parallel execution.
+
+        Returns:
+            Updated request count after increment.
+        """
+        return self.increment()
+
 
 def check_pause_logic(
     counter: RequestCounter,
@@ -71,11 +82,15 @@ def check_pause_logic(
     pause_200_requests: int = PAUSE.LONG_THRESHOLD,
     pause_200_min: float = PAUSE.LONG_MIN_SECONDS,
     pause_200_max: float = PAUSE.LONG_MAX_SECONDS,
+    current_count: int = None,
 ) -> None:
     """Check if we need to pause based on request count (#71).
 
     If config is provided, it can contain keys that override the default
     values for the pause-related arguments (e.g., `pause_50_requests`).
+
+    To avoid TOCTOU race conditions in parallel execution, pass current_count
+    from the atomic increment operation.
 
     Args:
         counter: RequestCounter instance to check
@@ -87,6 +102,7 @@ def check_pause_logic(
         pause_200_requests: Longer pause after this many requests (default: 200)
         pause_200_min: Minimum pause duration in seconds for 200-request pause (default: 120)
         pause_200_max: Maximum pause duration in seconds for 200-request pause (default: 180)
+        current_count: Current count from atomic increment (optional, avoids race condition)
     """
     # Read from config if provided, otherwise use defaults
     if config:
@@ -101,7 +117,8 @@ def check_pause_logic(
     if pause_50_requests >= PAUSE.DISABLED_THRESHOLD and pause_200_requests >= PAUSE.DISABLED_THRESHOLD:
         return
 
-    count = counter.count
+    # Use provided count if available (avoids TOCTOU race), otherwise read from counter
+    count = current_count if current_count is not None else counter.count
     prefix = f"[{retailer}] " if retailer else ""
 
     if count % pause_200_requests == 0 and count > 0:

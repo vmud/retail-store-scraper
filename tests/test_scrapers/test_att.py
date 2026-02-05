@@ -263,7 +263,7 @@ let topDisplayType = "{display_type}";
         response.content = html.encode('utf-8')
         return response
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_cache_class, mock_session):
@@ -286,7 +286,7 @@ let topDisplayType = "{display_type}";
         assert isinstance(result['count'], int)
         assert isinstance(result['checkpoints_used'], bool)
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_with_limit(self, mock_counter, mock_get, mock_cache_class, mock_session):
@@ -305,7 +305,7 @@ let topDisplayType = "{display_type}";
         assert result['count'] == 2
         assert len(result['stores']) == 2
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_empty_sitemap(self, mock_counter, mock_get, mock_cache_class, mock_session):
@@ -324,7 +324,7 @@ let topDisplayType = "{display_type}";
         assert result['count'] == 0
         assert result['checkpoints_used'] is False
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_cache_class, mock_session):
@@ -347,9 +347,9 @@ let topDisplayType = "{display_type}";
 class TestATTCheckpoint:
     """Tests for AT&T checkpoint/resume functionality."""
 
-    @patch('src.scrapers.att.URLCache')
-    @patch('src.scrapers.att.utils.load_checkpoint')
-    @patch('src.scrapers.att.utils.save_checkpoint')
+    @patch('src.shared.scrape_runner.URLCache')
+    @patch('src.shared.scrape_runner.utils.load_checkpoint')
+    @patch('src.shared.scrape_runner.utils.save_checkpoint')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_cache_class, mock_session):
@@ -374,8 +374,8 @@ class TestATTCheckpoint:
         mock_load.assert_called_once()
         assert result['checkpoints_used'] is True
 
-    @patch('src.scrapers.att.URLCache')
-    @patch('src.scrapers.att.utils.load_checkpoint')
+    @patch('src.shared.scrape_runner.URLCache')
+    @patch('src.shared.scrape_runner.utils.load_checkpoint')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_cache_class, mock_session):
@@ -747,7 +747,7 @@ let topDisplayType = "{display_type}";
         response.content = html.encode('utf-8')
         return response
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_uses_cached_urls(self, mock_counter, mock_get, mock_cache_class, mock_session):
@@ -766,7 +766,7 @@ let topDisplayType = "{display_type}";
         mock_cache.get.assert_called_once()
         assert result['count'] == 1
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_saves_urls_on_cache_miss(self, mock_counter, mock_get, mock_cache_class, mock_session):
@@ -787,7 +787,7 @@ let topDisplayType = "{display_type}";
 
         mock_cache.set.assert_called_once()
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_refresh_urls_ignores_cache(self, mock_counter, mock_get, mock_cache_class, mock_session):
@@ -809,7 +809,7 @@ let topDisplayType = "{display_type}";
         # Cache.get should not be called when refresh_urls=True
         mock_cache.get.assert_not_called()
 
-    @patch('src.scrapers.att.URLCache')
+    @patch('src.shared.scrape_runner.URLCache')
     @patch('src.scrapers.att.utils.get_with_retry')
     @patch('src.scrapers.att._request_counter')
     def test_run_respects_parallel_workers_config(self, mock_counter, mock_get, mock_cache_class, mock_session):

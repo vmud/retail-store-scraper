@@ -23,6 +23,10 @@ SHARED_MODULES = {
         'RichURLCache',
         'DEFAULT_CACHE_EXPIRY_DAYS',
     ],
+    'src.shared.concurrency': [
+        'ConcurrencyConfig',
+        'GlobalConcurrencyManager',
+    ],
     'src.shared.session_factory': [
         'create_session_factory',
     ],
@@ -82,12 +86,14 @@ SHARED_MODULES = {
     ],
     'src.shared.utils': [
         # Constants
+        'CANONICAL_FIELDS',
         'DEFAULT_MAX_DELAY',
         'DEFAULT_MAX_RETRIES',
         'DEFAULT_MIN_DELAY',
         'DEFAULT_RATE_LIMIT_BASE_WAIT',
         'DEFAULT_TIMEOUT',
         'DEFAULT_USER_AGENTS',
+        'FIELD_ALIASES',
         'RECOMMENDED_STORE_FIELDS',
         'REQUIRED_STORE_FIELDS',
         # Classes
@@ -96,6 +102,7 @@ SHARED_MODULES = {
         # Functions
         'close_all_proxy_clients',
         'close_proxy_client',
+        'configure_concurrency_from_yaml',
         'create_proxied_session',
         'get_headers',
         'get_proxy_client',
@@ -105,6 +112,8 @@ SHARED_MODULES = {
         'init_proxy_from_yaml',
         'load_checkpoint',
         'load_retailer_config',
+        'normalize_store_data',
+        'normalize_stores_batch',
         'random_delay',
         'save_checkpoint',
         'save_to_csv',

@@ -2,12 +2,20 @@
 
 This module provides validation functions for ensuring scraped store data
 meets quality standards and contains required fields.
+
+Field definitions (REQUIRED_STORE_FIELDS, RECOMMENDED_STORE_FIELDS) are
+imported from store_schema.py for centralized management (Issue #170).
 """
 
 import logging
 from typing import Any, Dict, List
 
 from src.shared.constants import VALIDATION
+from src.shared.store_schema import (
+    FIELD_ALIASES,
+    RECOMMENDED_STORE_FIELDS,
+    REQUIRED_STORE_FIELDS,
+)
 
 __all__ = [
     'RECOMMENDED_STORE_FIELDS',
@@ -16,13 +24,6 @@ __all__ = [
     'validate_store_data',
     'validate_stores_batch',
 ]
-
-
-# Required fields that must be present and non-empty
-REQUIRED_STORE_FIELDS = {'store_id', 'name', 'street_address', 'city', 'state'}
-
-# Recommended fields that should be present for data quality
-RECOMMENDED_STORE_FIELDS = {'latitude', 'longitude', 'phone', 'url'}
 
 
 class ValidationResult:
@@ -62,9 +63,19 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
         if value is None or (isinstance(value, str) and not value.strip()):
             errors.append(f"Missing required field: {field}")
 
-    # Check recommended fields
+    # Check recommended fields (with alias awareness to avoid false warnings)
     for field in RECOMMENDED_STORE_FIELDS:
-        if store.get(field) is None:
+        # Check if the canonical field exists OR any of its aliases exist
+        field_present = store.get(field) is not None
+
+        # If canonical field not present, check for aliases
+        if not field_present:
+            # Find all aliases that map to this canonical field
+            aliases_for_field = [alias for alias, canonical in FIELD_ALIASES.items() if canonical == field]
+            # Check if any alias is present
+            field_present = any(store.get(alias) is not None for alias in aliases_for_field)
+
+        if not field_present:
             if strict:
                 errors.append(f"Missing recommended field: {field}")
             else:
@@ -84,7 +95,10 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
             errors.append(f"Invalid coordinate format: lat={lat}, lng={lng}")
 
     # Validate postal code format (US 5-digit or 9-digit)
-    postal_code = store.get('postal_code') or store.get('zip_code')
+    # Check all possible postal code field names (canonical + all aliases from FIELD_ALIASES)
+    postal_code = (store.get('zip') or store.get('postal_code') or
+                   store.get('zipcode') or store.get('zip_code') or
+                   store.get('postalcode'))
     if postal_code:
         postal_str = str(postal_code).strip()
         if postal_str and not (len(postal_str) == VALIDATION.ZIP_LENGTH_SHORT or len(postal_str) == VALIDATION.ZIP_LENGTH_LONG):

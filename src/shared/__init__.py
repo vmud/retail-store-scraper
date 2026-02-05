@@ -26,6 +26,8 @@ from .utils import (
     # Per-retailer proxy configuration
     get_retailer_proxy_config,
     load_retailer_config,
+    # Concurrency configuration
+    configure_concurrency_from_yaml,
 )
 
 from .proxy_client import (
@@ -62,8 +64,46 @@ from .cache import (
     DEFAULT_CACHE_EXPIRY_DAYS,
 )
 
+from .cache_interface import (
+    CacheInterface,
+    URLListCache,
+    RichURLCache as RichURLCacheInterface,
+    ResponseCache,
+)
+
 from .session_factory import (
     create_session_factory,
+)
+
+from .scrape_runner import (
+    ScrapeRunner,
+    ScraperContext,
+)
+
+from .concurrency import (
+    GlobalConcurrencyManager,
+    ConcurrencyConfig,
+)
+
+from .validation import (
+    ValidationResult,
+    validate_store_data,
+    validate_stores_batch,
+)
+
+from .store_schema import (
+    CANONICAL_FIELDS,
+    FIELD_ALIASES,
+    RECOMMENDED_STORE_FIELDS,
+    REQUIRED_STORE_FIELDS,
+    normalize_store_data,
+    normalize_stores_batch,
+)
+
+from .store_serializer import (
+    Store,
+    StoreSerializer,
+    normalize_store_dict,
 )
 
 from .structured_logging import (
@@ -74,7 +114,6 @@ from .structured_logging import (
     MetricsAggregator,
     create_logger,
 )
-
 from .sentry_integration import (
     init_sentry,
     capture_scraper_error,
@@ -117,6 +156,8 @@ __all__ = [
     # Per-retailer proxy configuration
     'get_retailer_proxy_config',
     'load_retailer_config',
+    # Concurrency configuration
+    'configure_concurrency_from_yaml',
     # Scraper management
     'ScraperManager',
     'get_scraper_manager',
@@ -131,12 +172,38 @@ __all__ = [
     'get_all_retailers_status',
     'get_progress_status',
     'load_retailers_config',
-    # URL Caching
+    # URL Caching (legacy)
     'URLCache',
     'RichURLCache',
     'DEFAULT_CACHE_EXPIRY_DAYS',
+    # Unified Cache Interface
+    'CacheInterface',
+    'URLListCache',
+    'RichURLCacheInterface',
+    'ResponseCache',
     # Session factory
     'create_session_factory',
+    # Scrape runner (unified orchestration)
+    'ScrapeRunner',
+    'ScraperContext',
+    # Concurrency management
+    'GlobalConcurrencyManager',
+    'ConcurrencyConfig',
+    # Validation
+    'ValidationResult',
+    'validate_store_data',
+    'validate_stores_batch',
+    # Store schema and field normalization
+    'CANONICAL_FIELDS',
+    'FIELD_ALIASES',
+    'RECOMMENDED_STORE_FIELDS',
+    'REQUIRED_STORE_FIELDS',
+    'normalize_store_data',
+    'normalize_stores_batch',
+    # Store serialization
+    'Store',
+    'StoreSerializer',
+    'normalize_store_dict',
     # Structured logging and metrics
     'LogEvent',
     'EventType',

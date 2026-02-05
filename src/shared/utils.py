@@ -53,19 +53,32 @@ from src.shared.proxy_client import (
 # Import centralized constants (Issue #171)
 from src.shared.constants import HTTP
 
+# Import canonical field definitions and normalization (Issue #170)
+from src.shared.store_schema import (
+    CANONICAL_FIELDS,
+    FIELD_ALIASES,
+    RECOMMENDED_STORE_FIELDS,
+    REQUIRED_STORE_FIELDS,
+    normalize_store_data,
+    normalize_stores_batch,
+)
+
 __all__ = [
+    'CANONICAL_FIELDS',
     'DEFAULT_MAX_DELAY',
     'DEFAULT_MAX_RETRIES',
     'DEFAULT_MIN_DELAY',
     'DEFAULT_RATE_LIMIT_BASE_WAIT',
     'DEFAULT_TIMEOUT',
     'DEFAULT_USER_AGENTS',
+    'FIELD_ALIASES',
     'ProxiedSession',
     'RECOMMENDED_STORE_FIELDS',
     'REQUIRED_STORE_FIELDS',
     'ValidationResult',
     'close_all_proxy_clients',
     'close_proxy_client',
+    'configure_concurrency_from_yaml',
     'create_proxied_session',
     'get_headers',
     'get_proxy_client',
@@ -75,6 +88,8 @@ __all__ = [
     'init_proxy_from_yaml',
     'load_checkpoint',
     'load_retailer_config',
+    'normalize_store_data',
+    'normalize_stores_batch',
     'random_delay',
     'save_checkpoint',
     'save_to_csv',
@@ -279,6 +294,66 @@ def get_retailer_proxy_config(
 
     logging.info(f"[{retailer}] Using default proxy mode: direct")
     return _apply_cli_settings({'mode': 'direct'}, cli_settings)
+
+
+def configure_concurrency_from_yaml(config_path: str = 'config/retailers.yaml') -> None:
+    """Configure GlobalConcurrencyManager from retailers.yaml (Issue #153).
+
+    Loads concurrency configuration from YAML and applies it to the singleton
+    GlobalConcurrencyManager instance. Should be called once at startup.
+
+    Args:
+        config_path: Path to retailers.yaml config file
+
+    Example YAML structure:
+        concurrency:
+          global_max_workers: 10
+          per_retailer_max:
+            verizon: 7
+            target: 5
+          proxy_rate_limit: 10.0
+    """
+    from src.shared.concurrency import GlobalConcurrencyManager
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        logging.warning(f"Config file {config_path} not found, using default concurrency limits")
+        return
+    except yaml.YAMLError as e:
+        logging.error(f"Error parsing {config_path}: {e}, using default concurrency limits")
+        return
+
+    if not config or 'concurrency' not in config:
+        logging.debug("No concurrency section in config, using defaults")
+        return
+
+    concurrency_config = config['concurrency']
+    manager = GlobalConcurrencyManager()
+
+    # Extract configuration values
+    # Note: dict.get() returns None (not default) if key exists with null value
+    # so we need to explicitly handle None values
+    global_max_workers = concurrency_config.get('global_max_workers')
+    per_retailer_max = concurrency_config.get('per_retailer_max')
+    if per_retailer_max is None:
+        per_retailer_max = {}
+    proxy_rate_limit = concurrency_config.get('proxy_rate_limit')
+
+    # Configure the manager
+    manager.configure(
+        global_max_workers=global_max_workers,
+        per_retailer_max=per_retailer_max if per_retailer_max else None,
+        proxy_requests_per_second=proxy_rate_limit
+    )
+
+    logging.info(
+        f"[ConcurrencyManager] Configured from YAML: "
+        f"global_max={global_max_workers}, "
+        f"retailers={len(per_retailer_max)}, "
+        f"proxy_rate={proxy_rate_limit}"
+    )
 
 
 def load_retailer_config(

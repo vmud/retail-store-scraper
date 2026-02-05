@@ -184,3 +184,37 @@ def malformed_responses():
             'content': b'<?xml version="1.0"?><urlset></urlset>'
         }
     }
+
+
+@pytest.fixture
+def mock_url_cache():
+    """Create a properly configured mock URLCache.
+
+    Returns a Mock that behaves like a real URLCache:
+    - get() returns None (cache miss)
+    - set() accepts a list
+    - retailer attribute for logging
+    """
+    cache = Mock()
+    cache.retailer = 'test-retailer'
+    cache.get.return_value = None  # Default: cache miss
+    cache.set.return_value = None
+    return cache
+
+
+@pytest.fixture
+def mock_rich_url_cache():
+    """Create a properly configured mock RichURLCache.
+
+    Returns a Mock that behaves like a real RichURLCache:
+    - get_rich() returns None (cache miss)
+    - set_rich() accepts a list
+    - retailer attribute for logging
+    - Properly configured for isinstance() checks
+    """
+    from src.shared.cache import RichURLCache
+    cache = Mock(spec=RichURLCache)
+    cache.retailer = 'test-retailer'
+    cache.get_rich.return_value = None  # Default: cache miss
+    cache.set_rich.return_value = None
+    return cache
