@@ -38,7 +38,7 @@ def load_retailers_config() -> Dict[str, Any]:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         return config.get('retailers', {})
-    except Exception as e:
+    except (FileNotFoundError, yaml.YAMLError, AttributeError) as e:
         logger.warning(f"Failed to load retailers config from {CONFIG_PATH}: {e}")
         return {}
 
