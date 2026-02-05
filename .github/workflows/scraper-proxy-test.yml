@@ -1,0 +1,79 @@
+# Scraper Proxy Integration Test
+#
+# Tests that proxy credentials from 1Password work correctly.
+# Demonstrates the pattern for using 1Password secrets in CI/CD.
+
+name: Proxy Integration Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      retailer:
+        description: 'Retailer to test'
+        required: true
+        default: 'verizon'
+        type: choice
+        options:
+          - verizon
+          - att
+          - target
+          - tmobile
+          - walmart
+          - bestbuy
+  schedule:
+    # Weekly test on Sundays at midnight UTC
+    - cron: '0 0 * * 0'
+
+jobs:
+  proxy-test:
+    name: Test Proxy with 1Password Secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # =========================================
+      # 1PASSWORD SECRETS INTEGRATION
+      # =========================================
+      # This step loads secrets from 1Password and exports them
+      # as environment variables for subsequent steps.
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # Oxylabs Residential Proxy credentials
+          OXYLABS_RESIDENTIAL_USERNAME: op://DEV/OXYLABS_RESIDENTIAL/username
+          OXYLABS_RESIDENTIAL_PASSWORD: op://DEV/OXYLABS_RESIDENTIAL/credential  # pragma: allowlist secret
+          # Oxylabs Web Scraper API credentials
+          OXYLABS_SCRAPER_API_USERNAME: op://DEV/OXYLABS_SCRAPER_API/username
+          OXYLABS_SCRAPER_API_PASSWORD: op://DEV/OXYLABS_SCRAPER_API/credential  # pragma: allowlist secret
+
+      - name: Validate proxy credentials
+        run: |
+          python run.py --retailer ${{ inputs.retailer || 'verizon' }} \
+            --proxy residential \
+            --validate-proxy \
+            --test
+
+      - name: Run limited proxy scrape test
+        run: |
+          python run.py --retailer ${{ inputs.retailer || 'verizon' }} \
+            --proxy residential \
+            --limit 5 \
+            --test
