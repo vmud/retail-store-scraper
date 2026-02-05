@@ -17,10 +17,11 @@ from typing import Dict, Any, List, Optional
 
 import requests
 
-from config import homedepot_config as config
+from config import homedepot_config as hd_config
 from src.shared.constants import HTTP
-from src.shared.delays import random_delay
+from src.shared.delays import random_delay, select_delays
 from src.shared.http import log_safe
+from src.shared.proxy_client import redact_credentials
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.scrape_runner import ScrapeRunner, ScraperContext
 
@@ -183,6 +184,7 @@ def _post_graphql(
     timeout: int = None,
     min_delay: float = None,
     max_delay: float = None,
+    retailer: str = "homedepot",
 ) -> Optional[Dict]:
     """POST a GraphQL query with retry logic.
 
@@ -201,6 +203,7 @@ def _post_graphql(
         timeout: Request timeout in seconds
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
+        retailer: Retailer name for log prefixes
 
     Returns:
         Parsed JSON response dict, or None on failure
@@ -209,9 +212,9 @@ def _post_graphql(
     timeout = timeout if timeout is not None else HTTP.TIMEOUT
 
     if headers is None:
-        headers = config.get_headers()
+        headers = hd_config.get_headers()
 
-    url = f"{config.GRAPHQL_URL}?opname={operation_name}"
+    url = f"{hd_config.GRAPHQL_URL}?opname={operation_name}"
     payload = {
         "operationName": operation_name,
         "variables": variables,
@@ -229,9 +232,11 @@ def _post_graphql(
                 data = response.json()
                 # Check for GraphQL-level errors
                 if data.get("errors"):
-                    error_msgs = [e.get("message", "") for e in data["errors"]]
+                    error_msgs = [
+                        e.get("message", "")[:200] for e in data["errors"]
+                    ]
                     log_safe(
-                        f"[homedepot] GraphQL errors for {operation_name}: {error_msgs}",
+                        f"[{retailer}] GraphQL errors for {operation_name}: {error_msgs}",
                         level=logging.WARNING,
                     )
                     return None
@@ -240,7 +245,7 @@ def _post_graphql(
             if response.status_code in (429, 403):
                 wait_time = (2 ** attempt) * HTTP.RATE_LIMIT_BASE_WAIT
                 log_safe(
-                    f"[homedepot] {response.status_code} for {operation_name}. "
+                    f"[{retailer}] {response.status_code} for {operation_name}. "
                     f"Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})",
                     level=logging.WARNING,
                 )
@@ -249,7 +254,7 @@ def _post_graphql(
             elif response.status_code >= 500:
                 wait_time = HTTP.SERVER_ERROR_WAIT
                 log_safe(
-                    f"[homedepot] Server error ({response.status_code}) for "
+                    f"[{retailer}] Server error ({response.status_code}) for "
                     f"{operation_name}. Waiting {wait_time}s "
                     f"(attempt {attempt + 1}/{max_retries})",
                     level=logging.WARNING,
@@ -259,7 +264,7 @@ def _post_graphql(
             else:
                 # 4xx (not 429/403) — fail fast
                 log_safe(
-                    f"[homedepot] Client error ({response.status_code}) for "
+                    f"[{retailer}] Client error ({response.status_code}) for "
                     f"{operation_name}. Failing immediately.",
                     level=logging.ERROR,
                 )
@@ -267,15 +272,16 @@ def _post_graphql(
 
         except requests.exceptions.RequestException as exc:
             wait_time = HTTP.SERVER_ERROR_WAIT
+            safe_error = redact_credentials(str(exc))
             log_safe(
-                f"[homedepot] Request error for {operation_name}: {exc}. "
+                f"[{retailer}] Request error for {operation_name}: {safe_error}. "
                 f"Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})",
                 level=logging.WARNING,
             )
             time.sleep(wait_time)
 
     log_safe(
-        f"[homedepot] Failed {operation_name} after {max_retries} attempts",
+        f"[{retailer}] Failed {operation_name} after {max_retries} attempts",
         level=logging.ERROR,
     )
     return None
@@ -311,12 +317,19 @@ def discover_stores(
     """
     all_stores: List[Dict[str, Any]] = []
 
-    for state_code in config.US_STATES:
+    # Resolve delays from YAML config
+    proxy_mode = (yaml_config or {}).get("proxy", {}).get("mode", "direct")
+    min_delay, max_delay = select_delays(yaml_config or {}, proxy_mode)
+
+    for state_code in hd_config.US_STATES:
         data = _post_graphql(
             session,
             operation_name="storeDirectoryByState",
-            query=config.QUERY_STATE_DIRECTORY,
+            query=hd_config.QUERY_STATE_DIRECTORY,
             variables={"state": state_code},
+            min_delay=min_delay,
+            max_delay=max_delay,
+            retailer=retailer,
         )
 
         if request_counter:
@@ -397,17 +410,24 @@ def extract_store_details(
     store_id = item.get("store_id", "")
     padded_id = store_id.zfill(4)
 
+    # Resolve delays from YAML config
+    proxy_mode = (yaml_config or {}).get("proxy", {}).get("mode", "direct")
+    min_delay, max_delay = select_delays(yaml_config or {}, proxy_mode)
+
     data = _post_graphql(
         session,
         operation_name="storeSearch",
-        query=config.QUERY_STORE_SEARCH,
+        query=hd_config.QUERY_STORE_SEARCH,
         variables={
             "lat": "",
             "lng": "",
             "pagesize": "1",
-            "storeFeaturesFilter": config.DEFAULT_FEATURES_FILTER,
+            "storeFeaturesFilter": hd_config.DEFAULT_FEATURES_FILTER,
             "storeSearchInput": padded_id,
         },
+        min_delay=min_delay,
+        max_delay=max_delay,
+        retailer=retailer,
     )
 
     if request_counter:
@@ -421,9 +441,8 @@ def extract_store_details(
         logging.warning(f"[{retailer}] Failed to fetch details for store {store_id}")
         return None
 
-    stores = (
-        data.get("data", {}).get("storeSearch", {}).get("stores") or []
-    )
+    store_search = data.get("data", {}).get("storeSearch") or {}
+    stores = store_search.get("stores") or []
 
     if not stores:
         logging.warning(f"[{retailer}] No stores returned for ID {store_id}")
@@ -449,9 +468,12 @@ def extract_store_details(
     # Parse flags (default all False if missing)
     flags = store.get("flags") or {}
 
-    # Build the URL from base + detail page link
+    # Build the URL from base + detail page link (validate prefix)
     detail_link = store.get("storeDetailsPageLink", "")
-    url = f"https://www.homedepot.com{detail_link}" if detail_link else ""
+    if detail_link and detail_link.startswith("/l/"):
+        url = f"https://www.homedepot.com{detail_link}"
+    else:
+        url = ""
 
     return HomeDepotStore(
         store_id=store_id,
@@ -507,12 +529,12 @@ def extract_store_details(
 # Entry point
 # ---------------------------------------------------------------------------
 
-def run(session, config: dict, **kwargs) -> dict:
+def run(session, retailer_config: dict, **kwargs) -> dict:
     """Standard scraper entry point with ScrapeRunner orchestration.
 
     Args:
         session: Configured session (requests.Session or ProxyClient)
-        config: Retailer configuration dict from retailers.yaml
+        retailer_config: Retailer configuration dict from retailers.yaml
         **kwargs: Additional options
             - retailer: str - Retailer name (default: 'homedepot')
             - resume: bool - Resume from checkpoint
@@ -530,7 +552,7 @@ def run(session, config: dict, **kwargs) -> dict:
     context = ScraperContext(
         retailer=retailer_name,
         session=session,
-        config=config,
+        config=retailer_config,
         resume=kwargs.get("resume", False),
         limit=kwargs.get("limit"),
         refresh_urls=kwargs.get("refresh_urls", False),

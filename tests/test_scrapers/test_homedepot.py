@@ -384,8 +384,9 @@ class TestPostGraphql:
         assert result == {"data": {"storeDirectory": {"storeDirectory": []}}}
         mock_session.post.assert_called_once()
 
+    @patch('src.scrapers.homedepot.time.sleep')
     @patch('src.scrapers.homedepot.random_delay')
-    def test_retry_on_429(self, mock_delay, mock_session):
+    def test_retry_on_429(self, mock_delay, mock_sleep, mock_session):
         """Test retry on 429 rate limit."""
         mock_429 = Mock()
         mock_429.status_code = 429
@@ -406,9 +407,11 @@ class TestPostGraphql:
 
         assert result == {"data": {}}
         assert mock_session.post.call_count == 2
+        mock_sleep.assert_called_once()
 
+    @patch('src.scrapers.homedepot.time.sleep')
     @patch('src.scrapers.homedepot.random_delay')
-    def test_retry_on_500(self, mock_delay, mock_session):
+    def test_retry_on_500(self, mock_delay, mock_sleep, mock_session):
         """Test retry on server error."""
         mock_500 = Mock()
         mock_500.status_code = 500
@@ -429,9 +432,11 @@ class TestPostGraphql:
 
         assert result == {"data": {}}
         assert mock_session.post.call_count == 2
+        mock_sleep.assert_called_once()
 
+    @patch('src.scrapers.homedepot.time.sleep')
     @patch('src.scrapers.homedepot.random_delay')
-    def test_max_retries_exhausted(self, mock_delay, mock_session):
+    def test_max_retries_exhausted(self, mock_delay, mock_sleep, mock_session):
         """Test that None is returned after max retries."""
         mock_500 = Mock()
         mock_500.status_code = 500
@@ -448,6 +453,7 @@ class TestPostGraphql:
 
         assert result is None
         assert mock_session.post.call_count == 2
+        assert mock_sleep.call_count == 2
 
     @patch('src.scrapers.homedepot.random_delay')
     def test_fail_fast_on_4xx(self, mock_delay, mock_session):
@@ -488,8 +494,9 @@ class TestPostGraphql:
 
         assert result is None
 
+    @patch('src.scrapers.homedepot.time.sleep')
     @patch('src.scrapers.homedepot.random_delay')
-    def test_retry_on_403(self, mock_delay, mock_session):
+    def test_retry_on_403(self, mock_delay, mock_sleep, mock_session):
         """Test retry on 403 blocked response."""
         mock_403 = Mock()
         mock_403.status_code = 403
@@ -510,6 +517,34 @@ class TestPostGraphql:
 
         assert result == {"data": {}}
         assert mock_session.post.call_count == 2
+        mock_sleep.assert_called_once()
+
+    @patch('src.scrapers.homedepot.time.sleep')
+    @patch('src.scrapers.homedepot.random_delay')
+    def test_network_exception_retry(self, mock_delay, mock_sleep, mock_session):
+        """Test retry on network exception with credential redaction."""
+        import requests as req
+
+        mock_200 = Mock()
+        mock_200.status_code = 200
+        mock_200.json.return_value = {"data": {"result": True}}
+
+        mock_session.post.side_effect = [
+            req.exceptions.ConnectionError("Connection refused"),
+            mock_200,
+        ]
+
+        result = _post_graphql(
+            mock_session,
+            operation_name="test",
+            query="query { test }",
+            variables={},
+            max_retries=3,
+        )
+
+        assert result == {"data": {"result": True}}
+        assert mock_session.post.call_count == 2
+        mock_sleep.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -848,6 +883,24 @@ class TestExtractStoreDetails:
         counter = RequestCounter()
 
         item = {"store_id": "9999", "name": "Ghost Store", "county": ""}
+
+        result = extract_store_details(
+            mock_session, item, "homedepot", yaml_config, counter
+        )
+
+        assert result is None
+
+    @patch('src.scrapers.homedepot._post_graphql')
+    def test_null_nested_response(self, mock_post, mock_session, yaml_config):
+        """Test handling of null storeSearch in response (null nested object)."""
+        mock_post.return_value = {
+            "data": {
+                "storeSearch": None
+            }
+        }
+        counter = RequestCounter()
+
+        item = {"store_id": "9999", "name": "Null Store", "county": ""}
 
         result = extract_store_details(
             mock_session, item, "homedepot", yaml_config, counter
