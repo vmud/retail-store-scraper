@@ -14,6 +14,9 @@ openpyxl==3.1.2  # Excel export support
 # Cloud storage
 google-cloud-storage==2.14.0  # GCS integration for backup/sync
 
+# Error monitoring
+sentry-sdk==2.52.0  # Error tracking and performance monitoring
+
 # Performance
 ijson==3.2.3  # Streaming JSON parser for memory-efficient change detection (#65)
 

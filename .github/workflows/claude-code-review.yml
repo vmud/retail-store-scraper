@@ -31,7 +31,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      # Test with Anthropic API key from 1Password
       - name: Load Anthropic API key from 1Password
         uses: 1password/load-secrets-action@v2
         with:
@@ -46,9 +45,6 @@ jobs:
         with:
           anthropic_api_key: ${{ env.ANTHROPIC_API_KEY }}
           allowed_bots: 'dependabot[bot],renovate[bot],greenkeeper[bot]'
-          show_full_output: true  # Enable for debugging token issues
           prompt: |
             Review PR #${{ github.event.pull_request.number }} for code quality, potential bugs, and best practices.
             Focus on the changed files and provide constructive feedback.
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
