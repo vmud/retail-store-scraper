@@ -147,62 +147,32 @@ def load_urls_with_cache(
     Returns:
         List of URLs (for URLCache) or list of dicts (for RichURLCache), or None if fetch failed
     """
-    # Handle Mock objects in tests - check if cache has retailer attribute
     retailer_name = getattr(cache, 'retailer', 'unknown')
     urls = None
 
     # Try to load cached URLs
     if not refresh_urls:
-        # Use isinstance to distinguish cache types
         if isinstance(cache, RichURLCache):
             urls = cache.get_rich()
         else:
-            # For URLCache, use .get()
-            # For Mock objects mimicking RichURLCache, try .get_rich() if return_value is configured
-            try:
-                # Try calling get_rich() and check if it returns a configured value (list) or auto-Mock
-                rich_result = cache.get_rich()
-                if isinstance(rich_result, list) or rich_result is None:
-                    # get_rich() was properly configured - use it
-                    urls = rich_result
-                else:
-                    # get_rich() returned auto-Mock - this is a URLCache, use .get() instead
-                    urls = cache.get()
-            except AttributeError:
-                # No get_rich() method - definitely URLCache
-                urls = cache.get()
-
-    # Validate that urls is actually a list or None (not a Mock object)
-    if urls is not None and not isinstance(urls, list):
-        # Got a Mock or other unexpected type - treat as cache miss
-        urls = None
+            urls = cache.get()
 
     if urls is None:
         # Cache miss or refresh requested - fetch from source
         urls = fetch_callback()
 
         if urls:
-            # Only log and cache if urls is a proper list (not a Mock)
-            try:
-                url_count = len(urls)
-                logging.info(f"[{retailer_name}] Found {url_count} URLs from source")
-                # Save to cache for future runs
-                if isinstance(cache, RichURLCache):
-                    cache.set_rich(urls)
-                else:
-                    cache.set(urls)
-            except TypeError:
-                # In tests, might get Mock object - just skip cache operations
-                pass
+            url_count = len(urls)
+            logging.info(f"[{retailer_name}] Found {url_count} URLs from source")
+            # Save to cache for future runs
+            if isinstance(cache, RichURLCache):
+                cache.set_rich(urls)
+            else:
+                cache.set(urls)
         else:
             logging.warning(f"[{retailer_name}] No URLs found from source")
     elif urls:
-        # Handle potential Mock objects in tests by checking if urls has __len__
-        try:
-            logging.info(f"[{retailer_name}] Using {len(urls)} cached URLs")
-        except TypeError:
-            # In tests, cache might return Mock - just log without length
-            logging.info(f"[{retailer_name}] Using cached URLs")
+        logging.info(f"[{retailer_name}] Using {len(urls)} cached URLs")
 
     return urls
 
@@ -230,14 +200,6 @@ def filter_remaining_items(
     Returns:
         Filtered list of items to process
     """
-    # Handle Mock objects in tests - check if all_items is iterable
-    try:
-        iter(all_items)
-    except TypeError:
-        # Not iterable (e.g., Mock object in tests) - return empty list
-        logging.warning(f"[{retailer_name}] all_items is not iterable, returning empty list")
-        return []
-
     # Filter out already-completed items
     if id_extractor:
         # For dicts (like Target), extract ID with provided function
