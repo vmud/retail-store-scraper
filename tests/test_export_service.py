@@ -549,7 +549,7 @@ class TestFormulaInjectionProtection:
             {
                 'store_id': '1001',
                 'name': '=1+1',
-                'address': '+dangerous',
+                'street_address': '+dangerous',
                 'phone': '@SUM(A1:A10)'
             }
         ]
@@ -573,11 +573,11 @@ class TestFormulaInjectionProtection:
 
             # Verify sanitization by column name, not position
             name_col = headers['name']
-            address_col = headers['address']
+            street_address_col = headers['street_address']
             phone_col = headers['phone']
 
             assert ws.cell(row=2, column=name_col).value == "'=1+1"  # name column
-            assert ws.cell(row=2, column=address_col).value == "'+dangerous"  # address column
+            assert ws.cell(row=2, column=street_address_col).value == "'+dangerous"  # street_address column
             assert ws.cell(row=2, column=phone_col).value == "'@SUM(A1:A10)"  # phone column
         finally:
             if os.path.exists(output_path):

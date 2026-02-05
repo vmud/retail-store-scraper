@@ -193,11 +193,11 @@ retailers:
     output_fields:
       - store_id
       - name
-      - telephone
+      - phone
       - street_address
       - city
       - state
-      - postal_code
+      - zip
       - country
       - rating_value
       - rating_count
@@ -461,7 +461,7 @@ retailers:
       - street_address
       - city
       - state
-      - postal_code
+      - zip
       - country
       - latitude
       - longitude
@@ -576,7 +576,7 @@ retailers:
       - street_address
       - city
       - state
-      - postal_code
+      - zip
       - country
       - phone
       - hours

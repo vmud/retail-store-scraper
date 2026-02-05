@@ -725,34 +725,25 @@ def validate_cli_options(args: argparse.Namespace, config: Optional[Dict[str, An
     return errors
 
 
-def main() -> int:
-    """Main entry point"""
-    parser = setup_parser()
-    args = parser.parse_args()
+def _validate_and_load_config(args) -> dict:
+    """Validate configuration and CLI options, load config.
 
-    # Setup logging
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    setup_logging(args.log_file)
-    logging.getLogger().setLevel(log_level)
+    Args:
+        args: Parsed command line arguments
 
-    # Initialize Sentry for error monitoring (if configured)
-    sentry_enabled = init_sentry()
-    if sentry_enabled:
-        logging.debug("Sentry error monitoring enabled")
+    Returns:
+        Loaded configuration dict
 
-    # Handle status command
-    if args.status:
-        retailers = [args.retailer] if args.retailer else None
-        show_status(retailers)
-        return 0
-
+    Raises:
+        SystemExit: If validation fails
+    """
     # Validate configuration on startup (#67)
     config_errors = validate_config_on_startup()
     if config_errors:
         print("Configuration errors found:")
         for error in config_errors:
             print(f"  - {error}")
-        return 1
+        raise SystemExit(1)
 
     # Configure global concurrency manager from retailers.yaml (#153)
     configure_concurrency_from_yaml()
@@ -767,9 +758,20 @@ def main() -> int:
         print("Invalid command line options:")
         for error in cli_errors:
             print(f"  - {error}")
-        return 1
+        raise SystemExit(1)
 
-    # Initialize proxy client if specified via CLI
+    return loaded_config
+
+
+def _initialize_proxy(args) -> None:
+    """Initialize proxy client based on CLI arguments.
+
+    Args:
+        args: Parsed command line arguments
+
+    Raises:
+        SystemExit: If proxy credentials are missing
+    """
     if args.proxy:
         # Check for mode-specific credentials
         if args.proxy == 'residential':
@@ -784,7 +786,7 @@ def main() -> int:
                 print("Or use legacy variables:")
                 print("  export OXYLABS_USERNAME=your_username")
                 print("  export OXYLABS_PASSWORD=your_password")
-                return 1
+                raise SystemExit(1)
         elif args.proxy == 'web_scraper_api':
             # Check for Web Scraper API credentials (with fallback to legacy)
             api_user = os.getenv('OXYLABS_SCRAPER_API_USERNAME') or os.getenv('OXYLABS_USERNAME')
@@ -797,7 +799,7 @@ def main() -> int:
                 print("Or use legacy variables:")
                 print("  export OXYLABS_USERNAME=your_username")
                 print("  export OXYLABS_PASSWORD=your_password")
-                return 1
+                raise SystemExit(1)
 
         # Build proxy config from CLI args
         proxy_config = {
@@ -819,7 +821,16 @@ def main() -> int:
         except Exception as e:
             logging.debug(f"Using default proxy config: {e}")
 
-    # Validate proxy credentials if requested (#107)
+
+def _validate_proxy_credentials(args) -> None:
+    """Validate proxy credentials if requested.
+
+    Args:
+        args: Parsed command line arguments
+
+    Raises:
+        SystemExit: If validation fails
+    """
     if args.validate_proxy:
         proxy_client = get_proxy_client()
         if proxy_client:
@@ -829,41 +840,25 @@ def main() -> int:
                 print(f"  ✓ {message}")
             else:
                 print(f"  ✗ {message}")
-                return 1
+                raise SystemExit(1)
         else:
             print("No proxy configured, skipping validation")
 
-    # Get retailers to run
-    retailers = get_retailers_to_run(args)
 
-    if not retailers:
-        print("No retailers specified. Use --retailer <name> or --all")
-        print(f"Available retailers: {', '.join(get_enabled_retailers())}")
-        return 1
+def _prepare_scraper_options(args) -> dict:
+    """Prepare scraper execution options from CLI arguments.
 
+    Args:
+        args: Parsed command line arguments
+
+    Returns:
+        Dictionary of scraper options including limit, cli_proxy_override,
+        cli_proxy_settings, refresh_urls, and target_states
+    """
     # Set limit for test mode
     limit = args.limit
     if args.test and limit is None:
         limit = 10
-
-    # Parse export formats
-    export_formats = parse_format_list(args.format)
-    if not export_formats:
-        print(f"No valid export formats specified. Valid formats: json, csv, excel, geojson")
-        return 1
-
-    logging.info(f"Running scrapers for: {retailers}")
-    logging.info(f"Export formats: {', '.join(f.value for f in export_formats)}")
-    if limit:
-        logging.info(f"Limit: {limit} stores per retailer")
-    if args.resume:
-        logging.info("Resume mode enabled")
-    if args.incremental:
-        logging.info("Incremental mode enabled")
-    if getattr(args, 'refresh_urls', False):
-        logging.info("Refresh URLs mode enabled (will re-discover all store URLs)")
-    if args.states:
-        logging.info(f"Targeted states mode: {args.states}")
 
     # Get CLI proxy override and settings (#52)
     cli_proxy_override = args.proxy if args.proxy else None
@@ -876,7 +871,30 @@ def main() -> int:
     if not cli_proxy_settings and not cli_proxy_override:
         cli_proxy_settings = None
 
-    # Initialize cloud storage if enabled
+    # Get refresh_urls flag (convert hyphen to underscore for attribute access)
+    refresh_urls = getattr(args, 'refresh_urls', False)
+    # States are already validated and parsed by validate_states() (#173)
+    target_states = args.states
+
+    return {
+        'limit': limit,
+        'cli_proxy_override': cli_proxy_override,
+        'cli_proxy_settings': cli_proxy_settings,
+        'refresh_urls': refresh_urls,
+        'target_states': target_states
+    }
+
+
+def _setup_cloud_storage(args, loaded_config):
+    """Initialize cloud storage manager if enabled.
+
+    Args:
+        args: Parsed command line arguments
+        loaded_config: Loaded YAML configuration
+
+    Returns:
+        CloudStorageManager instance or None
+    """
     # Priority: --no-cloud (disable) > --cloud (enable) > config/env
     cloud_manager = None
     if getattr(args, 'no_cloud', False):
@@ -893,62 +911,150 @@ def main() -> int:
                 logging.info(f"Cloud storage enabled: {cloud_manager.provider_name}")
             elif cloud_enabled or args.gcs_bucket:
                 logging.warning("Cloud storage requested but not configured (check GCS_* env vars)")
+    return cloud_manager
+
+
+def _log_scraper_options(retailers, export_formats, args, options):
+    """Log scraper execution options.
+
+    Args:
+        retailers: List of retailer names to run
+        export_formats: List of ExportFormat instances
+        args: Parsed command line arguments
+        options: Dictionary of scraper options
+    """
+    logging.info(f"Running scrapers for: {retailers}")
+    logging.info(f"Export formats: {', '.join(f.value for f in export_formats)}")
+    if options['limit']:
+        logging.info(f"Limit: {options['limit']} stores per retailer")
+    if args.resume:
+        logging.info("Resume mode enabled")
+    if args.incremental:
+        logging.info("Incremental mode enabled")
+    if options['refresh_urls']:
+        logging.info("Refresh URLs mode enabled (will re-discover all store URLs)")
+    if options['target_states']:
+        logging.info(f"Targeted states mode: {options['target_states']}")
+
+
+def _run_scrapers(retailers, args, export_formats, cloud_manager, options):
+    """Execute scraper runs for selected retailers.
+
+    Args:
+        retailers: List of retailer names to run
+        args: Parsed command line arguments
+        export_formats: List of ExportFormat instances
+        cloud_manager: CloudStorageManager or None
+        options: Dictionary of scraper options
+
+    Returns:
+        Exit code (0 for success)
+    """
+    if len(retailers) == 1:
+        # Single retailer - run directly
+        result = asyncio.run(run_retailer_async(
+            retailers[0],
+            cli_proxy_override=options['cli_proxy_override'],
+            cli_proxy_settings=options['cli_proxy_settings'],
+            export_formats=export_formats,
+            cloud_manager=cloud_manager,
+            resume=args.resume,
+            incremental=args.incremental,
+            limit=options['limit'],
+            refresh_urls=options['refresh_urls'],
+            target_states=options['target_states']
+        ))
+        print(f"\nResult for {retailers[0]}: {result['status']}")
+        if result.get('formats'):
+            print(f"  Exported: {', '.join(result['formats'])}")
+        if result.get('cloud_uploaded'):
+            print(f"  Cloud: uploaded to {cloud_manager.provider_name}")
+    else:
+        # Multiple retailers - run concurrently
+        results = asyncio.run(run_all_retailers(
+            retailers,
+            cli_proxy_override=options['cli_proxy_override'],
+            cli_proxy_settings=options['cli_proxy_settings'],
+            export_formats=export_formats,
+            cloud_manager=cloud_manager,
+            resume=args.resume,
+            incremental=args.incremental,
+            limit=options['limit'],
+            refresh_urls=options['refresh_urls'],
+            target_states=options['target_states']
+        ))
+
+        print("\n" + "=" * 40)
+        print("SCRAPING RESULTS")
+        print("=" * 40)
+        for retailer, result in results.items():
+            status = result.get('status', 'unknown')
+            stores = result.get('stores', 0)
+            error = result.get('error', '')
+            cloud_status = " [cloud]" if result.get('cloud_uploaded') else ""
+            print(f"  {retailer}: {status} ({stores} stores){cloud_status}")
+            if error:
+                print(f"    Error: {error}")
+
+    return 0
+
+
+def main() -> int:
+    """Main entry point"""
+    parser = setup_parser()
+    args = parser.parse_args()
+
+    # Setup logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    setup_logging(args.log_file)
+    logging.getLogger().setLevel(log_level)
+
+    # Initialize Sentry for error monitoring (if configured)
+    sentry_enabled = init_sentry()
+    if sentry_enabled:
+        logging.debug("Sentry error monitoring enabled")
+
+    # Handle status command
+    if args.status:
+        retailers = [args.retailer] if args.retailer else None
+        show_status(retailers)
+        return 0
+
+    # Validate and load configuration
+    loaded_config = _validate_and_load_config(args)
+
+    # Initialize proxy
+    _initialize_proxy(args)
+
+    # Validate proxy credentials if requested
+    _validate_proxy_credentials(args)
+
+    # Get retailers to run
+    retailers = get_retailers_to_run(args)
+
+    if not retailers:
+        print("No retailers specified. Use --retailer <name> or --all")
+        print(f"Available retailers: {', '.join(get_enabled_retailers())}")
+        return 1
+
+    # Parse export formats
+    export_formats = parse_format_list(args.format)
+    if not export_formats:
+        print(f"No valid export formats specified. Valid formats: json, csv, excel, geojson")
+        return 1
+
+    # Prepare scraper options
+    options = _prepare_scraper_options(args)
+
+    # Setup cloud storage
+    cloud_manager = _setup_cloud_storage(args, loaded_config)
+
+    # Log execution options
+    _log_scraper_options(retailers, export_formats, args, options)
 
     # Run scrapers
     try:
-        # Get refresh_urls flag (convert hyphen to underscore for attribute access)
-        refresh_urls = getattr(args, 'refresh_urls', False)
-        # States are already validated and parsed by validate_states() (#173)
-        target_states = args.states
-
-        if len(retailers) == 1:
-            # Single retailer - run directly
-            result = asyncio.run(run_retailer_async(
-                retailers[0],
-                cli_proxy_override=cli_proxy_override,
-                cli_proxy_settings=cli_proxy_settings,
-                export_formats=export_formats,
-                cloud_manager=cloud_manager,
-                resume=args.resume,
-                incremental=args.incremental,
-                limit=limit,
-                refresh_urls=refresh_urls,
-                target_states=target_states
-            ))
-            print(f"\nResult for {retailers[0]}: {result['status']}")
-            if result.get('formats'):
-                print(f"  Exported: {', '.join(result['formats'])}")
-            if result.get('cloud_uploaded'):
-                print(f"  Cloud: uploaded to {cloud_manager.provider_name}")
-        else:
-            # Multiple retailers - run concurrently
-            results = asyncio.run(run_all_retailers(
-                retailers,
-                cli_proxy_override=cli_proxy_override,
-                cli_proxy_settings=cli_proxy_settings,
-                export_formats=export_formats,
-                cloud_manager=cloud_manager,
-                resume=args.resume,
-                incremental=args.incremental,
-                limit=limit,
-                refresh_urls=refresh_urls,
-                target_states=target_states
-            ))
-
-            print("\n" + "=" * 40)
-            print("SCRAPING RESULTS")
-            print("=" * 40)
-            for retailer, result in results.items():
-                status = result.get('status', 'unknown')
-                stores = result.get('stores', 0)
-                error = result.get('error', '')
-                cloud_status = " [cloud]" if result.get('cloud_uploaded') else ""
-                print(f"  {retailer}: {status} ({stores} stores){cloud_status}")
-                if error:
-                    print(f"    Error: {error}")
-
-        return 0
-
+        return _run_scrapers(retailers, args, export_formats, cloud_manager, options)
     except KeyboardInterrupt:
         logging.info("Scraping interrupted by user")
         return 130
