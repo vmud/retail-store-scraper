@@ -41,6 +41,10 @@ retailers:
         args = Mock()
         args.proxy = None
         args.render_js = False
+        args.test = False
+        args.limit = None
+        args.exclude = None
+        args.all = False
 
         with patch('run.open', create=True) as mock_open:
             mock_open.return_value.__enter__.return_value.read.return_value = config_content
@@ -55,6 +59,10 @@ retailers:
         args = Mock()
         args.proxy = None
         args.render_js = False
+        args.test = False
+        args.limit = None
+        args.exclude = None
+        args.all = False
 
         with patch('run.validate_config_on_startup', return_value=['Configuration error']):
             with pytest.raises(SystemExit) as exc_info:
@@ -68,6 +76,8 @@ retailers:
         args.render_js = False
         args.test = True
         args.limit = 50
+        args.exclude = None
+        args.all = False
 
         with patch('run.validate_config_on_startup', return_value=[]):
             with patch('yaml.safe_load', return_value={'retailers': {}}):
