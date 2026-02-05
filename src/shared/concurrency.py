@@ -156,9 +156,14 @@ class GlobalConcurrencyManager:
                 self._retailer_max_workers.update(per_retailer_max)
                 # Recreate semaphores for updated retailers
                 for retailer, max_workers in per_retailer_max.items():
-                    self._retailer_semaphores[retailer] = threading.Semaphore(max_workers)
+                    # Fall back to default if None value in config
+                    effective_max_workers = (
+                        max_workers if max_workers is not None
+                        else self.config.per_retailer_max
+                    )
+                    self._retailer_semaphores[retailer] = threading.Semaphore(effective_max_workers)
                     logging.debug(
-                        f"[ConcurrencyManager] Set {retailer} max_workers={max_workers}"
+                        f"[ConcurrencyManager] Set {retailer} max_workers={effective_max_workers}"
                     )
 
             if proxy_requests_per_second is not None:
@@ -187,10 +192,15 @@ class GlobalConcurrencyManager:
                         retailer,
                         self.config.per_retailer_max
                     )
-                    self._retailer_semaphores[retailer] = threading.Semaphore(max_workers)
+                    # Fall back to default if None value in config
+                    effective_max_workers = (
+                        max_workers if max_workers is not None
+                        else self.config.per_retailer_max
+                    )
+                    self._retailer_semaphores[retailer] = threading.Semaphore(effective_max_workers)
                     logging.debug(
                         f"[ConcurrencyManager] Created semaphore for {retailer} "
-                        f"with max_workers={max_workers}"
+                        f"with max_workers={effective_max_workers}"
                     )
         return self._retailer_semaphores[retailer]
 
@@ -278,8 +288,13 @@ class GlobalConcurrencyManager:
                 retailer,
                 self.config.per_retailer_max
             )
+            # Fall back to default if None value in config
+            effective_max_workers = (
+                max_workers if max_workers is not None
+                else self.config.per_retailer_max
+            )
             stats['retailers'][retailer] = {
-                'max_workers': max_workers,
+                'max_workers': effective_max_workers,
             }
 
         return stats
