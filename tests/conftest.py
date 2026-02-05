@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -50,10 +51,10 @@ def mock_response_factory():
     def _create_response(
         status_code: int = 200,
         text: str = "",
-        json_data: dict = None,
-        content: bytes = None,
-        headers: dict = None,
-        raise_error=None
+        json_data: Optional[dict] = None,
+        content: Optional[bytes] = None,
+        headers: Optional[dict] = None,
+        raise_error: Optional[Exception] = None
     ):
         """Create a mock response object.
 

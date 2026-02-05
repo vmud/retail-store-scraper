@@ -14,7 +14,6 @@ This test suite validates handling of:
 import json
 import gzip
 import pytest
-from io import BytesIO
 from unittest.mock import Mock, patch, MagicMock
 import requests
 
@@ -541,9 +540,6 @@ class TestCheckpointEdgeCases:
             "func": lambda x: x  # Not JSON serializable
         }
 
-        # Should handle gracefully
-        try:
+        # Should raise TypeError because lambda functions are not JSON serializable
+        with pytest.raises((TypeError, ValueError)):
             save_checkpoint(data, str(checkpoint_file))
-        except (TypeError, ValueError):
-            # Expected behavior - can't serialize function
-            pass

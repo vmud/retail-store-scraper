@@ -40,47 +40,40 @@ class TestGCSRetryLogic:
                 'bucket': mock_bucket
             }
 
-    def test_retry_with_exponential_backoff_timing(self, mock_gcs_client):
+    def test_retry_with_exponential_backoff_timing(self, mock_gcs_client, tmp_path):
         """Test that retry delays follow exponential backoff pattern."""
         from src.shared.cloud_storage import GCSProvider
         from google.cloud.exceptions import GoogleCloudError
 
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            f.write(b'test content')
-            local_path = f.name
+        local_path = tmp_path / "test.txt"
+        local_path.write_bytes(b'test content')
 
-        try:
-            provider = GCSProvider(
-                bucket_name='test-bucket',
-                credentials_path='/fake/path.json',
-                max_retries=3,
-                retry_delay=0.1  # Short delay for testing
-            )
+        provider = GCSProvider(
+            bucket_name='test-bucket',
+            credentials_path='/fake/path.json',
+            max_retries=3,
+            retry_delay=0.1  # Short delay for testing
+        )
 
-            mock_blob = MagicMock()
-            mock_gcs_client['bucket'].blob.return_value = mock_blob
+        mock_blob = MagicMock()
+        mock_gcs_client['bucket'].blob.return_value = mock_blob
 
-            # Create transient error (503 Service Unavailable)
-            error = GoogleCloudError('Service unavailable')
-            error.code = 503
-            mock_blob.upload_from_filename.side_effect = error
+        # Create transient error (503 Service Unavailable)
+        error = GoogleCloudError('Service unavailable')
+        error.code = 503
+        mock_blob.upload_from_filename.side_effect = error
 
-            start_time = time.time()
+        with patch('time.sleep') as mock_sleep:
+            result = provider.upload_file(str(local_path), 'remote/path.json')
 
-            with patch('time.sleep') as mock_sleep:
-                result = provider.upload_file(local_path, 'remote/path.json')
+            # Verify exponential backoff: 0.1s, 0.2s (total 2 sleeps for 3 attempts)
+            assert mock_sleep.call_count == 2
+            calls = mock_sleep.call_args_list
+            assert calls[0][0][0] == 0.1  # First retry: 0.1 * 2^0
+            assert calls[1][0][0] == 0.2  # Second retry: 0.1 * 2^1
 
-                # Verify exponential backoff: 0.1s, 0.2s (total 2 sleeps for 3 attempts)
-                assert mock_sleep.call_count == 2
-                calls = mock_sleep.call_args_list
-                assert calls[0][0][0] == 0.1  # First retry: 0.1 * 2^0
-                assert calls[1][0][0] == 0.2  # Second retry: 0.1 * 2^1
-
-            assert result is False
-            assert mock_blob.upload_from_filename.call_count == 3
-
-        finally:
-            os.unlink(local_path)
+        assert result is False
+        assert mock_blob.upload_from_filename.call_count == 3
 
     def test_retry_stops_after_success(self, mock_gcs_client):
         """Test that retries stop immediately after success."""

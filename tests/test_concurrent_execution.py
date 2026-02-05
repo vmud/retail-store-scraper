@@ -10,7 +10,7 @@ This test suite validates concurrent execution patterns including:
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch
 import pytest
 
 
@@ -124,14 +124,9 @@ class TestThreadPoolExecutorBehavior:
 class TestSharedResourceRaceConditions:
     """Test race conditions in shared resources."""
 
-    def test_concurrent_file_writes_with_lock(self):
+    def test_concurrent_file_writes_with_lock(self, tmp_path):
         """Test that file writes with locks prevent corruption."""
-        import tempfile
-        import os
-
-        temp_file = tempfile.NamedTemporaryFile(delete=False, mode='w')
-        temp_file.close()
-        file_path = temp_file.name
+        file_path = tmp_path / "test.txt"
 
         lock = threading.Lock()
         results = []
@@ -142,27 +137,23 @@ class TestSharedResourceRaceConditions:
                     f.write(f"{value}\n")
                     results.append(value)
 
-        try:
-            # Concurrent writes with lock protection
-            threads = [
-                threading.Thread(target=write_with_lock, args=(i,))
-                for i in range(10)
-            ]
+        # Concurrent writes with lock protection
+        threads = [
+            threading.Thread(target=write_with_lock, args=(i,))
+            for i in range(10)
+        ]
 
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
-            # Verify all writes completed
-            with open(file_path, 'r') as f:
-                lines = f.readlines()
+        # Verify all writes completed
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
 
-            assert len(lines) == 10
-            assert len(results) == 10
-
-        finally:
-            os.unlink(file_path)
+        assert len(lines) == 10
+        assert len(results) == 10
 
     def test_concurrent_dict_access_with_lock(self):
         """Test that shared dict access with locks prevents race conditions."""
@@ -192,29 +183,39 @@ class TestSharedResourceRaceConditions:
         """Test that proxy client can be safely accessed from multiple threads."""
         from src.shared.utils import _proxy_clients, _proxy_clients_lock
 
-        # Simulate concurrent access to proxy client dict
-        def access_client(retailer_id):
+        try:
+            # Simulate concurrent access to proxy client dict
+            def access_client(retailer_id):
+                with _proxy_clients_lock:
+                    # Simulate client creation
+                    if retailer_id not in _proxy_clients:
+                        _proxy_clients[retailer_id] = Mock()
+                    return _proxy_clients.get(retailer_id)
+
+            threads = [
+                threading.Thread(target=access_client, args=(f"retailer_{i % 3}",))
+                for i in range(30)
+            ]
+
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            # Should have exactly 3 clients (retailer_0, retailer_1, retailer_2)
             with _proxy_clients_lock:
-                # Simulate client creation
-                if retailer_id not in _proxy_clients:
-                    _proxy_clients[retailer_id] = Mock()
-                return _proxy_clients.get(retailer_id)
+                test_keys = [k for k in _proxy_clients.keys() if k.startswith('retailer_')]
+                assert len(test_keys) == 3
+                assert 'retailer_0' in test_keys
+                assert 'retailer_1' in test_keys
+                assert 'retailer_2' in test_keys
 
-        threads = [
-            threading.Thread(target=access_client, args=(f"retailer_{i % 3}",))
-            for i in range(30)
-        ]
-
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        # Should have exactly 3 clients (retailer_0, retailer_1, retailer_2)
-        # Clean up test data
-        test_keys = [k for k in _proxy_clients.keys() if k.startswith('retailer_')]
-        for key in test_keys:
-            del _proxy_clients[key]
+        finally:
+            # Clean up test data with lock (prevents race conditions)
+            with _proxy_clients_lock:
+                test_keys = [k for k in _proxy_clients.keys() if k.startswith('retailer_')]
+                for key in test_keys:
+                    del _proxy_clients[key]
 
 
 class TestResourceCleanup:
@@ -289,67 +290,69 @@ class TestScraperManagerConcurrency:
         """Test that ScraperManager handles concurrent start/stop requests safely."""
         from src.shared.scraper_manager import ScraperManager
 
-        manager = ScraperManager()
-
         # Mock the process creation to avoid actually starting scrapers
-        with patch('subprocess.Popen') as mock_popen:
+        with patch('subprocess.Popen') as mock_popen, \
+             patch('src.shared.scraper_manager.load_retailers_config') as mock_config, \
+             patch('src.shared.scraper_manager.RunTracker'):
+
+            mock_config.return_value = {
+                'test_retailer': {'enabled': True}
+            }
+
             mock_process = Mock()
             mock_process.pid = 12345
             mock_process.poll.return_value = None  # Process is running
             mock_popen.return_value = mock_process
 
-            with patch('src.shared.scraper_manager.load_retailers_config') as mock_config:
-                mock_config.return_value = {
-                    'test_retailer': {'enabled': True}
-                }
+            # Instantiate manager after mocks are in place
+            manager = ScraperManager()
 
-                # Start a scraper
-                try:
-                    manager.start('test_retailer')
-                except Exception:
-                    pass  # Ignore errors from mocking
+            # Start a scraper
+            manager.start('test_retailer')
 
-                # Verify that attempting to start again raises error
-                with pytest.raises(ValueError, match="already running"):
-                    manager.start('test_retailer')
+            # Verify the scraper is running
+            assert manager.is_running('test_retailer')
+
+            # Verify that attempting to start again raises error
+            with pytest.raises(ValueError, match="already running"):
+                manager.start('test_retailer')
 
     def test_multiple_scrapers_independent_lifecycle(self):
         """Test that multiple scrapers can run independently without interfering."""
         from src.shared.scraper_manager import ScraperManager
 
-        manager = ScraperManager()
+        with patch('subprocess.Popen') as mock_popen, \
+             patch('src.shared.scraper_manager.load_retailers_config') as mock_config, \
+             patch('src.shared.scraper_manager.RunTracker'):
 
-        with patch('subprocess.Popen') as mock_popen:
-            with patch('src.shared.scraper_manager.load_retailers_config') as mock_config:
-                mock_config.return_value = {
-                    'retailer1': {'enabled': True},
-                    'retailer2': {'enabled': True}
-                }
+            mock_config.return_value = {
+                'retailer1': {'enabled': True},
+                'retailer2': {'enabled': True}
+            }
 
-                # Create separate process mocks
-                mock_process1 = Mock()
-                mock_process1.pid = 11111
-                mock_process1.poll.return_value = None
+            # Create separate process mocks
+            mock_process1 = Mock()
+            mock_process1.pid = 11111
+            mock_process1.poll.return_value = None
 
-                mock_process2 = Mock()
-                mock_process2.pid = 22222
-                mock_process2.poll.return_value = None
+            mock_process2 = Mock()
+            mock_process2.pid = 22222
+            mock_process2.poll.return_value = None
 
-                mock_popen.side_effect = [mock_process1, mock_process2]
+            mock_popen.side_effect = [mock_process1, mock_process2]
 
-                # Start both scrapers
-                try:
-                    manager.start('retailer1')
-                    manager.start('retailer2')
+            # Instantiate manager after mocks are in place
+            manager = ScraperManager()
 
-                    # Both should be running
-                    assert manager.is_running('retailer1')
-                    assert manager.is_running('retailer2')
+            # Start both scrapers
+            manager.start('retailer1')
+            manager.start('retailer2')
 
-                    # Stopping one shouldn't affect the other
-                    mock_process1.poll.return_value = 0  # Process exited
-                    assert not manager.is_running('retailer1')
-                    assert manager.is_running('retailer2')
+            # Both should be running
+            assert manager.is_running('retailer1')
+            assert manager.is_running('retailer2')
 
-                except Exception:
-                    pass  # Ignore errors from mocking
+            # Stopping one shouldn't affect the other
+            mock_process1.poll.return_value = 0  # Process exited
+            assert not manager.is_running('retailer1')
+            assert manager.is_running('retailer2')
