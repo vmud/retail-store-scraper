@@ -40,7 +40,7 @@ jobs:
           bandit run.py -ll -f json -o bandit-report-run.json --exit-zero
 
       - name: Upload Bandit Reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bandit-report
           path: |
