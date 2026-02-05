@@ -129,6 +129,16 @@
             "statusMessage": "Checking file permissions..."
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-docs-staleness.sh",
+            "statusMessage": "Checking docs staleness..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -169,6 +179,16 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-yaml.sh",
             "statusMessage": "Validating YAML syntax...",
             "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/remind-docs-on-new-file.sh",
+            "statusMessage": "Checking if docs need updating..."
           }
         ]
       }
