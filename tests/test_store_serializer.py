@@ -258,7 +258,7 @@ class TestStoreFromRaw:
             'city': 'Test City',
             'state': 'TC'
         }
-        with pytest.raises(ValueError, match='Missing required fields'):
+        with pytest.raises(ValueError, match='Validation failed: Missing required field'):
             Store.from_raw(raw)
 
         # Missing name
@@ -268,7 +268,7 @@ class TestStoreFromRaw:
             'city': 'Test City',
             'state': 'TC'
         }
-        with pytest.raises(ValueError, match='Missing required fields'):
+        with pytest.raises(ValueError, match='Validation failed: Missing required field'):
             Store.from_raw(raw)
 
 
