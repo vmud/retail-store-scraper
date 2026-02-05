@@ -497,8 +497,10 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
             errors.append(f"Invalid coordinate format: lat={lat}, lng={lng}")
 
     # Validate postal code format (US 5-digit or 9-digit)
-    # Check all possible postal code field names (including canonical 'zip')
-    postal_code = store.get('zip') or store.get('postal_code') or store.get('zip_code')
+    # Check all possible postal code field names (canonical + all aliases from FIELD_ALIASES)
+    postal_code = (store.get('zip') or store.get('postal_code') or
+                   store.get('zipcode') or store.get('zip_code') or
+                   store.get('postalcode'))
     if postal_code:
         postal_str = str(postal_code).strip()
         if postal_str and not (len(postal_str) == VALIDATION.ZIP_LENGTH_SHORT or len(postal_str) == VALIDATION.ZIP_LENGTH_LONG):
