@@ -417,9 +417,9 @@ class ScrapeRunner:
             failed_items: List of items that failed extraction
         """
         failed_path = Path(f"data/{self.retailer}/failed_extractions.json")
-        failed_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
+            failed_path.parent.mkdir(parents=True, exist_ok=True)
             with open(failed_path, 'w', encoding='utf-8') as f:
                 json.dump({
                     'run_date': datetime.now().isoformat(),
@@ -427,7 +427,7 @@ class ScrapeRunner:
                     'failed_items': [str(item) for item in failed_items]
                 }, f, indent=2)
             logging.info(f"[{self.retailer}] Saved {len(failed_items)} failed items to {failed_path}")
-        except IOError as e:
+        except (IOError, OSError) as e:
             logging.warning(f"[{self.retailer}] Failed to save failed items: {e}")
 
     def run_with_checkpoints(
