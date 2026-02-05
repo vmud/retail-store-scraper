@@ -42,7 +42,7 @@ jobs:
 
       - name: Apply agent label
         if: steps.detect.outputs.agent != 'unknown'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const agent = '${{ steps.detect.outputs.agent }}';
@@ -121,7 +121,7 @@ jobs:
 
       - name: Check conflicts with other open PRs
         id: pr-conflicts
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const currentPR = context.issue.number;
@@ -216,7 +216,7 @@ jobs:
 
       - name: Add needs-rebase label if conflicting with base
         if: steps.base-conflict.outputs.conflict == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             try {
@@ -264,7 +264,7 @@ jobs:
     if: always()
     steps:
       - name: Generate summary
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const agent = '${{ needs.detect-agent.outputs.agent }}';

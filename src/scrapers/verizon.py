@@ -856,6 +856,58 @@ def _extract_single_store(
         return (url, None)
 
 
+# Discovery checkpoint filename (centralized to avoid duplication)
+_DISCOVERY_CHECKPOINT_FILENAME = "discovery_checkpoint.json"
+
+
+def _get_discovery_checkpoint_path(retailer: str) -> str:
+    """Get the path to the discovery checkpoint file.
+
+    Args:
+        retailer: Retailer name (used for path)
+
+    Returns:
+        Path string to the discovery checkpoint file
+    """
+    return f"data/{retailer}/checkpoints/{_DISCOVERY_CHECKPOINT_FILENAME}"
+
+
+def save_discovery_checkpoint(retailer: str, checkpoint_data: dict) -> None:
+    """Save discovery phase progress.
+
+    Args:
+        retailer: Retailer name (used for path)
+        checkpoint_data: Dictionary with discovery progress data
+    """
+    checkpoint_path = _get_discovery_checkpoint_path(retailer)
+    utils.save_checkpoint(checkpoint_data, checkpoint_path)
+
+
+def load_discovery_checkpoint(retailer: str) -> Optional[dict]:
+    """Load discovery phase progress if resuming.
+
+    Args:
+        retailer: Retailer name (used for path)
+
+    Returns:
+        Dictionary with discovery progress, or None if no checkpoint exists
+    """
+    checkpoint_path = _get_discovery_checkpoint_path(retailer)
+    return utils.load_checkpoint(checkpoint_path)
+
+
+def clear_discovery_checkpoint(retailer: str) -> None:
+    """Clear discovery checkpoint after successful completion.
+
+    Args:
+        retailer: Retailer name (used for path)
+    """
+    checkpoint_path = Path(_get_discovery_checkpoint_path(retailer))
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+        logging.info(f"[{retailer}] Cleared discovery checkpoint")
+
+
 def run(session, config: dict, **kwargs) -> dict:
     """Standard scraper entry point with parallel extraction and URL caching.
 
@@ -957,10 +1009,36 @@ def run(session, config: dict, **kwargs) -> dict:
         if not refresh_urls and not target_slugs:
             all_store_urls = url_cache.get()
 
+        # Load discovery checkpoint if resuming
+        # Skip checkpoint if refresh_urls is requested (user wants fresh discovery)
+        discovery_checkpoint = None
+        if resume and all_store_urls is None and not refresh_urls:
+            discovery_checkpoint = load_discovery_checkpoint(retailer_name)
+            if discovery_checkpoint:
+                logging.info(f"[{retailer_name}] Loaded discovery checkpoint from phase {discovery_checkpoint.get('phase', 0)}")
+        elif resume and refresh_urls:
+            # Clear any existing discovery checkpoint when refresh_urls is requested
+            clear_discovery_checkpoint(retailer_name)
+            logging.info(f"[{retailer_name}] Cleared discovery checkpoint due to --refresh-urls")
+
         if all_store_urls is None:
             # Cache miss or refresh requested - run full discovery
-            logging.info(f"[{retailer_name}] Phase 1: Discovering states")
-            all_states = get_all_states(session, config, retailer_name)
+            # Phase 1: Discover states
+            if discovery_checkpoint and discovery_checkpoint.get('phase', 0) >= 1:
+                # Resume from checkpoint
+                all_states = discovery_checkpoint.get('all_states', [])
+                logging.info(f"[{retailer_name}] Phase 1: Resumed with {len(all_states)} states from checkpoint")
+            else:
+                logging.info(f"[{retailer_name}] Phase 1: Discovering states")
+                all_states = get_all_states(session, config, retailer_name)
+
+                # Save Phase 1 checkpoint
+                if resume:
+                    save_discovery_checkpoint(retailer_name, {
+                        'phase': 1,
+                        'all_states': all_states,
+                        'timestamp': datetime.now().isoformat()
+                    })
 
             # Filter to target states if specified
             if target_slugs:
@@ -973,88 +1051,137 @@ def run(session, config: dict, **kwargs) -> dict:
             session_factory = create_session_factory(config)
 
             # Phase 2: Parallel city discovery
-            all_cities = []
-            if discovery_workers > 1 and len(all_states) > 1:
-                logging.info(f"[{retailer_name}] Phase 2: Discovering cities (parallel, {discovery_workers} workers)")
-                states_completed = [0]
-                states_lock = threading.Lock()
+            if discovery_checkpoint and discovery_checkpoint.get('phase', 0) >= 2:
+                # Resume from Phase 2 checkpoint
+                all_cities = discovery_checkpoint.get('all_cities', [])
+                logging.info(f"[{retailer_name}] Phase 2: Resumed with {len(all_cities)} cities from checkpoint")
+                # Filter cities to target states if specified
+                if target_slugs:
+                    # Get state names for target slugs
+                    target_state_names = {STATE_SLUG_TO_NAME.get(slug, '').lower() for slug in target_slugs}
+                    all_cities = [c for c in all_cities if c.get('state', '').lower() in target_state_names]
+                    logging.info(f"[{retailer_name}] Filtered to {len(all_cities)} cities in target states")
+            else:
+                all_cities = []
+                if discovery_workers > 1 and len(all_states) > 1:
+                    logging.info(f"[{retailer_name}] Phase 2: Discovering cities (parallel, {discovery_workers} workers)")
+                    states_completed = [0]
+                    states_lock = threading.Lock()
 
-                with ThreadPoolExecutor(max_workers=discovery_workers) as executor:
-                    futures = {
-                        executor.submit(
-                            _fetch_cities_for_state_worker,
-                            state,
-                            session_factory,
-                            config,
-                            retailer_name
-                        ): state
-                        for state in all_states
-                    }
+                    with ThreadPoolExecutor(max_workers=discovery_workers) as executor:
+                        futures = {
+                            executor.submit(
+                                _fetch_cities_for_state_worker,
+                                state,
+                                session_factory,
+                                config,
+                                retailer_name
+                            ): state
+                            for state in all_states
+                        }
 
-                    for future in as_completed(futures):
-                        state_name, cities = future.result()
+                        for future in as_completed(futures):
+                            state_name, cities = future.result()
+                            all_cities.extend(cities)
+
+                            with states_lock:
+                                states_completed[0] += 1
+                                if states_completed[0] % 10 == 0 or states_completed[0] == len(all_states):
+                                    logging.info(
+                                        f"[{retailer_name}] Phase 2 progress: "
+                                        f"{states_completed[0]}/{len(all_states)} states, "
+                                        f"{len(all_cities)} cities found"
+                                    )
+                else:
+                    # Sequential fallback for direct mode or single state
+                    logging.info(f"[{retailer_name}] Phase 2: Discovering cities (sequential)")
+                    for state in all_states:
+                        cities = get_cities_for_state(session, state['url'], state['name'], config, retailer_name)
                         all_cities.extend(cities)
 
-                        with states_lock:
-                            states_completed[0] += 1
-                            if states_completed[0] % 10 == 0 or states_completed[0] == len(all_states):
-                                logging.info(
-                                    f"[{retailer_name}] Phase 2 progress: "
-                                    f"{states_completed[0]}/{len(all_states)} states, "
-                                    f"{len(all_cities)} cities found"
-                                )
-            else:
-                # Sequential fallback for direct mode or single state
-                logging.info(f"[{retailer_name}] Phase 2: Discovering cities (sequential)")
-                for state in all_states:
-                    cities = get_cities_for_state(session, state['url'], state['name'], config, retailer_name)
-                    all_cities.extend(cities)
+                logging.info(f"[{retailer_name}] Found {len(all_cities)} cities total")
 
-            logging.info(f"[{retailer_name}] Found {len(all_cities)} cities total")
+                # Save Phase 2 checkpoint
+                if resume:
+                    save_discovery_checkpoint(retailer_name, {
+                        'phase': 2,
+                        'all_states': all_states,
+                        'all_cities': all_cities,
+                        'timestamp': datetime.now().isoformat()
+                    })
 
             # Phase 3: Parallel store URL discovery
-            all_store_urls = []
-            if discovery_workers > 1 and len(all_cities) > 1:
-                logging.info(f"[{retailer_name}] Phase 3: Discovering store URLs (parallel, {discovery_workers} workers)")
-                cities_completed = [0]
-                cities_lock = threading.Lock()
-
-                with ThreadPoolExecutor(max_workers=discovery_workers) as executor:
-                    futures = {
-                        executor.submit(
-                            _fetch_stores_for_city_worker,
-                            city,
-                            session_factory,
-                            config,
-                            retailer_name
-                        ): city
-                        for city in all_cities
-                    }
-
-                    for future in as_completed(futures):
-                        city_name, state_name, store_urls = future.result()
-                        all_store_urls.extend(store_urls)
-
-                        with cities_lock:
-                            cities_completed[0] += 1
-                            if cities_completed[0] % 100 == 0 or cities_completed[0] == len(all_cities):
-                                logging.info(
-                                    f"[{retailer_name}] Phase 3 progress: "
-                                    f"{cities_completed[0]}/{len(all_cities)} cities, "
-                                    f"{len(all_store_urls)} store URLs found"
-                                )
+            if discovery_checkpoint and discovery_checkpoint.get('phase', 0) >= 3:
+                # Resume from Phase 3 checkpoint
+                all_store_urls = discovery_checkpoint.get('all_store_urls', [])
+                logging.info(f"[{retailer_name}] Phase 3: Resumed with {len(all_store_urls)} store URLs from checkpoint")
+                # Filter store URLs to target states if specified
+                if target_slugs:
+                    # Store URLs contain state slug: /stores/{state-slug}/{city}/...
+                    all_store_urls = [
+                        url for url in all_store_urls
+                        if any(f'/stores/{slug}/' in url.lower() for slug in target_slugs)
+                    ]
+                    logging.info(f"[{retailer_name}] Filtered to {len(all_store_urls)} store URLs in target states")
             else:
-                # Sequential fallback for direct mode or few cities
-                logging.info(f"[{retailer_name}] Phase 3: Discovering store URLs (sequential)")
-                for city in all_cities:
-                    store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], config, retailer_name)
-                    all_store_urls.extend([s['url'] for s in store_infos])
+                all_store_urls = []
+                if discovery_workers > 1 and len(all_cities) > 1:
+                    logging.info(f"[{retailer_name}] Phase 3: Discovering store URLs (parallel, {discovery_workers} workers)")
+                    cities_completed = [0]
+                    cities_lock = threading.Lock()
 
-            logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
+                    with ThreadPoolExecutor(max_workers=discovery_workers) as executor:
+                        futures = {
+                            executor.submit(
+                                _fetch_stores_for_city_worker,
+                                city,
+                                session_factory,
+                                config,
+                                retailer_name
+                            ): city
+                            for city in all_cities
+                        }
+
+                        for future in as_completed(futures):
+                            city_name, state_name, store_urls = future.result()
+                            all_store_urls.extend(store_urls)
+
+                            with cities_lock:
+                                cities_completed[0] += 1
+                                if cities_completed[0] % 100 == 0 or cities_completed[0] == len(all_cities):
+                                    logging.info(
+                                        f"[{retailer_name}] Phase 3 progress: "
+                                        f"{cities_completed[0]}/{len(all_cities)} cities, "
+                                        f"{len(all_store_urls)} store URLs found"
+                                    )
+                else:
+                    # Sequential fallback for direct mode or few cities
+                    logging.info(f"[{retailer_name}] Phase 3: Discovering store URLs (sequential)")
+                    for city in all_cities:
+                        store_infos = get_stores_for_city(session, city['url'], city['city'], city['state'], config, retailer_name)
+                        all_store_urls.extend([s['url'] for s in store_infos])
+
+                logging.info(f"[{retailer_name}] Found {len(all_store_urls)} store URLs total")
+
+                # Save Phase 3 checkpoint
+                if resume:
+                    save_discovery_checkpoint(retailer_name, {
+                        'phase': 3,
+                        'all_states': all_states,
+                        'all_cities': all_cities,
+                        'all_store_urls': all_store_urls,
+                        'timestamp': datetime.now().isoformat()
+                    })
 
             # Cache the discovered URLs for future runs
             if all_store_urls:
                 url_cache.set(all_store_urls)
+
+            # Clear discovery checkpoint after successful discovery
+            # Clear regardless of whether we loaded from checkpoint - checkpoints may have been
+            # saved during this run even on a fresh start with resume=True
+            if resume:
+                clear_discovery_checkpoint(retailer_name)
         else:
             logging.info(f"[{retailer_name}] Skipped discovery phases (using cached URLs)")
 
