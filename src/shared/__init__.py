@@ -85,6 +85,21 @@ from .concurrency import (
     ConcurrencyConfig,
 )
 
+from .validation import (
+    ValidationResult,
+    validate_store_data,
+    validate_stores_batch,
+)
+
+from .store_schema import (
+    CANONICAL_FIELDS,
+    FIELD_ALIASES,
+    RECOMMENDED_STORE_FIELDS,
+    REQUIRED_STORE_FIELDS,
+    normalize_store_data,
+    normalize_stores_batch,
+)
+
 from .store_serializer import (
     Store,
     StoreSerializer,
@@ -174,7 +189,18 @@ __all__ = [
     # Concurrency management
     'GlobalConcurrencyManager',
     'ConcurrencyConfig',
-    # Store schema and serialization
+    # Validation
+    'ValidationResult',
+    'validate_store_data',
+    'validate_stores_batch',
+    # Store schema and field normalization
+    'CANONICAL_FIELDS',
+    'FIELD_ALIASES',
+    'RECOMMENDED_STORE_FIELDS',
+    'REQUIRED_STORE_FIELDS',
+    'normalize_store_data',
+    'normalize_stores_batch',
+    # Store serialization
     'Store',
     'StoreSerializer',
     'normalize_store_dict',

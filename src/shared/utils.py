@@ -1,26 +1,57 @@
-"""Shared utility functions for all retailer scrapers"""
+"""Shared utility functions for all retailer scrapers.
 
-import json
-import csv
-import time
-import random
+This module serves as a backwards-compatible facade, re-exporting functions
+from focused modules. It also contains proxy-related utilities that integrate
+multiple concerns.
+
+For new code, prefer importing from the specific modules:
+- src.shared.http - HTTP request helpers
+- src.shared.checkpoint - Checkpoint save/load
+- src.shared.delays - Delay and rate limiting
+- src.shared.validation - Store data validation
+- src.shared.logging_config - Logging setup
+- src.shared.io - File I/O (deprecated, use ExportService)
+"""
+
 import logging
-import tempfile
-import shutil
 import os
 import threading
-import yaml
-from pathlib import Path
 from types import TracebackType
-from typing import Optional, Dict, Any, List, Union, Type
+from typing import Any, Dict, List, Optional, Type, Union
 
 import requests
+import yaml
+
+# Import from focused modules for re-export
+from src.shared.checkpoint import load_checkpoint, save_checkpoint
+from src.shared.delays import (
+    DEFAULT_MAX_DELAY,
+    DEFAULT_MIN_DELAY,
+    random_delay,
+    select_delays,
+)
+from src.shared.http import DEFAULT_USER_AGENTS, get_headers, get_with_retry
+from src.shared.io import save_to_csv, save_to_json
+from src.shared.logging_config import setup_logging
+from src.shared.validation import (
+    RECOMMENDED_STORE_FIELDS,
+    REQUIRED_STORE_FIELDS,
+    ValidationResult,
+    validate_store_data,
+    validate_stores_batch,
+)
 
 # Import proxy client for Oxylabs integration
-from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode, ProxyResponse, redact_credentials
+from src.shared.proxy_client import (
+    ProxyClient,
+    ProxyConfig,
+    ProxyMode,
+    ProxyResponse,
+    redact_credentials,
+)
 
 # Import centralized constants (Issue #171)
-from src.shared.constants import HTTP, LOGGING, VALIDATION
+from src.shared.constants import HTTP
 
 # Import canonical field definitions and normalization (Issue #170)
 from src.shared.store_schema import (
@@ -72,492 +103,13 @@ __all__ = [
 
 # Default configuration values - backward compatible aliases to centralized constants
 # These can be overridden per-retailer in config/retailers.yaml
-DEFAULT_MIN_DELAY = HTTP.MIN_DELAY
-DEFAULT_MAX_DELAY = HTTP.MAX_DELAY
 DEFAULT_MAX_RETRIES = HTTP.MAX_RETRIES
 DEFAULT_TIMEOUT = HTTP.TIMEOUT
 DEFAULT_RATE_LIMIT_BASE_WAIT = HTTP.RATE_LIMIT_BASE_WAIT
 
-# Default user agents for rotation
-DEFAULT_USER_AGENTS = [
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-]
-
 # Global proxy client instances (lazy initialized per retailer)
 _proxy_clients: Dict[str, ProxyClient] = {}
 _proxy_clients_lock = threading.Lock()
-
-# Thread lock for setup_logging to prevent duplicate handlers (#163)
-_logging_lock = threading.Lock()
-
-
-def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = LOGGING.MAX_BYTES, backup_count: int = LOGGING.BACKUP_COUNT) -> None:
-    """Setup logging configuration with rotation (#118).
-
-    This function is idempotent and thread-safe - calling it multiple times
-    or from multiple threads will not add duplicate handlers (#143, #163).
-
-    Args:
-        log_file: Path to log file
-        max_bytes: Maximum file size before rotation (default: 10MB)
-        backup_count: Number of backup files to keep (default: 5)
-    """
-    from logging.handlers import RotatingFileHandler
-
-    # Thread-safe handler setup (#163)
-    with _logging_lock:
-        root_logger = logging.getLogger()
-        log_path = Path(log_file)
-
-        # Idempotency check for file handler: skip if handler exists with matching configuration
-        has_file_handler = False
-        for handler in root_logger.handlers[:]:  # Copy list to allow modification during iteration
-            if isinstance(handler, RotatingFileHandler) and handler.baseFilename == str(log_path.absolute()):
-                # Check if configuration matches
-                if handler.maxBytes == max_bytes and handler.backupCount == backup_count:
-                    has_file_handler = True
-                    break
-                # Configuration mismatch - remove old handler to reconfigure
-                root_logger.removeHandler(handler)
-                handler.close()
-
-        # Idempotency check for console handler (#143): skip if one already exists
-        # Use FileHandler (not RotatingFileHandler) to exclude ALL file-based handlers
-        # since FileHandler is the base class for all file handlers including RotatingFileHandler
-        has_console_handler = any(
-            isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
-            for h in root_logger.handlers
-        )
-
-        # Return early if both handlers already exist
-        if has_file_handler and has_console_handler:
-            return
-
-        # Ensure log directory exists
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        root_logger.setLevel(logging.INFO)
-
-        # Add file handler if needed
-        if not has_file_handler:
-            file_handler = RotatingFileHandler(
-                log_file,
-                maxBytes=max_bytes,
-                backupCount=backup_count
-            )
-            file_handler.setFormatter(formatter)
-            root_logger.addHandler(file_handler)
-
-        # Add console handler if needed (#143)
-        if not has_console_handler:
-            console_handler = logging.StreamHandler()
-            console_handler.setFormatter(formatter)
-            root_logger.addHandler(console_handler)
-
-
-def get_headers(user_agent: Optional[str] = None, base_url: Optional[str] = None) -> Dict[str, str]:
-    """Get headers dict with optional user agent rotation"""
-    if user_agent is None:
-        user_agent = random.choice(DEFAULT_USER_AGENTS)
-
-    return {
-        "User-Agent": user_agent,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Referer": base_url or "https://www.google.com",
-    }
-
-
-def random_delay(min_sec: Optional[float] = None, max_sec: Optional[float] = None) -> None:
-    """Add randomized delay between requests"""
-    min_sec = min_sec if min_sec is not None else DEFAULT_MIN_DELAY
-    max_sec = max_sec if max_sec is not None else DEFAULT_MAX_DELAY
-    delay = random.uniform(min_sec, max_sec)
-    time.sleep(delay)
-    logging.debug(f"Delayed {delay:.2f} seconds")
-
-
-def select_delays(config: Dict[str, Any], proxy_mode: str) -> tuple[float, float]:
-    """Select appropriate delays based on proxy mode.
-
-    Args:
-        config: Retailer configuration dict
-        proxy_mode: Proxy mode string ('direct', 'residential', 'web_scraper_api')
-
-    Returns:
-        Tuple of (min_delay, max_delay)
-
-    Examples:
-        >>> select_delays({'delays': {'direct': {'min_delay': 2.0, 'max_delay': 5.0},
-        ...                            'proxied': {'min_delay': 0.2, 'max_delay': 0.5}}},
-        ...               'residential')
-        (0.2, 0.5)
-    """
-    # Check if config has dual delay profiles
-    if 'delays' in config:
-        delays_config = config['delays']
-
-        # Use proxied delays for any proxy mode except 'direct'
-        if proxy_mode and proxy_mode != 'direct':
-            if 'proxied' in delays_config:
-                return (
-                    delays_config['proxied'].get('min_delay', DEFAULT_MIN_DELAY),
-                    delays_config['proxied'].get('max_delay', DEFAULT_MAX_DELAY)
-                )
-
-        # Use direct mode delays
-        if 'direct' in delays_config:
-            return (
-                delays_config['direct'].get('min_delay', DEFAULT_MIN_DELAY),
-                delays_config['direct'].get('max_delay', DEFAULT_MAX_DELAY)
-            )
-
-    # Fallback to legacy min_delay/max_delay fields
-    return (
-        config.get('min_delay', DEFAULT_MIN_DELAY),
-        config.get('max_delay', DEFAULT_MAX_DELAY)
-    )
-
-
-def get_with_retry(
-    session: requests.Session,
-    url: str,
-    max_retries: Optional[int] = None,
-    timeout: Optional[int] = None,
-    rate_limit_base_wait: Optional[int] = None,
-    min_delay: Optional[float] = None,
-    max_delay: Optional[float] = None,
-    headers_func: Optional[Any] = None,
-) -> Optional[requests.Response]:
-    """Fetch URL with exponential backoff retry and proper error handling
-
-    Args:
-        session: requests.Session to use
-        url: URL to fetch
-        max_retries: Maximum number of retry attempts
-        timeout: Request timeout in seconds
-        rate_limit_base_wait: Base wait time for 429 errors
-        min_delay: Minimum delay between requests
-        max_delay: Maximum delay between requests
-        headers_func: Optional function to get headers (for config integration)
-    """
-    max_retries = max_retries if max_retries is not None else DEFAULT_MAX_RETRIES
-    timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
-    rate_limit_base_wait = rate_limit_base_wait if rate_limit_base_wait is not None else DEFAULT_RATE_LIMIT_BASE_WAIT
-
-    # Rotate user agent
-    if headers_func:
-        headers = headers_func()
-    else:
-        headers = get_headers()
-    session.headers.update(headers)
-
-    response = None  # Initialize response to prevent AttributeError
-
-    for attempt in range(max_retries):
-        try:
-            random_delay(min_delay, max_delay)
-            response = session.get(url, timeout=timeout)
-
-            # Check if response is valid before accessing attributes
-            if response is None:
-                logging.warning(f"Received None response for {url}")
-                continue
-
-            if response.status_code == 200:
-                logging.debug(f"Successfully fetched {url}")
-                return response
-
-            if response.status_code == 429:  # Rate limited
-                wait_time = (2 ** attempt) * rate_limit_base_wait
-                logging.warning(f"Rate limited (429) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                time.sleep(wait_time)
-
-            elif response.status_code == 403:  # Blocked
-                # Use exponential backoff starting at 30s (#144)
-                wait_time = (2 ** attempt) * rate_limit_base_wait
-                logging.warning(
-                    f"Blocked (403) for {url}. "
-                    f"Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})"
-                )
-                time.sleep(wait_time)
-                # Continue to retry instead of immediate return (#144)
-
-            elif response.status_code >= 500:  # Server error
-                wait_time = HTTP.SERVER_ERROR_WAIT
-                logging.warning(f"Server error ({response.status_code}) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                time.sleep(wait_time)
-
-            elif response.status_code == 408:  # Request timeout - might succeed on retry
-                wait_time = HTTP.SERVER_ERROR_WAIT
-                logging.warning(f"Request timeout (408) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                time.sleep(wait_time)
-
-            elif 400 <= response.status_code < 500:  # Client errors (4xx) - fail fast except 403/429/408
-                # 404, 401, 410, etc. won't succeed on retry
-                logging.error(f"Client error ({response.status_code}) for {url}. Failing immediately.")
-                return None
-
-            else:
-                # 3xx redirects should be handled by requests library, but log unexpected codes
-                logging.warning(f"Unexpected HTTP {response.status_code} for {url}")
-                return None
-
-        except requests.exceptions.RequestException as e:
-            response = None  # Ensure response is None after exception
-            wait_time = HTTP.SERVER_ERROR_WAIT
-            # Redact credentials from error messages to prevent leaking sensitive info
-            safe_error = redact_credentials(str(e))
-            logging.warning(f"Request error for {url}: {safe_error}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-            time.sleep(wait_time)
-
-    # Log final failure with context (#144)
-    final_status = response.status_code if response else 'no response'
-    logging.error(f"Failed to fetch {url} after {max_retries} attempts (last status: {final_status})")
-    return None
-
-
-def save_checkpoint(data: Any, filepath: str) -> None:
-    """Save progress to allow resuming using atomic write (temp file + rename)"""
-    path = Path(filepath)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write to temporary file first, then rename atomically
-    # This prevents corruption if interrupted during write
-    try:
-        # Create temp file in same directory to ensure atomic rename works
-        temp_fd, temp_path = tempfile.mkstemp(
-            suffix='.tmp',
-            dir=path.parent,
-            prefix=path.name + '.'
-        )
-
-        try:
-            # Write JSON to temp file using os.fdopen to properly manage the fd
-            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-
-            # Atomic rename: os.replace is atomic on POSIX and Windows
-            # shutil.move is not guaranteed atomic on all filesystems
-            os.replace(temp_path, str(path))
-            logging.info(f"Checkpoint saved: {filepath}")
-
-        except Exception as e:
-            # Close the fd if fdopen failed and it's still open
-            try:
-                os.close(temp_fd)
-            except OSError:
-                pass
-            # Clean up temp file on error
-            try:
-                Path(temp_path).unlink(missing_ok=True)
-            except Exception:
-                pass
-            raise e
-
-    except (IOError, OSError) as e:
-        logging.error(f"Failed to save checkpoint {filepath}: {e}")
-        raise
-
-
-def load_checkpoint(filepath: str) -> Optional[Any]:
-    """Load previous progress"""
-    path = Path(filepath)
-    if not path.exists():
-        return None
-
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        logging.info(f"Checkpoint loaded: {filepath}")
-        return data
-    except (json.JSONDecodeError, FileNotFoundError) as e:
-        logging.warning(f"Failed to load checkpoint {filepath}: {e}")
-        return None
-
-
-def save_to_csv(stores: List[Dict[str, Any]], filepath: str, fieldnames: List[str] = None) -> None:
-    """Save stores to CSV
-
-    Args:
-        stores: List of store dictionaries
-        filepath: Path to save CSV file
-        fieldnames: Optional list of field names (uses default if not provided)
-    """
-    if not stores:
-        logging.warning("No stores to save")
-        return
-
-    path = Path(filepath)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Default fieldnames for basic store data
-    if fieldnames is None:
-        fieldnames = ['name', 'street_address', 'city', 'state', 'zip',
-                      'country', 'latitude', 'longitude', 'phone', 'url', 'scraped_at']
-
-    with open(path, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        writer.writerows(stores)
-
-    logging.info(f"Saved {len(stores)} stores to CSV: {filepath}")
-
-
-def save_to_json(stores: List[Dict[str, Any]], filepath: str) -> None:
-    """Save stores to JSON"""
-    if not stores:
-        logging.warning("No stores to save")
-        return
-
-    path = Path(filepath)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(stores, f, indent=2, ensure_ascii=False)
-
-    logging.info(f"Saved {len(stores)} stores to JSON: {filepath}")
-
-
-# =============================================================================
-# STORE DATA VALIDATION (#103)
-# =============================================================================
-
-# Field definitions imported from store_schema.py (Issue #170)
-# REQUIRED_STORE_FIELDS and RECOMMENDED_STORE_FIELDS are now defined in
-# src/shared/store_schema.py and imported above for centralized management
-
-
-class ValidationResult:
-    """Result of store data validation"""
-
-    def __init__(self, is_valid: bool, errors: List[str], warnings: List[str]):
-        self.is_valid = is_valid
-        self.errors = errors
-        self.warnings = warnings
-
-    def __repr__(self) -> str:
-        return f"ValidationResult(is_valid={self.is_valid}, errors={len(self.errors)}, warnings={len(self.warnings)})"
-
-
-def validate_store_data(store: Dict[str, Any], strict: bool = False) -> ValidationResult:
-    """Validate store data completeness and correctness.
-
-    Args:
-        store: Store data dictionary to validate
-        strict: If True, treat missing recommended fields as errors
-
-    Returns:
-        ValidationResult with is_valid status, errors list, and warnings list
-    """
-    errors = []
-    warnings = []
-
-    # Check required fields
-    for field in REQUIRED_STORE_FIELDS:
-        value = store.get(field)
-        if value is None or (isinstance(value, str) and not value.strip()):
-            errors.append(f"Missing required field: {field}")
-
-    # Check recommended fields (with alias awareness to avoid false warnings)
-    for field in RECOMMENDED_STORE_FIELDS:
-        # Check if the canonical field exists OR any of its aliases exist
-        field_present = store.get(field) is not None
-
-        # If canonical field not present, check for aliases
-        if not field_present:
-            # Find all aliases that map to this canonical field
-            aliases_for_field = [alias for alias, canonical in FIELD_ALIASES.items() if canonical == field]
-            # Check if any alias is present
-            field_present = any(store.get(alias) is not None for alias in aliases_for_field)
-
-        if not field_present:
-            if strict:
-                errors.append(f"Missing recommended field: {field}")
-            else:
-                warnings.append(f"Missing recommended field: {field}")
-
-    # Validate coordinates if present
-    lat, lng = store.get('latitude'), store.get('longitude')
-    if lat is not None and lng is not None:
-        try:
-            lat_float = float(lat)
-            lng_float = float(lng)
-            if not (VALIDATION.LAT_MIN <= lat_float <= VALIDATION.LAT_MAX):
-                errors.append(f"Invalid latitude: {lat} (must be between {VALIDATION.LAT_MIN} and {VALIDATION.LAT_MAX})")
-            if not (VALIDATION.LON_MIN <= lng_float <= VALIDATION.LON_MAX):
-                errors.append(f"Invalid longitude: {lng} (must be between {VALIDATION.LON_MIN} and {VALIDATION.LON_MAX})")
-        except (ValueError, TypeError):
-            errors.append(f"Invalid coordinate format: lat={lat}, lng={lng}")
-
-    # Validate postal code format (US 5-digit or 9-digit)
-    # Check all possible postal code field names (canonical + all aliases from FIELD_ALIASES)
-    postal_code = (store.get('zip') or store.get('postal_code') or
-                   store.get('zipcode') or store.get('zip_code') or
-                   store.get('postalcode'))
-    if postal_code:
-        postal_str = str(postal_code).strip()
-        if postal_str and not (len(postal_str) == VALIDATION.ZIP_LENGTH_SHORT or len(postal_str) == VALIDATION.ZIP_LENGTH_LONG):
-            # ZIP_LENGTH_LONG (10) for "12345-6789" format
-            warnings.append(f"Unusual postal code format: {postal_code}")
-
-    return ValidationResult(len(errors) == 0, errors, warnings)
-
-
-def validate_stores_batch(
-    stores: List[Dict[str, Any]],
-    strict: bool = False,
-    log_issues: bool = True
-) -> Dict[str, Any]:
-    """Validate a batch of stores and return summary.
-
-    Args:
-        stores: List of store data dictionaries
-        strict: If True, treat missing recommended fields as errors
-        log_issues: If True, log validation issues
-
-    Returns:
-        Dictionary with validation summary
-    """
-    total = len(stores)
-    valid_count = 0
-    invalid_stores = []
-    all_errors = []
-    all_warnings = []
-
-    for i, store in enumerate(stores):
-        result = validate_store_data(store, strict=strict)
-        if result.is_valid:
-            valid_count += 1
-        else:
-            store_id = store.get('store_id', f'index_{i}')
-            invalid_stores.append(store_id)
-            all_errors.extend([f"Store {store_id}: {e}" for e in result.errors])
-
-        all_warnings.extend(result.warnings)
-
-    if log_issues:
-        if all_errors:
-            for error in all_errors[:VALIDATION.ERROR_LOG_LIMIT]:
-                logging.warning(error)
-            if len(all_errors) > VALIDATION.ERROR_LOG_LIMIT:
-                logging.warning(f"... and {len(all_errors) - VALIDATION.ERROR_LOG_LIMIT} more validation errors")
-
-    return {
-        'total': total,
-        'valid': valid_count,
-        'invalid': total - valid_count,
-        'invalid_store_ids': invalid_stores,
-        'error_count': len(all_errors),
-        'warning_count': len(all_warnings),
-    }
 
 
 # =============================================================================
@@ -565,7 +117,15 @@ def validate_stores_batch(
 # =============================================================================
 
 def _build_proxy_config_dict(mode: str, **kwargs) -> Dict[str, Any]:
-    """Build proxy config dict from mode string and optional overrides"""
+    """Build proxy config dict from mode string and optional overrides.
+
+    Args:
+        mode: Proxy mode ('direct', 'residential', 'web_scraper_api')
+        **kwargs: Additional configuration parameters
+
+    Returns:
+        Proxy configuration dictionary
+    """
     config = {'mode': mode}
     config.update(kwargs)
     return config
@@ -575,9 +135,16 @@ def _merge_proxy_config(
     retailer_proxy: Dict[str, Any],
     global_proxy: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """
-    Merge retailer-specific proxy config with global settings.
-    Retailer settings take precedence.
+    """Merge retailer-specific proxy config with global settings.
+
+    Retailer settings take precedence over global settings.
+
+    Args:
+        retailer_proxy: Retailer-specific proxy configuration
+        global_proxy: Global proxy configuration
+
+    Returns:
+        Merged configuration dictionary
     """
     mode = retailer_proxy.get('mode', global_proxy.get('mode', 'direct'))
 
@@ -598,7 +165,14 @@ def _merge_proxy_config(
 
 
 def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any]:
-    """Build config dict from global YAML proxy section"""
+    """Build config dict from global YAML proxy section.
+
+    Args:
+        global_proxy: Global proxy section from YAML
+
+    Returns:
+        Proxy configuration dictionary
+    """
     mode = global_proxy.get('mode', 'direct')
     config = {'mode': mode}
 
@@ -618,7 +192,15 @@ def _apply_cli_settings(
     base_config: Dict[str, Any],
     cli_settings: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Apply CLI proxy settings without mutating base config."""
+    """Apply CLI proxy settings without mutating base config.
+
+    Args:
+        base_config: Base configuration dictionary
+        cli_settings: CLI-provided settings to apply
+
+    Returns:
+        Updated configuration dictionary
+    """
     if not cli_settings:
         return base_config
     updated_config = dict(base_config)
@@ -632,8 +214,7 @@ def get_retailer_proxy_config(
     cli_override: Optional[str] = None,
     cli_settings: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """
-    Get proxy configuration for specific retailer with priority resolution.
+    """Get proxy configuration for specific retailer with priority resolution.
 
     Priority (highest to lowest):
     1. CLI override (--proxy flag and related options)
@@ -780,8 +361,7 @@ def load_retailer_config(
     cli_proxy_override: Optional[str] = None,
     cli_proxy_settings: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """
-    Load full retailer configuration including proxy settings.
+    """Load full retailer configuration including proxy settings.
 
     Args:
         retailer: Retailer name
@@ -825,8 +405,7 @@ def load_retailer_config(
 # =============================================================================
 
 def get_proxy_client(config: Optional[Dict[str, Any]] = None, retailer: Optional[str] = None) -> ProxyClient:
-    """
-    Get or create a proxy client instance.
+    """Get or create a proxy client instance.
 
     If retailer is specified, returns/creates retailer-specific client.
     Otherwise returns/creates global client.
@@ -866,8 +445,7 @@ def get_proxy_client(config: Optional[Dict[str, Any]] = None, retailer: Optional
 
 
 def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClient:
-    """
-    Initialize proxy client from retailers.yaml configuration.
+    """Initialize proxy client from retailers.yaml configuration.
 
     Deprecated: Use get_retailer_proxy_config() + create_proxied_session() for new code.
     This function loads global proxy config and caches it under '__global__' key.
@@ -926,8 +504,7 @@ def get_with_proxy(
     timeout: Optional[int] = None,
     headers: Optional[Dict[str, str]] = None,
 ) -> Optional[Union[requests.Response, ProxyResponse]]:
-    """
-    Fetch URL using proxy client (Oxylabs integration).
+    """Fetch URL using proxy client (Oxylabs integration).
 
     This is the recommended function for new code. It automatically handles:
     - Proxy rotation (residential mode)
@@ -952,9 +529,7 @@ def get_with_proxy(
 def create_proxied_session(
     retailer_config: Optional[Dict[str, Any]] = None
 ) -> Union[requests.Session, 'ProxiedSession']:
-    """
-    Create a session-like object that can be used as a drop-in replacement
-    for requests.Session in existing scrapers.
+    """Create a session-like object that can be used as a drop-in replacement for requests.Session.
 
     For direct mode, returns a standard requests.Session.
     For proxy modes, returns a ProxiedSession with compatible interface.
@@ -1015,7 +590,7 @@ def close_proxy_client() -> None:
 
 
 def close_all_proxy_clients() -> None:
-    """Close all proxy client sessions and clear cache"""
+    """Close all proxy client sessions and clear cache."""
     global _proxy_clients
 
     with _proxy_clients_lock:
@@ -1031,10 +606,9 @@ def close_all_proxy_clients() -> None:
 
 
 class ProxiedSession:
-    """
-    A wrapper that provides requests.Session-like interface but uses
-    ProxyClient under the hood. This allows existing scrapers to work
-    with minimal changes.
+    """A wrapper that provides requests.Session-like interface using ProxyClient.
+
+    This allows existing scrapers to work with minimal changes.
 
     Each ProxiedSession owns its own ProxyClient instance to avoid
     shared state issues when running multiple scrapers concurrently
@@ -1047,8 +621,7 @@ class ProxiedSession:
     """
 
     def __init__(self, proxy_config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize proxied session with its own dedicated ProxyClient.
+        """Initialize proxied session with its own dedicated ProxyClient.
 
         Args:
             proxy_config: Optional proxy configuration dict
@@ -1067,7 +640,7 @@ class ProxiedSession:
 
     @property
     def _session(self) -> requests.Session:
-        """Lazy-create direct session if needed"""
+        """Lazy-create direct session if needed."""
         if self._direct_session is None:
             self._direct_session = requests.Session()
             self._direct_session.headers.update(self.headers)
@@ -1081,8 +654,7 @@ class ProxiedSession:
         timeout: Optional[int] = None,
         **kwargs: Any
     ) -> Optional[Union[requests.Response, ProxyResponse]]:
-        """
-        Make GET request using configured proxy mode.
+        """Make GET request using configured proxy mode.
 
         Args:
             url: URL to fetch
@@ -1112,7 +684,7 @@ class ProxiedSession:
             return self._client.get(url, params=params, headers=merged_headers, timeout=timeout)
 
     def close(self) -> None:
-        """Close the session and its owned resources"""
+        """Close the session and its owned resources."""
         if self._direct_session:
             self._direct_session.close()
             self._direct_session = None
