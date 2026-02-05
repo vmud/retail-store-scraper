@@ -62,6 +62,13 @@ from .cache import (
     DEFAULT_CACHE_EXPIRY_DAYS,
 )
 
+from .cache_interface import (
+    CacheInterface,
+    URLListCache,
+    RichURLCache as RichURLCacheInterface,
+    ResponseCache,
+)
+
 from .session_factory import (
     create_session_factory,
 )
@@ -131,10 +138,15 @@ __all__ = [
     'get_all_retailers_status',
     'get_progress_status',
     'load_retailers_config',
-    # URL Caching
+    # URL Caching (legacy)
     'URLCache',
     'RichURLCache',
     'DEFAULT_CACHE_EXPIRY_DAYS',
+    # Unified Cache Interface
+    'CacheInterface',
+    'URLListCache',
+    'RichURLCacheInterface',
+    'ResponseCache',
     # Session factory
     'create_session_factory',
     # Structured logging and metrics

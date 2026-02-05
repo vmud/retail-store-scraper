@@ -138,7 +138,8 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
 │   ├── constants.py            # Centralized magic numbers (HTTP, CACHE, PAUSE, WORKERS, etc.) (#171)
-│   ├── cache.py                # URL caching (URLCache, RichURLCache)
+│   ├── cache.py                # URL caching (URLCache, RichURLCache) - legacy
+│   ├── cache_interface.py      # Unified caching interface with consistent TTL (#154)
 │   ├── session_factory.py      # Thread-safe session creation for parallel workers
 │   ├── proxy_client.py         # Oxylabs proxy abstraction (ProxyMode, ProxyClient)
 │   ├── export_service.py       # Multi-format export (JSON, CSV, Excel, GeoJSON)
@@ -355,6 +356,7 @@ tests/
 ├── test_change_detector.py  # Change detection tests
 ├── test_proxy_client.py     # Proxy integration tests
 ├── test_export_service.py   # Export format tests
+├── test_cache_interface.py  # Cache interface tests (#154)
 └── uat/                     # User Acceptance Testing framework
     ├── protocol.py          # UAT test protocol
     ├── helpers.py           # Test utilities
