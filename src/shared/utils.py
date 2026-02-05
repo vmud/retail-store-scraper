@@ -465,9 +465,19 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
         if value is None or (isinstance(value, str) and not value.strip()):
             errors.append(f"Missing required field: {field}")
 
-    # Check recommended fields
+    # Check recommended fields (with alias awareness to avoid false warnings)
     for field in RECOMMENDED_STORE_FIELDS:
-        if store.get(field) is None:
+        # Check if the canonical field exists OR any of its aliases exist
+        field_present = store.get(field) is not None
+
+        # If canonical field not present, check for aliases
+        if not field_present:
+            # Find all aliases that map to this canonical field
+            aliases_for_field = [alias for alias, canonical in FIELD_ALIASES.items() if canonical == field]
+            # Check if any alias is present
+            field_present = any(store.get(alias) is not None for alias in aliases_for_field)
+
+        if not field_present:
             if strict:
                 errors.append(f"Missing recommended field: {field}")
             else:

@@ -375,3 +375,116 @@ class TestRealWorldScenarios:
         assert normalized['services'] == ['Geek Squad', 'In-Store Pickup']
         assert normalized['curbside_enabled'] is True
         assert normalized['hours'] == {'monday': '9-9', 'tuesday': '9-9'}
+
+
+class TestValidationWithAliases:
+    """Test validation handles field aliases correctly (Issue #215)."""
+
+    def test_validate_postal_code_alias_no_warning(self):
+        """Test that validation doesn't warn about missing 'zip' when 'postal_code' alias exists."""
+        from src.shared.utils import validate_store_data
+
+        store = {
+            'store_id': 'TEST-001',
+            'name': 'Test Store',
+            'street_address': '123 Main St',
+            'city': 'Seattle',
+            'state': 'WA',
+            'postal_code': '98101',  # Using alias instead of canonical 'zip'
+            'phone': '555-1234',
+            'latitude': 47.6062,
+            'longitude': -122.3321,
+            'url': 'https://example.com'
+        }
+
+        result = validate_store_data(store)
+        # Should be valid
+        assert result.is_valid
+        # Should NOT warn about missing 'zip' since 'postal_code' is present
+        assert all('zip' not in warning for warning in result.warnings)
+
+    def test_validate_phone_number_alias_no_warning(self):
+        """Test that validation doesn't warn about missing 'phone' when 'phone_number' alias exists."""
+        from src.shared.utils import validate_store_data
+
+        store = {
+            'store_id': 'TEST-002',
+            'name': 'Test Store 2',
+            'street_address': '456 Oak Ave',
+            'city': 'Portland',
+            'state': 'OR',
+            'zip': '97201',
+            'phone_number': '555-5678',  # Using alias instead of canonical 'phone'
+            'latitude': 45.5152,
+            'longitude': -122.6784,
+            'url': 'https://example.com'
+        }
+
+        result = validate_store_data(store)
+        # Should be valid
+        assert result.is_valid
+        # Should NOT warn about missing 'phone' since 'phone_number' is present
+        assert all('phone' not in warning for warning in result.warnings)
+
+    def test_validate_telephone_alias_no_warning(self):
+        """Test that validation doesn't warn about missing 'phone' when 'telephone' alias exists."""
+        from src.shared.utils import validate_store_data
+
+        store = {
+            'store_id': 'ATT-123',
+            'name': 'AT&T Store',
+            'street_address': '789 Pine St',
+            'city': 'Austin',
+            'state': 'TX',
+            'postal_code': '78701',
+            'telephone': '555-9999',  # Using 'telephone' alias
+            'latitude': 30.2672,
+            'longitude': -97.7431,
+            'url': 'https://example.com'
+        }
+
+        result = validate_store_data(store)
+        assert result.is_valid
+        assert all('phone' not in warning for warning in result.warnings)
+
+    def test_validate_missing_field_and_aliases(self):
+        """Test that validation warns when neither canonical field nor aliases are present."""
+        from src.shared.utils import validate_store_data
+
+        store = {
+            'store_id': 'TEST-003',
+            'name': 'Test Store 3',
+            'street_address': '321 Elm St',
+            'city': 'Denver',
+            'state': 'CO',
+            # Missing both 'zip' and all its aliases
+            'phone': '555-1111'
+        }
+
+        result = validate_store_data(store)
+        # Should still be valid (zip is recommended, not required)
+        assert result.is_valid
+        # Should warn about missing 'zip'
+        assert any('zip' in warning for warning in result.warnings)
+
+    def test_validate_multiple_aliases_present(self):
+        """Test validation with multiple recommended field aliases."""
+        from src.shared.utils import validate_store_data
+
+        store = {
+            'store_id': 'MULTI-001',
+            'name': 'Multi Alias Store',
+            'street_address': '999 Test Blvd',
+            'city': 'Boston',
+            'state': 'MA',
+            'postal_code': '02101',  # zip alias
+            'phone_number': '555-0000',  # phone alias
+            'latitude': 42.3601,
+            'longitude': -71.0589,
+            'url': 'https://example.com'
+        }
+
+        result = validate_store_data(store)
+        assert result.is_valid
+        # Should not warn about missing 'zip' or 'phone'
+        assert all('zip' not in warning and 'phone' not in warning for warning in result.warnings)
