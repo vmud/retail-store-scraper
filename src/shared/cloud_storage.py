@@ -150,7 +150,8 @@ class GCSProvider(CloudStorageProvider):
             except GoogleCloudError as e:
                 last_error = e
                 # Don't retry on permission errors (4xx)
-                if hasattr(e, 'code') and 400 <= e.code < 500:
+                # Note: e.code can be None for errors without HTTP status codes
+                if hasattr(e, 'code') and e.code is not None and 400 <= e.code < 500:
                     logging.warning(f"GCS client error (not retrying): {e}")
                     return False, str(e)
 

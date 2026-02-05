@@ -1,5 +1,5 @@
 # Core dependencies - pinned for reproducibility (#116)
-requests==2.32.4
+requests==2.32.5
 beautifulsoup4==4.12.2
 lxml==5.1.0
 brotli==1.2.0  # Required for Brotli decompression (T-Mobile uses Content-Encoding: br)
