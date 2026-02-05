@@ -8,6 +8,7 @@ import logging
 import random
 import time
 from typing import Dict, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -20,6 +21,30 @@ __all__ = [
     'get_with_retry',
     'log_safe',
 ]
+
+
+def _sanitize_url(url: str) -> str:
+    """Redact query parameters from URL for safe logging.
+
+    This prevents credentials or sensitive data in query parameters
+    from being logged. The sanitized URL retains scheme, host, and path
+    but replaces query parameters with [REDACTED].
+
+    Args:
+        url: URL to sanitize
+
+    Returns:
+        Sanitized URL with query parameters redacted
+    """
+    try:
+        parsed = urlparse(url)
+        safe_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        if parsed.query:
+            safe_url += "?[REDACTED]"
+        return safe_url
+    except Exception:
+        # If URL parsing fails, return a generic placeholder
+        return "[INVALID_URL]"
 
 
 def log_safe(message: str, *args, level: int = logging.INFO, **kwargs) -> None:
@@ -124,9 +149,10 @@ def get_with_retry(
             # Pass headers per-request instead of mutating session.headers (#206)
             response = session.get(url, headers=headers, timeout=timeout)
 
-            # Redact credentials from URL for safe logging (prevents leaking proxy credentials)
+            # Sanitize URL for safe logging (prevents leaking credentials in query params)
+            # Use both sanitization and credential redaction for defense in depth
             # Use log_safe() to break taint tracking chain for static analysis
-            safe_url = redact_credentials(url)
+            safe_url = _sanitize_url(redact_credentials(url))
 
             # Check if response is valid before accessing attributes
             if response is None:
@@ -191,8 +217,8 @@ def get_with_retry(
         except requests.exceptions.RequestException as e:
             response = None  # Ensure response is None after exception
             wait_time = HTTP.SERVER_ERROR_WAIT
-            # Redact credentials from error messages and URLs to prevent leaking sensitive info
-            safe_url = redact_credentials(url)
+            # Sanitize URL and error message to prevent leaking sensitive info
+            safe_url = _sanitize_url(redact_credentials(url))
             safe_error = redact_credentials(str(e))
             log_safe(
                 f"Request error for {safe_url}: {safe_error}. "
@@ -202,7 +228,7 @@ def get_with_retry(
             time.sleep(wait_time)
 
     # Log final failure with context (#144)
-    safe_url = redact_credentials(url)
+    safe_url = _sanitize_url(redact_credentials(url))
     final_status = response.status_code if response else 'no response'
     log_safe(
         f"Failed to fetch {safe_url} after {max_retries} attempts (last status: {final_status})",
