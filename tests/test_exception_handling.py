@@ -9,7 +9,6 @@ import gzip
 import json
 import pytest
 import requests
-import xml.etree.ElementTree as ET
 from io import BytesIO
 from unittest.mock import Mock, patch, MagicMock
 

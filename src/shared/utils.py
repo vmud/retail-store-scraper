@@ -11,7 +11,8 @@ import os
 import threading
 import yaml
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
+from types import TracebackType
+from typing import Optional, Dict, Any, List, Union, Type
 
 import requests
 
@@ -143,7 +144,7 @@ def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = LOGGING.M
             root_logger.addHandler(console_handler)
 
 
-def get_headers(user_agent: str = None, base_url: str = None) -> Dict[str, str]:
+def get_headers(user_agent: Optional[str] = None, base_url: Optional[str] = None) -> Dict[str, str]:
     """Get headers dict with optional user agent rotation"""
     if user_agent is None:
         user_agent = random.choice(DEFAULT_USER_AGENTS)
@@ -159,7 +160,7 @@ def get_headers(user_agent: str = None, base_url: str = None) -> Dict[str, str]:
     }
 
 
-def random_delay(min_sec: float = None, max_sec: float = None) -> None:
+def random_delay(min_sec: Optional[float] = None, max_sec: Optional[float] = None) -> None:
     """Add randomized delay between requests"""
     min_sec = min_sec if min_sec is not None else DEFAULT_MIN_DELAY
     max_sec = max_sec if max_sec is not None else DEFAULT_MAX_DELAY
@@ -168,7 +169,7 @@ def random_delay(min_sec: float = None, max_sec: float = None) -> None:
     logging.debug(f"Delayed {delay:.2f} seconds")
 
 
-def select_delays(config: dict, proxy_mode: str) -> tuple:
+def select_delays(config: Dict[str, Any], proxy_mode: str) -> tuple[float, float]:
     """Select appropriate delays based on proxy mode.
 
     Args:
@@ -213,12 +214,12 @@ def select_delays(config: dict, proxy_mode: str) -> tuple:
 def get_with_retry(
     session: requests.Session,
     url: str,
-    max_retries: int = None,
-    timeout: int = None,
-    rate_limit_base_wait: int = None,
-    min_delay: float = None,
-    max_delay: float = None,
-    headers_func = None,
+    max_retries: Optional[int] = None,
+    timeout: Optional[int] = None,
+    rate_limit_base_wait: Optional[int] = None,
+    min_delay: Optional[float] = None,
+    max_delay: Optional[float] = None,
+    headers_func: Optional[Any] = None,
 ) -> Optional[requests.Response]:
     """Fetch URL with exponential backoff retry and proper error handling
 
@@ -864,7 +865,7 @@ def get_with_proxy(
 
 def create_proxied_session(
     retailer_config: Optional[Dict[str, Any]] = None
-) -> Union[requests.Session, "ProxiedSession"]:
+) -> Union[requests.Session, 'ProxiedSession']:
     """
     Create a session-like object that can be used as a drop-in replacement
     for requests.Session in existing scrapers.
@@ -992,7 +993,7 @@ class ProxiedSession:
         params: Optional[Dict[str, str]] = None,
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[int] = None,
-        **kwargs
+        **kwargs: Any
     ) -> Optional[Union[requests.Response, ProxyResponse]]:
         """
         Make GET request using configured proxy mode.
@@ -1040,5 +1041,17 @@ class ProxiedSession:
     def __enter__(self) -> "ProxiedSession":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType]
+    ) -> None:
+        """Exit context manager and close resources.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception instance if an exception occurred
+            exc_tb: Traceback object if an exception occurred
+        """
         self.close()
