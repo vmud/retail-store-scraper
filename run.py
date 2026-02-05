@@ -19,24 +19,27 @@ import logging
 import sys
 import os
 import json
-from typing import Any, Dict, List, Optional
+from types import ModuleType
+from typing import Any, Dict, List, Optional, Union
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
 import yaml
+import requests
 
 from src.shared.utils import (
     setup_logging,
     load_retailer_config,
     create_proxied_session,
-    close_all_proxy_clients
+    close_all_proxy_clients,
+    ProxiedSession
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
 from src.shared.constants import WORKERS
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
-from src.shared.cloud_storage import get_cloud_storage
+from src.shared.cloud_storage import get_cloud_storage, CloudStorageManager
 from src.scrapers import get_available_retailers, get_enabled_retailers, get_scraper_module
 from src.change_detector import ChangeDetector
 
@@ -389,11 +392,27 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
 _scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS.EXECUTOR_MAX_WORKERS, thread_name_prefix='scraper')
 
 
-def _run_scraper_sync(retailer: str, retailer_config: Dict[str, Any], session: Any, scraper_module: Any, **kwargs: Any) -> Dict[str, Any]:
+def _run_scraper_sync(
+    retailer: str,
+    retailer_config: Dict[str, Any],
+    session: Union[requests.Session, ProxiedSession],
+    scraper_module: ModuleType,
+    **kwargs: Any
+) -> Dict[str, Any]:
     """Synchronous wrapper that runs the scraper.
 
     This function is designed to be called via run_in_executor()
     so it doesn't block the async event loop.
+
+    Args:
+        retailer: Name of the retailer
+        retailer_config: Configuration dict for the retailer
+        session: HTTP session (either requests.Session or ProxiedSession)
+        scraper_module: Module containing the scraper implementation
+        **kwargs: Additional arguments passed to scraper
+
+    Returns:
+        Dict containing scraper results
     """
     logging.info(f"[{retailer}] Calling scraper run() function")
     return scraper_module.run(session, retailer_config, retailer=retailer, **kwargs)
@@ -404,7 +423,7 @@ async def run_retailer_async(
     cli_proxy_override: Optional[str] = None,
     cli_proxy_settings: Optional[Dict[str, Any]] = None,
     export_formats: Optional[List[ExportFormat]] = None,
-    cloud_manager: Optional[Any] = None,
+    cloud_manager: Optional[CloudStorageManager] = None,
     **kwargs: Any
 ) -> Dict[str, Any]:
     """Run a single retailer scraper asynchronously
@@ -572,10 +591,10 @@ async def run_all_retailers(
     cli_proxy_override: Optional[str] = None,
     cli_proxy_settings: Optional[Dict[str, Any]] = None,
     export_formats: Optional[List[ExportFormat]] = None,
-    cloud_manager: Optional[Any] = None,
+    cloud_manager: Optional[CloudStorageManager] = None,
     **kwargs: Any
 ) -> Dict[str, Any]:
-    """Run multiple retailers concurrently
+    """Run multiple retailers concurrently.
 
     Args:
         retailers: List of retailer names to run
@@ -584,6 +603,9 @@ async def run_all_retailers(
         export_formats: List of formats to export
         cloud_manager: Optional CloudStorageManager for uploading to GCS
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
+
+    Returns:
+        Dict containing results for all retailers
     """
     logging.info(f"Starting concurrent scrape for {len(retailers)} retailers: {retailers}")
 

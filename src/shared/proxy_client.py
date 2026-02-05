@@ -25,7 +25,8 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Tuple
+from types import TracebackType
+from typing import Any, Dict, Optional, Tuple, Type
 import requests
 
 
@@ -270,8 +271,13 @@ class ProxyResponse:
         """Check if request was successful"""
         return 200 <= self.status_code < 300
 
-    def json(self) -> Dict[str, Any]:
-        """Parse response as JSON"""
+    def json(self) -> Any:
+        """Parse response as JSON.
+
+        Returns:
+            Any: Parsed JSON data. Can be dict, list, str, int, float, bool, or None
+                 depending on the JSON content.
+        """
         return json.loads(self.text)
 
     def raise_for_status(self) -> None:
@@ -649,7 +655,19 @@ class ProxyClient:
     def __enter__(self) -> "ProxyClient":
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType]
+    ) -> None:
+        """Exit context manager and close resources.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception instance if an exception occurred
+            exc_tb: Traceback object if an exception occurred
+        """
         self.close()
 
 

@@ -11,7 +11,8 @@ import os
 import threading
 import yaml
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
+from types import TracebackType
+from typing import Optional, Dict, Any, List, Union, Type
 
 import requests
 
@@ -1040,5 +1041,17 @@ class ProxiedSession:
     def __enter__(self) -> "ProxiedSession":
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType]
+    ) -> None:
+        """Exit context manager and close resources.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception instance if an exception occurred
+            exc_tb: Traceback object if an exception occurred
+        """
         self.close()
