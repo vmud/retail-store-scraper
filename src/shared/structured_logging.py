@@ -300,17 +300,20 @@ class StructuredLogger:
             metadata: Optional phase results
         """
         # Calculate phase duration if we tracked start time
-        # Create a copy to avoid mutating the caller's dictionary
-        metadata = (metadata or {}).copy()
+        # Build metadata dict only if we have content to avoid emitting empty dicts
+        event_metadata = {}
+        if metadata:
+            event_metadata.update(metadata)
+
         if phase in self._phase_start_times:
             duration_ms = (time.time() - self._phase_start_times[phase]) * 1000
-            metadata['duration_ms'] = round(duration_ms, 2)
+            event_metadata['duration_ms'] = round(duration_ms, 2)
 
         event = self._create_event(
             phase=phase,
             event=EventType.PHASE_END.value,
             store_count=store_count,
-            metadata=metadata
+            metadata=event_metadata if event_metadata else None
         )
         self.logger.info(event.to_json())
 
