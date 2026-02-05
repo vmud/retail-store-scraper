@@ -45,8 +45,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: 'dependabot[bot],renovate[bot],greenkeeper[bot]'
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} for code quality, potential bugs, and best practices.
+            Focus on the changed files and provide constructive feedback.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
