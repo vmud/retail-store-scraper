@@ -139,7 +139,7 @@ class ExportService:
 
         # Normalize field names if requested (Issue #170)
         if normalize_fields:
-            retailer_name = retailer_config.get('name') if retailer_config else None
+            retailer_name = retailer_config and retailer_config.get('name')
             stores = normalize_stores_batch(stores, retailer=retailer_name)
 
         # Validate output path to prevent path traversal attacks

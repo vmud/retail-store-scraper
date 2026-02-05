@@ -8,7 +8,7 @@ to the canonical schema.
 Issue #170: Standardize field naming across retailers
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 
@@ -34,6 +34,13 @@ class CanonicalStoreSchema:
     This schema defines the standard field names and types that all retailer
     data should be normalized to. Retailers may have additional custom fields,
     but core fields should use these standard names.
+
+    Note: This class is currently used for documentation purposes and to define
+    the canonical schema. It could be used in the future for:
+    - Type hints and validation (e.g., validating stores against schema)
+    - Generating TypedDict or Pydantic models
+    - API documentation generation
+    For now, normalization uses the CANONICAL_FIELDS dict and FIELD_ALIASES.
     """
 
     # Required fields - every store must have these
@@ -84,8 +91,8 @@ REQUIRED_STORE_FIELDS: Set[str] = {
     'state',
 }
 
-# Recommended fields for complete store data
-RECOMMENDED_STORE_FIELDS: Set[str] = REQUIRED_STORE_FIELDS | {
+# Recommended fields for complete store data (excluding required fields to avoid duplicate validation)
+RECOMMENDED_STORE_FIELDS: Set[str] = {
     'zip',
     'phone',
     'latitude',
@@ -157,12 +164,11 @@ def normalize_store_data(store: Dict[str, Any], retailer: str = None) -> Dict[st
     # Apply field aliases
     for alias, canonical in FIELD_ALIASES.items():
         if alias in normalized:
-            # Only rename if canonical name doesn't already exist
+            value = normalized.pop(alias)
+            # Only set canonical name if it doesn't already exist
             # (canonical name takes precedence if both exist)
             if canonical not in normalized:
-                normalized[canonical] = normalized[alias]
-            # Remove the alias field
-            del normalized[alias]
+                normalized[canonical] = value
 
     # Add retailer metadata if provided and not already present
     if retailer and 'retailer' not in normalized:
