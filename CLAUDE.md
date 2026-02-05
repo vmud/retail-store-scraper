@@ -138,6 +138,7 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
 │   ├── constants.py            # Centralized magic numbers (HTTP, CACHE, PAUSE, WORKERS, etc.) (#171)
+│   ├── concurrency.py          # Global concurrency and rate limit management (#153)
 │   ├── cache.py                # URL caching (URLCache, RichURLCache) - legacy
 │   ├── cache_interface.py      # Unified caching interface with consistent TTL (#154)
 │   ├── session_factory.py      # Thread-safe session creation for parallel workers
@@ -225,6 +226,43 @@ retailers:
 ```
 
 The CLI uses `get_enabled_retailers()` which respects this setting.
+
+### Concurrency Configuration
+
+Global concurrency limits prevent CPU oversubscription when multiple retailers run concurrently (Issue #153).
+
+**Configuration in `config/retailers.yaml`:**
+```yaml
+concurrency:
+  # Maximum concurrent workers across ALL retailers
+  global_max_workers: 10
+
+  # Per-retailer worker limits (overrides default if specified)
+  per_retailer_max:
+    verizon: 7      # High parallelism with proxy
+    target: 5       # API-based, can handle more
+    walmart: 3      # JS rendering is resource-heavy
+    bell: 1         # Respects crawl-delay: 10
+
+  # Proxy rate limiting (requests per second)
+  proxy_rate_limit: 10.0
+```
+
+**How it works:**
+- `GlobalConcurrencyManager` is a thread-safe singleton that coordinates all scrapers
+- Each request acquires both a global slot and a retailer-specific slot
+- Prevents resource exhaustion when running `--all` with many parallel workers
+- Automatically loaded from `retailers.yaml` at startup
+
+**Usage in scrapers:**
+```python
+from src.shared.concurrency import GlobalConcurrencyManager
+
+manager = GlobalConcurrencyManager()
+with manager.acquire_slot('verizon'):
+    # Make request within concurrency limits
+    response = session.get(url)
+```
 
 ### Proxy Configuration
 

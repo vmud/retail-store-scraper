@@ -916,6 +916,8 @@ class TestTMobileFailedExtraction:
             return original_path(path_str)
 
         monkeypatch.setattr('src.scrapers.tmobile.Path', patched_path)
+        # Also patch Path in scraper_utils since that's where failed URLs are saved now
+        monkeypatch.setattr('src.shared.scraper_utils.Path', patched_path)
 
         result = run(mock_session, config, retailer='tmobile')
 

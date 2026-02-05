@@ -156,8 +156,10 @@ class TestTargetRefactoring:
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
             # Ensure cache returns None so get_all_store_ids is called
-            # Target uses get_rich() not get()
+            # Mock needs both get() and get_rich() since isinstance() check will fail
+            mock_cache.return_value.get.return_value = None
             mock_cache.return_value.get_rich.return_value = None
+            mock_cache.return_value.retailer = 'target'
             mock_get_ids.return_value = []
             mock_validate.return_value = {'valid': 0, 'total': 0, 'warning_count': 0}
 
@@ -449,18 +451,22 @@ class TestNoGlobalState:
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
             # Ensure cache returns None so get_all_store_ids is called
-            # Target uses get_rich() not get()
+            # Mock needs both get() and get_rich() since isinstance() check will fail
+            mock_cache.return_value.get.return_value = None
             mock_cache.return_value.get_rich.return_value = None
+            mock_cache.return_value.retailer = 'target'
             mock_get_ids.return_value = []
             mock_validate.return_value = {'valid': 0, 'total': 0, 'warning_count': 0}
 
             # First run
-            target.run(mock_session, mock_config, retailer='target')
-            first_call_counter = mock_get_ids.call_args[1].get('request_counter')
+            result1 = target.run(mock_session, mock_config, retailer='target')
+            assert result1 is not None, "First run returned None"
+            first_call_counter = mock_get_ids.call_args.kwargs.get('request_counter')
 
             # Second run
-            target.run(mock_session, mock_config, retailer='target')
-            second_call_counter = mock_get_ids.call_args[1].get('request_counter')
+            result2 = target.run(mock_session, mock_config, retailer='target')
+            assert result2 is not None, "Second run returned None"
+            second_call_counter = mock_get_ids.call_args.kwargs.get('request_counter')
 
             # Each run should create a new counter instance
             if first_call_counter and second_call_counter:

@@ -23,6 +23,10 @@ SHARED_MODULES = {
         'RichURLCache',
         'DEFAULT_CACHE_EXPIRY_DAYS',
     ],
+    'src.shared.concurrency': [
+        'ConcurrencyConfig',
+        'GlobalConcurrencyManager',
+    ],
     'src.shared.session_factory': [
         'create_session_factory',
     ],
@@ -98,6 +102,7 @@ SHARED_MODULES = {
         # Functions
         'close_all_proxy_clients',
         'close_proxy_client',
+        'configure_concurrency_from_yaml',
         'create_proxied_session',
         'get_headers',
         'get_proxy_client',
