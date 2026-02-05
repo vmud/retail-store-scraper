@@ -66,6 +66,15 @@ from .session_factory import (
     create_session_factory,
 )
 
+from .structured_logging import (
+    LogEvent,
+    EventType,
+    Phase,
+    StructuredLogger,
+    MetricsAggregator,
+    create_logger,
+)
+
 from .sentry_integration import (
     init_sentry,
     capture_scraper_error,
@@ -128,6 +137,13 @@ __all__ = [
     'DEFAULT_CACHE_EXPIRY_DAYS',
     # Session factory
     'create_session_factory',
+    # Structured logging and metrics
+    'LogEvent',
+    'EventType',
+    'Phase',
+    'StructuredLogger',
+    'MetricsAggregator',
+    'create_logger',
     # Sentry integration
     'init_sentry',
     'capture_scraper_error',
