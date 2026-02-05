@@ -25,7 +25,8 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
+from types import TracebackType
+from typing import Any, Dict, Optional, Tuple, Type
 import requests
 
 
@@ -126,7 +127,7 @@ class ProxyConfig:
         return ""
 
     @classmethod
-    def _get_credentials_for_mode(cls, mode: ProxyMode) -> tuple:
+    def _get_credentials_for_mode(cls, mode: ProxyMode) -> Tuple[str, str]:
         """
         Get credentials for a specific mode with fallback to legacy env vars.
 
@@ -271,7 +272,12 @@ class ProxyResponse:
         return 200 <= self.status_code < 300
 
     def json(self) -> Any:
-        """Parse response as JSON"""
+        """Parse response as JSON.
+
+        Returns:
+            Any: Parsed JSON data. Can be dict, list, str, int, float, bool, or None
+                 depending on the JSON content.
+        """
         return json.loads(self.text)
 
     def raise_for_status(self) -> None:
@@ -407,7 +413,7 @@ class ProxyClient:
         params: Optional[Dict[str, str]] = None,
         render_js: Optional[bool] = None,
         timeout: Optional[int] = None,
-        **kwargs
+        **kwargs: Any
     ) -> Optional[ProxyResponse]:
         """
         Make a GET request using configured proxy mode.
@@ -492,7 +498,7 @@ class ProxyClient:
         headers: Optional[Dict[str, str]],
         params: Optional[Dict[str, str]],
         timeout: int,
-        **kwargs
+        **kwargs: Any
     ) -> ProxyResponse:
         """Make request via direct connection or residential proxy"""
         start_time = time.time()
@@ -609,7 +615,7 @@ class ProxyClient:
             proxy_mode=ProxyMode.WEB_SCRAPER_API,
         )
 
-    def validate_credentials(self) -> tuple:
+    def validate_credentials(self) -> Tuple[bool, str]:
         """Test proxy credentials with a simple request.
 
         Returns:
@@ -649,7 +655,19 @@ class ProxyClient:
     def __enter__(self) -> "ProxyClient":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType]
+    ) -> None:
+        """Exit context manager and close resources.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception instance if an exception occurred
+            exc_tb: Traceback object if an exception occurred
+        """
         self.close()
 
 
