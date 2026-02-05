@@ -375,6 +375,21 @@ This repository supports parallel development by multiple AI agents. See `.claud
 - Include agent ID in commits: `Agent: cc1`
 - High-conflict files (coordinate before editing): `run.py`, `config/retailers.yaml`, `CLAUDE.md`, `requirements.txt`
 
+### Custom Agents (.claude/agents/)
+
+**PR lifecycle agents** — orchestrated by pr-coordinator:
+- `pr-coordinator` (opus) — triages open PRs and spawns sub-agents
+- `pr-reviewer` (opus) — code review with project security checklist enforcement
+- `ci-monitor` (sonnet) — diagnoses CI failures (pytest, pylint, bandit, etc.)
+- `comment-resolver` (sonnet) — implements reviewer feedback and resolves threads
+- `conflict-resolver` (opus) — three-way merge analysis and resolution
+- `rebase-manager` (sonnet) — branch sync with force-push safety (requires user confirmation)
+
+**Project-specific agents:**
+- `data-quality-reviewer` — validates scraped store data before GCS sync
+- `scraper-validator` — checks scraper implementations against project patterns
+- `proxy-tester` — tests Oxylabs proxy configuration
+
 ## Deployment
 
 Deployment tools in `deploy/`:
