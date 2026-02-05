@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write  # Required for posting review comments
       issues: read
       id-token: write
 
@@ -31,22 +31,20 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Load Claude Code OAuth token from 1Password
+      - name: Load Anthropic API key from 1Password
         uses: 1password/load-secrets-action@v2
         with:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CLAUDE_CODE_OAUTH_TOKEN: op://DEV/CLAUDE_CODE_OAUTH_TOKEN/credential  # pragma: allowlist secret
+          ANTHROPIC_API_KEY: op://DEV/ANTHROPIC_API_KEY/credential  # pragma: allowlist secret
 
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ env.ANTHROPIC_API_KEY }}
           allowed_bots: 'dependabot[bot],renovate[bot],greenkeeper[bot]'
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} for code quality, potential bugs, and best practices.
+            Focus on the changed files and provide constructive feedback.
