@@ -134,7 +134,8 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   ├── bestbuy.py              # XML sitemap
 │   ├── telus.py                # Uberall API (Canadian)
 │   ├── cricket.py              # Yext API (US)
-│   └── bell.py                 # Sitemap + JSON-LD (Canadian)
+│   ├── bell.py                 # Sitemap + JSON-LD (Canadian)
+│   └── homedepot.py            # GraphQL Federation Gateway API
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
 │   ├── constants.py            # Centralized magic numbers (HTTP, CACHE, PAUSE, WORKERS, etc.) (#171)
