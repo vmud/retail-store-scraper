@@ -260,6 +260,14 @@ GitHub Actions can securely access secrets from 1Password using a service accoun
 
 See [docs/1password-github-actions.md](docs/1password-github-actions.md) for full documentation.
 
+### Claude Code Action (PR Reviews)
+
+The `claude-code-action` workflow uses Anthropic API keys loaded from 1Password:
+- **Use `anthropic_api_key`** - OAuth tokens (`claude setup-token`) have validation issues in CI
+- **Debug with `show_full_output: true`** - reveals actual error messages instead of generic failures
+- **Trigger CI reruns**: `gh pr update-branch <number>` or `gh run rerun <run-id>`
+- **Required permissions**: `pull-requests: write` for posting review comments
+
 ### Cloud Storage (GCS)
 
 Sync scraped data to Google Cloud Storage for backup and team access.
