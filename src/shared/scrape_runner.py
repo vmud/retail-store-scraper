@@ -351,6 +351,7 @@ class ScrapeRunner:
             List of extracted store dictionaries
         """
         total_to_process = len(items)
+        failed_items = []
 
         for i, item in enumerate(items, 1):
             try:
@@ -377,6 +378,8 @@ class ScrapeRunner:
                     # Log successful extraction every 10 stores
                     if i % 10 == 0:
                         logging.info(f"[{self.retailer}] Extracted {len(self.stores)} stores so far ({i}/{total_to_process})")
+                else:
+                    failed_items.append(item_key)
             except Exception as e:
                 # Safe fallback for item_key if extraction failed before key was set
                 try:
@@ -384,6 +387,7 @@ class ScrapeRunner:
                 except Exception:
                     item_key = str(item)
                 logging.warning(f"[{self.retailer}] Error extracting {item_key}: {e}")
+                failed_items.append(item_key)
 
             # Progress logging every 100 items
             if i % 100 == 0:
@@ -392,6 +396,17 @@ class ScrapeRunner:
             if i % self.checkpoint_interval == 0:
                 self._save_checkpoint()
                 logging.info(f"[{self.retailer}] Checkpoint saved: {len(self.stores)} stores processed")
+
+        # Log failed extractions
+        if failed_items:
+            logging.warning(f"[{self.retailer}] Failed to extract {len(failed_items)} items:")
+            for failed_item in failed_items[:10]:
+                logging.warning(f"[{self.retailer}]   - {failed_item}")
+            if len(failed_items) > 10:
+                logging.warning(f"[{self.retailer}]   ... and {len(failed_items) - 10} more")
+
+            # Save failed items to file
+            self._save_failed_items(failed_items)
 
         return self.stores
 
