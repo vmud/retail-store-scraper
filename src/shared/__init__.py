@@ -72,6 +72,14 @@ from .store_serializer import (
     normalize_store_dict,
 )
 
+from .structured_logging import (
+    LogEvent,
+    EventType,
+    Phase,
+    StructuredLogger,
+    MetricsAggregator,
+    create_logger,
+)
 from .sentry_integration import (
     init_sentry,
     capture_scraper_error,
@@ -138,6 +146,13 @@ __all__ = [
     'Store',
     'StoreSerializer',
     'normalize_store_dict',
+    # Structured logging and metrics
+    'LogEvent',
+    'EventType',
+    'Phase',
+    'StructuredLogger',
+    'MetricsAggregator',
+    'create_logger',
     # Sentry integration
     'init_sentry',
     'capture_scraper_error',
