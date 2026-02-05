@@ -936,6 +936,8 @@ def _handle_targeted_states(context: dict) -> Tuple[List[dict], Set[str]]:
 
     if not target_slugs:
         logging.error(f"[{retailer_name}] No valid state abbreviations provided")
+        # Set error flag to signal early exit
+        context['_target_states_error'] = True
         return existing_stores, existing_urls
 
     logging.info(f"[{retailer_name}] Targeted states mode: {target_states} -> {target_slugs}")
@@ -1268,7 +1270,12 @@ def run(session, config: dict, **kwargs) -> dict:
 
     try:
         # Handle targeted states mode
-        existing_stores, existing_urls = _handle_targeted_states(context)
+        existing_stores, _ = _handle_targeted_states(context)
+
+        # Check for error in targeted states validation
+        if context.get('_target_states_error'):
+            logging.error(f"[{retailer_name}] Failed to process targeted states - aborting scrape")
+            return {'stores': [], 'count': 0, 'checkpoints_used': False}
 
         # Reset request counter
         reset_request_counter()
