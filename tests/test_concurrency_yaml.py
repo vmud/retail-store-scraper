@@ -254,3 +254,46 @@ concurrency:
 
     assert manager.config.global_max_workers == 1000
     assert manager._retailer_max_workers['verizon'] == 500
+
+
+def test_null_per_retailer_max(manager, temp_yaml):
+    """Test config with null per_retailer_max (YAML key exists but value is null).
+
+    This tests the fix for: 'Logging crashes when YAML has null per_retailer_max'
+    When YAML has 'per_retailer_max:' with no value, dict.get() returns None
+    (not the default {}) because the key exists. The logging code must handle this.
+    """
+    config_content = """
+concurrency:
+  global_max_workers: 15
+  per_retailer_max:
+  proxy_rate_limit: 10.0
+"""
+    with open(temp_yaml, 'w') as f:
+        f.write(config_content)
+
+    # Should not raise TypeError from len(None)
+    configure_concurrency_from_yaml(temp_yaml)
+
+    assert manager.config.global_max_workers == 15
+    assert manager.config.proxy_requests_per_second == 10.0
+    # per_retailer_max should not have been updated (empty dict passed as None)
+    assert len(manager._retailer_max_workers) == 0
+
+
+def test_explicit_null_per_retailer_max(manager, temp_yaml):
+    """Test config with explicit null per_retailer_max."""
+    config_content = """
+concurrency:
+  global_max_workers: 12
+  per_retailer_max: null
+  proxy_rate_limit: 8.0
+"""
+    with open(temp_yaml, 'w') as f:
+        f.write(config_content)
+
+    # Should not raise TypeError from len(None)
+    configure_concurrency_from_yaml(temp_yaml)
+
+    assert manager.config.global_max_workers == 12
+    assert manager.config.proxy_requests_per_second == 8.0

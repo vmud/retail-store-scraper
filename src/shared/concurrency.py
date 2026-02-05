@@ -84,22 +84,37 @@ class GlobalConcurrencyManager:
         return cls._instance
 
     def __init__(self) -> None:
-        """Initialize the manager (only runs once for singleton)."""
+        """Initialize the manager (only runs once for singleton).
+
+        Thread-safety note: We use the class-level lock to protect initialization
+        to prevent race conditions where multiple threads could simultaneously
+        see _initialized as False and proceed to overwrite each other's state.
+        """
+        # Fast path: already initialized (no lock needed)
+        # pylint: disable=access-member-before-definition
+        # Note: _initialized is set in __new__ before __init__ is called
         if self._initialized:
             return
 
-        self.config = ConcurrencyConfig()
-        self._global_semaphore = threading.Semaphore(self.config.global_max_workers)
-        self._retailer_semaphores: Dict[str, threading.Semaphore] = {}
-        self._retailer_max_workers: Dict[str, int] = {}
-        self._config_lock = threading.Lock()
-        self._initialized = True
+        # Slow path: need to check under lock to prevent race condition
+        with self._lock:
+            # Double-check after acquiring lock
+            if self._initialized:
+                return
+            # pylint: enable=access-member-before-definition
 
-        logging.debug(
-            f"[ConcurrencyManager] Initialized with "
-            f"global_max={self.config.global_max_workers}, "
-            f"per_retailer_max={self.config.per_retailer_max}"
-        )
+            self.config = ConcurrencyConfig()
+            self._global_semaphore = threading.Semaphore(self.config.global_max_workers)
+            self._retailer_semaphores: Dict[str, threading.Semaphore] = {}
+            self._retailer_max_workers: Dict[str, int] = {}
+            self._config_lock = threading.Lock()
+            self._initialized = True
+
+            logging.debug(
+                f"[ConcurrencyManager] Initialized with "
+                f"global_max={self.config.global_max_workers}, "
+                f"per_retailer_max={self.config.per_retailer_max}"
+            )
 
     def configure(
         self,
@@ -116,16 +131,21 @@ class GlobalConcurrencyManager:
 
         Note:
             Changing limits while scrapers are running may not take effect
-            until currently held slots are released.
+            until currently held slots are released. When the global semaphore
+            is replaced, workers holding the old semaphore will release to
+            the old instance, and new workers will acquire from the new one.
+
+        Warning:
+            Avoid calling configure() while workers are actively holding slots,
+            as this replaces semaphores and may cause permit leaks. The
+            acquire_slot() method captures semaphore references to ensure
+            acquire and release operate on the same semaphore instance.
         """
         with self._config_lock:
             if global_max_workers is not None:
                 old_value = self.config.global_max_workers
-                self.config = ConcurrencyConfig(
-                    global_max_workers=global_max_workers,
-                    per_retailer_max=self.config.per_retailer_max,
-                    proxy_requests_per_second=self.config.proxy_requests_per_second
-                )
+                # Update config attribute directly (more efficient than recreating)
+                self.config.global_max_workers = global_max_workers
                 self._global_semaphore = threading.Semaphore(global_max_workers)
                 logging.info(
                     f"[ConcurrencyManager] Updated global_max_workers: "
@@ -143,11 +163,8 @@ class GlobalConcurrencyManager:
 
             if proxy_requests_per_second is not None:
                 old_value = self.config.proxy_requests_per_second
-                self.config = ConcurrencyConfig(
-                    global_max_workers=self.config.global_max_workers,
-                    per_retailer_max=self.config.per_retailer_max,
-                    proxy_requests_per_second=proxy_requests_per_second
-                )
+                # Update config attribute directly (more efficient than recreating)
+                self.config.proxy_requests_per_second = proxy_requests_per_second
                 logging.info(
                     f"[ConcurrencyManager] Updated proxy rate limit: "
                     f"{old_value} -> {proxy_requests_per_second} req/s"
@@ -197,19 +214,27 @@ class GlobalConcurrencyManager:
         Example:
             with manager.acquire_slot('verizon', timeout=30):
                 response = session.get(url)
+
+        Thread-safety note:
+            We capture semaphore references in local variables to ensure that
+            acquire and release operate on the same semaphore instance, even if
+            configure() replaces the semaphore between acquire and release.
         """
+        # Capture semaphore references to ensure acquire/release operate on same instance
+        # This prevents permit leaks if configure() replaces semaphores mid-operation
+        global_sem = self._global_semaphore
         retailer_sem = self.get_retailer_semaphore(retailer)
         start_time = time.time()
 
         # Acquire global slot first
         if timeout is not None:
-            global_acquired = self._global_semaphore.acquire(timeout=timeout)
+            global_acquired = global_sem.acquire(timeout=timeout)
             if not global_acquired:
                 raise TimeoutError(
                     f"[{retailer}] Failed to acquire global slot within {timeout}s"
                 )
         else:
-            self._global_semaphore.acquire()
+            global_sem.acquire()
 
         try:
             # Acquire retailer slot
@@ -229,7 +254,7 @@ class GlobalConcurrencyManager:
             finally:
                 retailer_sem.release()
         finally:
-            self._global_semaphore.release()
+            global_sem.release()
 
     def get_stats(self) -> Dict[str, any]:
         """Get current concurrency statistics.

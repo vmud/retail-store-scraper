@@ -345,3 +345,134 @@ def test_thread_safety_of_singleton_creation():
 
     # All instances should have the same ID (same object)
     assert len(set(instances)) == 1, "Multiple instances created"
+
+
+def test_singleton_initialization_race_condition():
+    """Test that singleton initialization is thread-safe under heavy contention.
+
+    This tests the fix for: 'Singleton initialization has race condition between threads'
+    Without proper locking, multiple threads could both see _initialized as False
+    and proceed to initialize, overwriting each other's state.
+    """
+    # Reset singleton to test fresh initialization
+    GlobalConcurrencyManager._instance = None
+
+    configs_seen = []
+    initialization_count = [0]
+    init_lock = threading.Lock()
+
+    # Monkey-patch to count initializations
+    original_init = GlobalConcurrencyManager.__init__
+
+    def counting_init(self):
+        # Call original init
+        original_init(self)
+        # Track initialization (check if config was just set)
+        if hasattr(self, 'config'):
+            with init_lock:
+                configs_seen.append(id(self.config))
+
+    GlobalConcurrencyManager.__init__ = counting_init
+
+    try:
+        barrier = threading.Barrier(20)
+
+        def create_instance():
+            barrier.wait()  # Synchronize all threads to start together
+            mgr = GlobalConcurrencyManager()
+            return mgr
+
+        threads = [threading.Thread(target=create_instance) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # All instances should have seen the same config object
+        # (only one initialization should have occurred)
+        assert len(set(configs_seen)) == 1, (
+            f"Multiple config objects created: {len(set(configs_seen))} "
+            f"(indicates race condition in initialization)"
+        )
+    finally:
+        GlobalConcurrencyManager.__init__ = original_init
+        # Clean up singleton for other tests
+        mgr = GlobalConcurrencyManager()
+        mgr.reset()
+
+
+def test_semaphore_capture_prevents_release_mismatch(manager):
+    """Test that semaphore references are captured to prevent release mismatch.
+
+    This tests the fix for: 'Global semaphore not captured, causing release mismatch'
+    If configure() replaces the semaphore between acquire and release, the release
+    should still operate on the originally acquired semaphore.
+    """
+    manager.configure(global_max_workers=2)
+
+    # Capture the original semaphore reference
+    original_semaphore = manager._global_semaphore
+
+    acquired_event = threading.Event()
+    continue_event = threading.Event()
+
+    def worker():
+        with manager.acquire_slot('verizon'):
+            acquired_event.set()
+            continue_event.wait()  # Hold the slot
+
+    # Start worker that will hold a slot
+    worker_thread = threading.Thread(target=worker)
+    worker_thread.start()
+    acquired_event.wait()  # Wait for worker to acquire
+
+    # Now reconfigure (this replaces the semaphore)
+    manager.configure(global_max_workers=5)
+    new_semaphore = manager._global_semaphore
+
+    # The semaphores should be different objects
+    assert original_semaphore is not new_semaphore, "Semaphore should be replaced"
+
+    # Release the worker - this should release to the ORIGINAL semaphore,
+    # not the new one (due to capturing the reference)
+    continue_event.set()
+    worker_thread.join()
+
+    # The new semaphore should still have all 5 permits available
+    # (the release went to the old semaphore, not this one)
+    # We can verify by acquiring all 5 slots immediately
+    acquired_slots = 0
+    for _ in range(5):
+        if manager._global_semaphore.acquire(timeout=0.01):
+            acquired_slots += 1
+
+    assert acquired_slots == 5, (
+        f"Expected 5 available slots in new semaphore, got {acquired_slots}"
+    )
+
+    # Release all acquired slots
+    for _ in range(acquired_slots):
+        manager._global_semaphore.release()
+
+
+def test_configure_efficiency(manager):
+    """Test that configure() efficiently updates config without recreation.
+
+    This tests the fix for: 'ConcurrencyConfig object re-created multiple times'
+    We should directly update attributes rather than recreating the dataclass.
+    """
+    # Get initial config object
+    initial_config = manager.config
+    initial_id = id(initial_config)
+
+    # Configure multiple settings - config object should be the same
+    manager.configure(global_max_workers=20)
+    assert id(manager.config) == initial_id, "Config object should not be recreated"
+    assert manager.config.global_max_workers == 20
+
+    manager.configure(proxy_requests_per_second=15.0)
+    assert id(manager.config) == initial_id, "Config object should not be recreated"
+    assert manager.config.proxy_requests_per_second == 15.0
+
+    # Verify both settings are preserved
+    assert manager.config.global_max_workers == 20

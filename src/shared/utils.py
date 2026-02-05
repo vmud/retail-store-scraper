@@ -726,14 +726,18 @@ def configure_concurrency_from_yaml(config_path: str = 'config/retailers.yaml') 
     manager = GlobalConcurrencyManager()
 
     # Extract configuration values
+    # Note: dict.get() returns None (not default) if key exists with null value
+    # so we need to explicitly handle None values
     global_max_workers = concurrency_config.get('global_max_workers')
-    per_retailer_max = concurrency_config.get('per_retailer_max', {})
+    per_retailer_max = concurrency_config.get('per_retailer_max')
+    if per_retailer_max is None:
+        per_retailer_max = {}
     proxy_rate_limit = concurrency_config.get('proxy_rate_limit')
 
     # Configure the manager
     manager.configure(
         global_max_workers=global_max_workers,
-        per_retailer_max=per_retailer_max,
+        per_retailer_max=per_retailer_max if per_retailer_max else None,
         proxy_requests_per_second=proxy_rate_limit
     )
 
