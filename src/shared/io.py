@@ -20,7 +20,7 @@ __all__ = [
 def save_to_csv(stores: List[Dict[str, Any]], filepath: str, fieldnames: List[str] = None) -> None:
     """Save stores to CSV.
 
-    DEPRECATED: Use ExportService.export_csv() instead.
+    DEPRECATED: Use ExportService.export_stores() instead.
     This function is maintained for backwards compatibility and routes through ExportService.
 
     Args:
@@ -29,7 +29,7 @@ def save_to_csv(stores: List[Dict[str, Any]], filepath: str, fieldnames: List[st
         fieldnames: Optional list of field names (uses default if not provided)
     """
     warnings.warn(
-        "save_to_csv() is deprecated. Use ExportService.export_csv() instead.",
+        "save_to_csv() is deprecated. Use ExportService.export_stores() instead.",
         DeprecationWarning,
         stacklevel=2
     )
@@ -39,22 +39,21 @@ def save_to_csv(stores: List[Dict[str, Any]], filepath: str, fieldnames: List[st
         return
 
     # Import here to avoid circular dependency
-    from src.shared.export_service import ExportService
+    from src.shared.export_service import ExportService, ExportFormat
 
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     # Route through ExportService to avoid duplication (#206)
-    service = ExportService()
-    service.export_csv(stores, str(path), fieldnames=fieldnames)
-
-    logging.info(f"Saved {len(stores)} stores to CSV: {filepath}")
+    # Build retailer_config with output_fields if fieldnames provided
+    retailer_config = {'output_fields': fieldnames} if fieldnames else None
+    ExportService.export_stores(stores, ExportFormat.CSV, str(path), retailer_config)
 
 
 def save_to_json(stores: List[Dict[str, Any]], filepath: str) -> None:
     """Save stores to JSON.
 
-    DEPRECATED: Use ExportService.export_json() instead.
+    DEPRECATED: Use ExportService.export_stores() instead.
     This function is maintained for backwards compatibility and routes through ExportService.
 
     Args:
@@ -62,7 +61,7 @@ def save_to_json(stores: List[Dict[str, Any]], filepath: str) -> None:
         filepath: Path to save JSON file
     """
     warnings.warn(
-        "save_to_json() is deprecated. Use ExportService.export_json() instead.",
+        "save_to_json() is deprecated. Use ExportService.export_stores() instead.",
         DeprecationWarning,
         stacklevel=2
     )
@@ -72,13 +71,10 @@ def save_to_json(stores: List[Dict[str, Any]], filepath: str) -> None:
         return
 
     # Import here to avoid circular dependency
-    from src.shared.export_service import ExportService
+    from src.shared.export_service import ExportService, ExportFormat
 
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     # Route through ExportService to avoid duplication (#206)
-    service = ExportService()
-    service.export_json(stores, str(path))
-
-    logging.info(f"Saved {len(stores)} stores to JSON: {filepath}")
+    ExportService.export_stores(stores, ExportFormat.JSON, str(path))
