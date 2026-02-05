@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from src.shared.export_service import sanitize_csv_value
+from src.shared.utils import validate_store_data
 
 
 __all__ = [
@@ -127,11 +128,10 @@ class Store:
         if extra:
             store_data['extra_fields'] = extra
 
-        # Validate required fields
-        required = {'store_id', 'name', 'street_address', 'city', 'state'}
-        missing = required - set(store_data.keys())
-        if missing:
-            raise ValueError(f"Missing required fields: {missing}")
+        # Validate required fields using shared validation
+        validation_result = validate_store_data(store_data)
+        if not validation_result.is_valid:
+            raise ValueError(f"Validation failed: {', '.join(validation_result.errors)}")
 
         return cls(**store_data)
 
@@ -165,11 +165,7 @@ class Store:
                 # Check if values differ
                 values = [value for _, value in sources]
                 if len(set(str(v) for v in values)) > 1:  # Different values
-                    # Find which is the canonical field (not an alias)
-                    canonical_source = next(
-                        (key for key, _ in sources if key == canonical_key),
-                        None
-                    )
+                    # Identify alias sources for warning message
                     alias_sources = [key for key, _ in sources if key != canonical_key]
 
                     logging.warning(
@@ -187,20 +183,22 @@ class Store:
 
         return result
 
-    def to_dict(self, include_extra: bool = True, flatten: bool = False) -> Dict[str, Any]:
+    def to_dict(self, include_extra: bool = True, flatten: bool = False, for_csv: bool = False) -> Dict[str, Any]:
         """Export to dictionary for serialization.
 
         Args:
             include_extra: Include extra_fields in output
             flatten: Flatten extra_fields into top-level dict
+            for_csv: If True, preserve None values (converted to empty strings by caller)
 
         Returns:
             Dictionary with store data
         """
         data = asdict(self)
 
-        # Remove None values to reduce output size
-        data = {k: v for k, v in data.items() if v is not None}
+        # Remove None values to reduce output size (unless preparing for CSV)
+        if not for_csv:
+            data = {k: v for k, v in data.items() if v is not None}
 
         # Handle extra_fields
         extra = data.pop('extra_fields', {})
@@ -254,8 +252,8 @@ class StoreSerializer:
         Returns:
             Dictionary with string values, sanitized for CSV
         """
-        # Get base dict
-        data = store.to_dict(include_extra=True, flatten=True)
+        # Get base dict with None values preserved for CSV conversion
+        data = store.to_dict(include_extra=True, flatten=True, for_csv=True)
 
         # Convert all values to strings and sanitize
         csv_row = {}
@@ -307,7 +305,7 @@ class StoreSerializer:
 
 
 def normalize_store_dict(data: Dict[str, Any], retailer: str = None) -> Dict[str, Any]:
-    """Normalize a store dictionary in-place using Store schema.
+    """Normalize a store dictionary using Store schema and return a normalized copy.
 
     Convenience function for normalizing field names without creating
     a Store object. Useful for legacy code that expects plain dicts.

@@ -64,7 +64,7 @@ class Store:
     hours: Optional[str] = None
     retailer: Optional[str] = None
     scraped_at: Optional[str] = None
-    extra_fields: Optional[Dict[str, Any]] = None
+    extra_fields: Dict[str, Any] = field(default_factory=dict)
 ```
 
 ### 2. Field Normalization
