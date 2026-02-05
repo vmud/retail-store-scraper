@@ -80,6 +80,12 @@ from .concurrency import (
     ConcurrencyConfig,
 )
 
+from .store_serializer import (
+    Store,
+    StoreSerializer,
+    normalize_store_dict,
+)
+
 from .structured_logging import (
     LogEvent,
     EventType,
@@ -160,6 +166,10 @@ __all__ = [
     # Concurrency management
     'GlobalConcurrencyManager',
     'ConcurrencyConfig',
+    # Store schema and serialization
+    'Store',
+    'StoreSerializer',
+    'normalize_store_dict',
     # Structured logging and metrics
     'LogEvent',
     'EventType',
