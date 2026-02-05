@@ -2,10 +2,8 @@
 
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import Mock, patch
 
 import pytest
 
@@ -237,12 +235,12 @@ class TestResponseCache:
         assert retrieved == html
 
     def test_cache_key_is_url_hash(self, response_cache):
-        """Test cache key is SHA256 hash of URL."""
+        """Test cache key is full SHA256 hash of URL."""
         url = 'https://walmart.com/store/12345'
         cache_key = response_cache.get_cache_key(url)
 
-        # Should be 16-char hex string
-        assert len(cache_key) == 16
+        # Should be 64-char hex string (full SHA256)
+        assert len(cache_key) == 64
         assert all(c in '0123456789abcdef' for c in cache_key)
 
     def test_different_urls_have_different_keys(self, response_cache):
@@ -450,3 +448,111 @@ class TestCacheIntegration:
 
         assert urls == ['url1', 'url2']
         assert stores == [{'store_id': '1', 'url': 'url1'}]
+
+
+class TestCacheExpiryEdgeCases:
+    """Test edge cases for TTL expiry calculation - Issue #154 bug fixes."""
+
+    @pytest.fixture
+    def cache_dir(self, tmp_path):
+        """Create temporary cache directory."""
+        return tmp_path / "cache"
+
+    def test_zero_ttl_expires_immediately(self, cache_dir):
+        """Test that cache with 0-day TTL expires after any time passes.
+
+        This was a bug where integer truncation of .days caused 0-day TTL
+        caches to never appear expired until a full day passed.
+        """
+        cache = URLListCache('test', cache_dir=cache_dir, ttl_days=0)
+
+        urls = ['https://example.com/store/1']
+        cache.set('test', urls)
+
+        # Sleep briefly - cache should expire
+        time.sleep(0.1)
+
+        # get() should return None (expired)
+        assert cache.get('test') is None
+
+        # is_valid() should return False
+        assert cache.is_valid('test') is False
+
+        # get_metadata() should show expired=True
+        metadata = cache.get_metadata('test')
+        assert metadata is not None
+        assert metadata['expired'] is True
+
+    def test_metadata_expired_consistent_with_get(self, cache_dir):
+        """Test that get_metadata().expired matches get() behavior.
+
+        This was a bug where get_metadata() used truncated integer days
+        while get() used precise timedelta comparison.
+        """
+        cache = URLListCache('test', cache_dir=cache_dir, ttl_days=0)
+
+        urls = ['https://example.com/store/1']
+        cache.set('test', urls)
+
+        time.sleep(0.1)
+
+        # Both should agree on expiry
+        get_result = cache.get('test')
+        metadata = cache.get_metadata('test')
+
+        # If get() returns None (expired), metadata should show expired=True
+        if get_result is None:
+            assert metadata['expired'] is True
+        else:
+            assert metadata['expired'] is False
+
+    def test_fractional_day_expiry(self, cache_dir):
+        """Test cache expiry with sub-day precision.
+
+        Uses 0-day TTL to test that fractional seconds are considered.
+        """
+        cache = URLListCache('test', cache_dir=cache_dir, ttl_days=0)
+
+        urls = ['https://example.com/store/1']
+        cache.set('test', urls)
+
+        # Immediately after set, cache might still be valid (within same moment)
+        # After a small delay, it should be expired
+        time.sleep(0.05)
+
+        # Should be expired
+        assert cache.get('test') is None
+
+    def test_cache_missing_cached_at_returns_none(self, cache_dir):
+        """Test that cache without cached_at timestamp returns None."""
+        cache = URLListCache('test', cache_dir=cache_dir)
+
+        # Manually create malformed cache file
+        cache_file = cache_dir / 'test_urls.cache'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps({'data': '["url1"]'}))  # No cached_at
+
+        # get() should return None and log warning
+        assert cache.get('test') is None
+
+        # is_valid() should return False
+        assert cache.is_valid('test') is False
+
+        # get_metadata() should return None
+        assert cache.get_metadata('test') is None
+
+    def test_is_valid_matches_get_behavior(self, cache_dir):
+        """Test that is_valid() and get() return consistent results."""
+        cache = URLListCache('test', cache_dir=cache_dir, ttl_days=0)
+
+        urls = ['https://example.com/store/1']
+        cache.set('test', urls)
+
+        time.sleep(0.1)
+
+        # Both should indicate cache is expired
+        get_result = cache.get('test')
+        is_valid_result = cache.is_valid('test')
+
+        # If get() returns None, is_valid() should return False
+        assert (get_result is None) == (not is_valid_result)

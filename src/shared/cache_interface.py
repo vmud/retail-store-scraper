@@ -130,12 +130,20 @@ class CacheInterface(ABC, Generic[T]):
         if not cache_file.exists():
             return None
 
-        if self._is_expired(cache_file):
-            return None
-
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
+
+            # Check expiry based on internal 'cached_at' timestamp for consistency
+            cached_at_str = cache_data.get('cached_at')
+            if not cached_at_str:
+                logging.warning(f"Cache for {identifier} missing 'cached_at' timestamp")
+                return None
+
+            cache_time = datetime.fromisoformat(cached_at_str)
+            if datetime.now() - cache_time > self.ttl:
+                logging.debug(f"Cache for {identifier} has expired")
+                return None
 
             # Extract the actual data (excluding metadata)
             data_str = cache_data.get('data')
@@ -192,7 +200,19 @@ class CacheInterface(ABC, Generic[T]):
         if not cache_file.exists():
             return False
 
-        return not self._is_expired(cache_file)
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+
+            cached_at_str = cache_data.get('cached_at')
+            if not cached_at_str:
+                return False
+
+            cache_time = datetime.fromisoformat(cached_at_str)
+            return datetime.now() - cache_time <= self.ttl
+
+        except (json.JSONDecodeError, KeyError, ValueError):
+            return False
 
     def get_metadata(self, identifier: str) -> Optional[Dict[str, Any]]:
         """Get cache metadata without loading data.
@@ -216,12 +236,12 @@ class CacheInterface(ABC, Generic[T]):
                 return None
 
             cache_time = datetime.fromisoformat(cached_at)
-            age_days = (datetime.now() - cache_time).days
+            age = datetime.now() - cache_time
 
             return {
                 'cached_at': cached_at,
-                'age_days': age_days,
-                'expired': age_days * 86400 > self.ttl.total_seconds()
+                'age_days': age.days,
+                'expired': age > self.ttl
             }
 
         except (json.JSONDecodeError, KeyError, ValueError):
@@ -237,18 +257,6 @@ class CacheInterface(ABC, Generic[T]):
             Path to cache file
         """
         return self.cache_dir / f"{self.get_cache_key(identifier)}.cache"
-
-    def _is_expired(self, cache_file: Path) -> bool:
-        """Check if cache file has expired based on TTL.
-
-        Args:
-            cache_file: Path to cache file
-
-        Returns:
-            True if expired, False otherwise
-        """
-        mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
-        return datetime.now() - mtime > self.ttl
 
 
 class URLListCache(CacheInterface[List[str]]):
@@ -274,7 +282,6 @@ class URLListCache(CacheInterface[List[str]]):
             cache_dir: Optional custom cache directory. Defaults to data/{retailer}/
             ttl_days: Cache expiry in days (default: 7)
         """
-        self.retailer = retailer
         if cache_dir is None:
             cache_dir = Path(f"data/{retailer}")
         super().__init__(cache_dir, ttl_days)
@@ -337,7 +344,6 @@ class RichURLCache(CacheInterface[List[Dict[str, Any]]]):
             cache_dir: Optional custom cache directory. Defaults to data/{retailer}/
             ttl_days: Cache expiry in days (default: 7)
         """
-        self.retailer = retailer
         if cache_dir is None:
             cache_dir = Path(f"data/{retailer}")
         super().__init__(cache_dir, ttl_days)
@@ -399,7 +405,6 @@ class ResponseCache(CacheInterface[str]):
             cache_dir: Optional custom cache directory. Defaults to data/{retailer}/response_cache/
             ttl_days: Cache expiry in days (default: 30)
         """
-        self.retailer = retailer
         if cache_dir is None:
             cache_dir = Path(f"data/{retailer}/response_cache")
         super().__init__(cache_dir, ttl_days)
@@ -411,9 +416,9 @@ class ResponseCache(CacheInterface[str]):
             url: Full URL to cache
 
         Returns:
-            SHA256 hash prefix (16 chars)
+            Full SHA256 hash (64 chars) to avoid collisions
         """
-        return hashlib.sha256(url.encode()).hexdigest()[:16]
+        return hashlib.sha256(url.encode()).hexdigest()
 
     def serialize(self, response: str) -> str:
         """Serialize response (identity function for strings).
