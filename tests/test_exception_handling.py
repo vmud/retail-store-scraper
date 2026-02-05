@@ -463,7 +463,7 @@ class TestSafetyNetExceptionHandling:
                 run(mock_session, config, retailer='tmobile')
 
     @patch('src.scrapers.att.reset_request_counter')
-    @patch('src.scrapers.att.utils.select_delays')
+    @patch('src.shared.scrape_runner.utils.select_delays')
     def test_att_run_catches_all_exceptions(self, mock_delays, mock_reset):
         """Test that AT&T run() catches all exceptions as safety net."""
         mock_session = Mock()
@@ -471,7 +471,7 @@ class TestSafetyNetExceptionHandling:
         mock_delays.return_value = (2.0, 5.0)
 
         # Simulate unexpected exception type (RuntimeError not in safety net)
-        with patch('src.scrapers.att.URLCache', side_effect=RuntimeError("Unexpected cache error")):
+        with patch('src.shared.scrape_runner.URLCache', side_effect=RuntimeError("Unexpected cache error")):
             with pytest.raises(RuntimeError):
                 # run() should re-raise after logging
                 from src.scrapers.att import run
