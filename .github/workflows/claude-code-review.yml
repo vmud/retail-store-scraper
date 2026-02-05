@@ -31,21 +31,20 @@ jobs:
         with:
           fetch-depth: 1
 
-      # Option A: Load from 1Password (commented out for testing)
-      # - name: Load Claude Code OAuth token from 1Password
-      #   uses: 1password/load-secrets-action@v2
-      #   with:
-      #     export-env: true
-      #   env:
-      #     OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-      #     CLAUDE_CODE_OAUTH_TOKEN: op://DEV/CLAUDE_CODE_OAUTH_TOKEN/credential  # pragma: allowlist secret
+      # Test with Anthropic API key from 1Password
+      - name: Load Anthropic API key from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ANTHROPIC_API_KEY: op://DEV/ANTHROPIC_API_KEY/credential  # pragma: allowlist secret
 
-      # Option B: Use direct GitHub secret (for testing)
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ env.ANTHROPIC_API_KEY }}
           allowed_bots: 'dependabot[bot],renovate[bot],greenkeeper[bot]'
           show_full_output: true  # Enable for debugging token issues
           prompt: |
