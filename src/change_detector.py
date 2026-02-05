@@ -24,6 +24,9 @@ except ImportError:
     logging.debug("ijson not available, will use standard JSON loading")
 
 
+__all__ = ["IJSON_AVAILABLE", "ChangeReport", "ChangeDetector"]
+
+
 @dataclass
 class ChangeReport:
     """Report of changes detected between runs"""
