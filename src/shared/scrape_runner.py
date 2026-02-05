@@ -301,9 +301,11 @@ class ScrapeRunner:
             Tuple of (item_key, store_data_dict) where store_data_dict is None on failure
         """
         session = session_factory()
-        item_key = item_key_func(item)
 
         try:
+            # Extract key inside try block to catch key extraction errors
+            item_key = item_key_func(item)
+
             store_obj = extraction_func(
                 session,
                 item,
@@ -319,6 +321,11 @@ class ScrapeRunner:
                 return (item_key, store_obj)
             return (item_key, None)
         except Exception as e:
+            # Safe fallback for item_key if extraction failed before key was set
+            try:
+                item_key = item_key_func(item)
+            except Exception:
+                item_key = str(item)
             logging.warning(f"[{self.retailer}] Error extracting {item_key}: {e}")
             return (item_key, None)
         finally:
@@ -346,9 +353,10 @@ class ScrapeRunner:
         total_to_process = len(items)
 
         for i, item in enumerate(items, 1):
-            item_key = item_key_func(item)
-
             try:
+                # Extract key inside try block to catch key extraction errors
+                item_key = item_key_func(item)
+
                 store_obj = extraction_func(
                     self.session,
                     item,
@@ -370,6 +378,11 @@ class ScrapeRunner:
                     if i % 10 == 0:
                         logging.info(f"[{self.retailer}] Extracted {len(self.stores)} stores so far ({i}/{total_to_process})")
             except Exception as e:
+                # Safe fallback for item_key if extraction failed before key was set
+                try:
+                    item_key = item_key_func(item)
+                except Exception:
+                    item_key = str(item)
                 logging.warning(f"[{self.retailer}] Error extracting {item_key}: {e}")
 
             # Progress logging every 100 items
@@ -437,7 +450,16 @@ class ScrapeRunner:
         try:
             # Default item key function: use item as-is (for URL strings)
             if item_key_func is None:
-                item_key_func = lambda x: x
+                if self.context.use_rich_cache:
+                    # RichURLCache returns dicts, need a smarter default
+                    # Try common ID fields, fall back to URL
+                    item_key_func = lambda x: (
+                        x.get('store_id') or x.get('id') or x.get('url') or str(x)
+                        if isinstance(x, dict) else x
+                    )
+                else:
+                    # URLCache returns strings, use as-is
+                    item_key_func = lambda x: x
 
             # Load checkpoint if resuming
             self._load_checkpoint()

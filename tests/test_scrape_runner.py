@@ -1,7 +1,7 @@
 """Unit tests for shared ScrapeRunner orchestration framework."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from src.shared.scrape_runner import ScrapeRunner, ScraperContext
 
 

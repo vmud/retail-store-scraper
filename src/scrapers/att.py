@@ -125,8 +125,8 @@ def get_store_urls_from_sitemap(
         return []
 
     if request_counter:
-        request_counter.increment()
-        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
+        current_count = request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config, current_count=current_count)
 
     try:
         # Parse XML
@@ -189,8 +189,8 @@ def extract_store_details(
         return None
 
     if request_counter:
-        request_counter.increment()
-        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
+        current_count = request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config, current_count=current_count)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
