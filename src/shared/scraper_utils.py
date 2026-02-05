@@ -12,6 +12,7 @@ This module provides common patterns used across all scrapers:
 Addresses Issue #169: Reduce code duplication in scraper run() functions
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -146,8 +147,8 @@ def load_urls_with_cache(
     Returns:
         List of URLs (for URLCache) or list of dicts (for RichURLCache), or None if fetch failed
     """
-    # Handle Mock objects in tests - check if cache has retailer_name attribute
-    retailer_name = getattr(cache, 'retailer_name', 'unknown')
+    # Handle Mock objects in tests - check if cache has retailer attribute
+    retailer_name = getattr(cache, 'retailer', 'unknown')
     urls = None
 
     # Try to load cached URLs
@@ -382,7 +383,6 @@ def save_failed_items(
     failed_path = Path(f"data/{retailer_name}/failed_extractions.json")
     failed_path.parent.mkdir(parents=True, exist_ok=True)
 
-    import json
     try:
         with open(failed_path, 'w', encoding='utf-8') as f:
             json.dump({
@@ -421,7 +421,6 @@ def finalize_scraper_run(
     # Save final checkpoint
     if context.stores:
         save_checkpoint_if_needed(context, len(context.stores), force=True)
-        logging.info(f"[{retailer_name}] Final checkpoint saved: {len(context.stores)} stores total")
 
     # Log failed extractions if any
     if failed_items:

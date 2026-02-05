@@ -140,28 +140,6 @@ def _extract_single_store(
             session.close()
 
 
-def _save_failed_extractions(retailer: str, failed_store_ids: List[int]) -> None:
-    """Save failed store IDs for followup retries.
-
-    Args:
-        retailer: Retailer name
-        failed_store_ids: List of store IDs that failed extraction
-    """
-    failed_path = Path(f"data/{retailer}/failed_extractions.json")
-    failed_path.parent.mkdir(parents=True, exist_ok=True)
-
-    try:
-        with open(failed_path, 'w', encoding='utf-8') as f:
-            json.dump({
-                'run_date': datetime.now().isoformat(),
-                'failed_count': len(failed_store_ids),
-                'failed_store_ids': failed_store_ids
-            }, f, indent=2)
-        logging.info(f"[{retailer}] Saved {len(failed_store_ids)} failed store IDs to {failed_path}")
-    except IOError as e:
-        logging.warning(f"[{retailer}] Failed to save failed store IDs: {e}")
-
-
 def get_all_store_ids(
     session: requests.Session,
     retailer: str = 'target',
@@ -495,11 +473,7 @@ def run(session, config: dict, **kwargs) -> dict:
 
                 save_checkpoint_if_needed(context, i)
 
-        # Save failed store IDs to file for followup
-        if failed_store_ids:
-            _save_failed_extractions(retailer_name, failed_store_ids)
-
-        # Finalize run with validation and cleanup
+        # Finalize run with validation and cleanup (handles failed items saving)
         return finalize_scraper_run(context, failed_items=failed_store_ids, item_key="failed_store_ids")
 
     except Exception as e:
