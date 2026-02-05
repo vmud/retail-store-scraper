@@ -24,6 +24,7 @@ concurrency:
     telus: 3        # Single API call, minimal
     costco: 3       # Akamai protection, conservative
     samsclub: 3     # Hybrid mode
+    homedepot: 5    # GraphQL API, moderate parallelism
 
   # Proxy rate limiting (requests per second)
   # Applies when using residential or web_scraper_api modes
@@ -714,4 +715,80 @@ retailers:
       - plus_hours_mon_fri
       - plus_hours_saturday
       - plus_hours_sunday
+      - scraped_at
+
+  homedepot:
+    name: "Home Depot"
+    enabled: true
+    base_url: "https://www.homedepot.com"
+    sitemap_urls: []
+    discovery_method: "graphql_api"
+    api_url: "https://apionline.homedepot.com/federation-gateway/graphql"
+
+    # Dual delay profiles (GraphQL API, no aggressive bot protection)
+    delays:
+      direct:
+        min_delay: 0.5
+        max_delay: 1.0
+      proxied:
+        min_delay: 0.2
+        max_delay: 0.4
+
+    parallel_workers: 5
+    checkpoint_interval: 100
+
+    # Disable long pauses (API-based scraper)
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    proxy:
+      mode: "direct"
+      render_js: false
+
+    output_fields:
+      - store_id
+      - name
+      - store_type
+      - street_address
+      - city
+      - state
+      - zip
+      - county
+      - country
+      - latitude
+      - longitude
+      - phone
+      - pro_desk_phone
+      - tool_rental_phone
+      - services_phone
+      - url
+      - timezone
+      - hours_mon
+      - hours_tue
+      - hours_wed
+      - hours_thu
+      - hours_fri
+      - hours_sat
+      - hours_sun
+      - service_load_n_go
+      - service_propane
+      - service_tool_rental
+      - service_penske
+      - service_key_cutting
+      - service_wifi
+      - service_appliance_showroom
+      - service_flooring_showroom
+      - service_large_equipment
+      - service_kitchen_showroom
+      - service_hd_moving
+      - flag_bopis
+      - flag_bodfs
+      - flag_curbside
+      - pro_desk_hours
+      - tool_rental_hours
+      - curbside_hours
       - scraped_at
