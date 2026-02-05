@@ -20,16 +20,6 @@ from typing import Optional, Dict, Any
 from src.shared.constants import STATUS
 
 
-__all__ = [
-    'ConsoleNotifier',
-    'NotificationManager',
-    'NotificationProvider',
-    'SlackNotifier',
-    'get_notifier',
-]
-
-
-
 try:
     import requests
     REQUESTS_AVAILABLE = True
@@ -38,9 +28,11 @@ except ImportError:
 
 
 __all__ = [
-    "REQUESTS_AVAILABLE",
-    "NotificationProvider", "SlackNotifier", "ConsoleNotifier",
-    "NotificationManager", "get_notifier"
+    "ConsoleNotifier",
+    "NotificationManager",
+    "NotificationProvider",
+    "SlackNotifier",
+    "get_notifier",
 ]
 
 

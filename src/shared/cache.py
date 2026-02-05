@@ -14,13 +14,10 @@ from src.shared.constants import CACHE
 
 
 __all__ = [
-    'DEFAULT_CACHE_EXPIRY_DAYS',
-    'RichURLCache',
-    'URLCache',
+    "DEFAULT_CACHE_EXPIRY_DAYS",
+    "RichURLCache",
+    "URLCache",
 ]
-
-
-__all__ = ["DEFAULT_CACHE_EXPIRY_DAYS", "URLCache", "RichURLCache"]
 
 
 # Default cache expiry: 7 days (stores don't change location frequently)

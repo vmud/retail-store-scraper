@@ -9,17 +9,11 @@ from src.shared.constants import RUN_HISTORY
 
 
 __all__ = [
-    'RunTracker',
-    'cleanup_old_runs',
-    'get_active_run',
-    'get_latest_run',
-    'get_run_history',
-]
-
-
-__all__ = [
-    "RunTracker", "get_run_history", "get_latest_run",
-    "get_active_run", "cleanup_old_runs"
+    "RunTracker",
+    "cleanup_old_runs",
+    "get_active_run",
+    "get_latest_run",
+    "get_run_history",
 ]
 
 
