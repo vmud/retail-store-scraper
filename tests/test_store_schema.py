@@ -24,9 +24,10 @@ class TestCanonicalFields:
         assert 'city' in REQUIRED_STORE_FIELDS
         assert 'state' in REQUIRED_STORE_FIELDS
 
-    def test_recommended_fields_include_required(self):
-        """Verify recommended fields include all required fields."""
-        assert REQUIRED_STORE_FIELDS.issubset(RECOMMENDED_STORE_FIELDS)
+    def test_recommended_fields_separate_from_required(self):
+        """Verify required and recommended fields are separate sets."""
+        # Required and recommended should not overlap (per design in store_schema.py:94)
+        assert REQUIRED_STORE_FIELDS.isdisjoint(RECOMMENDED_STORE_FIELDS)
 
     def test_recommended_fields_defined(self):
         """Verify recommended fields are defined."""
