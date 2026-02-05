@@ -184,14 +184,20 @@ if html is None:
    from src.shared.cache_interface import ResponseCache
    from src.shared.constants import CACHE
 
-   # Initialize once
-   _response_cache = None
+   # Per-retailer cache instances
+   _response_caches = {}
 
    def get_response_cache(retailer: str) -> ResponseCache:
-       global _response_cache
-       if _response_cache is None:
-           _response_cache = ResponseCache(retailer, ttl_days=CACHE.RESPONSE_CACHE_EXPIRY_DAYS)
-       return _response_cache
+       """Get or create response cache for a retailer.
+
+       Uses a singleton pattern per retailer to avoid recreating cache instances.
+       """
+       if retailer not in _response_caches:
+           _response_caches[retailer] = ResponseCache(
+               retailer,
+               ttl_days=CACHE.RESPONSE_CACHE_EXPIRY_DAYS
+           )
+       return _response_caches[retailer]
    ```
 
 3. **Use in scraping functions**:
