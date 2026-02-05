@@ -3,30 +3,16 @@
 import json
 import logging
 import re
-import threading
 import defusedxml.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dataclasses import dataclass, asdict
-from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 from bs4 import BeautifulSoup
 import requests
-
 from config import att_config
 from src.shared import utils
-from src.shared.cache import URLCache
-from src.shared.constants import WORKERS
 from src.shared.request_counter import RequestCounter, check_pause_logic
-from src.shared.session_factory import create_session_factory
-from src.shared.scraper_utils import (
-    initialize_run_context,
-    load_urls_with_cache,
-    filter_remaining_items,
-    save_checkpoint_if_needed,
-    log_progress,
-    finalize_scraper_run
-)
+from src.shared.scrape_runner import ScrapeRunner, ScraperContext
 
 
 # Global request counter (deprecated - kept for backwards compatibility)
@@ -55,51 +41,6 @@ class ATTStore:
     def to_dict(self) -> dict:
         """Convert to dictionary for export"""
         return asdict(self)
-
-
-# =============================================================================
-# PARALLEL EXTRACTION - Speed up store detail extraction
-# =============================================================================
-
-
-def _extract_single_store(
-    url: str,
-    session_factory,
-    retailer_name: str,
-    yaml_config: dict = None,
-    request_counter: RequestCounter = None
-) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """Worker function for parallel store extraction.
-
-    Creates its own session for thread safety and extracts store details.
-
-    Args:
-        url: Store URL to extract
-        session_factory: Callable that creates session instances
-        retailer_name: Name of retailer for logging
-        yaml_config: Retailer configuration from retailers.yaml
-        request_counter: Optional RequestCounter instance for tracking requests
-
-    Returns:
-        Tuple of (url, store_data_dict) where store_data_dict is None on failure
-    """
-    session = session_factory()
-    try:
-        store_obj = extract_store_details(session, url, retailer_name, yaml_config, request_counter)
-        if store_obj:
-            return (url, store_obj.to_dict())
-        return (url, None)
-    except requests.RequestException as e:
-        logging.warning(f"[{retailer_name}] Network error extracting {url}: {e}")
-        return (url, None)
-    except Exception as e:
-        # Catch-all for worker threads to prevent crashes
-        logging.warning(f"[{retailer_name}] Unexpected error extracting {url}: {e}")
-        return (url, None)
-    finally:
-        # Clean up session resources
-        if hasattr(session, 'close'):
-            session.close()
 
 
 def _extract_store_type_and_dealer(html_content: str) -> tuple:
@@ -184,8 +125,8 @@ def get_store_urls_from_sitemap(
         return []
 
     if request_counter:
-        request_counter.increment()
-        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
+        current_count = request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config, current_count=current_count)
 
     try:
         # Parse XML
@@ -248,8 +189,8 @@ def extract_store_details(
         return None
 
     if request_counter:
-        request_counter.increment()
-        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
+        current_count = request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config, current_count=current_count)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -343,6 +284,49 @@ def extract_store_details(
         return None
 
 
+def _extract_single_store(
+    url: str,
+    session_factory,
+    retailer_name: str,
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Worker function for parallel store extraction.
+
+    DEPRECATED: This function is kept for backward compatibility with tests.
+    New code should use ScrapeRunner instead.
+
+    Creates its own session for thread safety and extracts store details.
+
+    Args:
+        url: Store URL to extract
+        session_factory: Callable that creates session instances
+        retailer_name: Name of retailer for logging
+        yaml_config: Retailer configuration from retailers.yaml
+        request_counter: Optional RequestCounter instance for tracking requests
+
+    Returns:
+        Tuple of (url, store_data_dict) where store_data_dict is None on failure
+    """
+    session = session_factory()
+    try:
+        store_obj = extract_store_details(session, url, retailer_name, yaml_config, request_counter)
+        if store_obj:
+            return (url, store_obj.to_dict())
+        return (url, None)
+    except requests.RequestException as e:
+        logging.warning(f"[{retailer_name}] Network error extracting {url}: {e}")
+        return (url, None)
+    except Exception as e:
+        # Catch-all for worker threads to prevent crashes
+        logging.warning(f"[{retailer_name}] Unexpected error extracting {url}: {e}")
+        return (url, None)
+    finally:
+        # Clean up session resources
+        if hasattr(session, 'close'):
+            session.close()
+
+
 def reset_request_counter() -> None:
     """Reset the global request counter"""
     _request_counter.reset()
@@ -354,7 +338,7 @@ def get_request_count() -> int:
 
 
 def run(session, config: dict, **kwargs) -> dict:
-    """Standard scraper entry point with parallel extraction and URL caching.
+    """Standard scraper entry point with unified orchestration.
 
     Args:
         session: Configured session (requests.Session or ProxyClient)
@@ -372,93 +356,26 @@ def run(session, config: dict, **kwargs) -> dict:
             - checkpoints_used: bool - Whether resume was used
     """
     retailer_name = kwargs.get('retailer', 'att')
-    limit = kwargs.get('limit')
-    resume = kwargs.get('resume', False)
-    refresh_urls = kwargs.get('refresh_urls', False)
 
-    try:
-        # Initialize common run context (handles delays, workers, checkpoints, resume)
-        context = initialize_run_context(retailer_name, config, resume)
-        reset_request_counter()  # Reset global counter for backwards compatibility
+    # Reset global counter for backwards compatibility
+    reset_request_counter()
 
-        # Load store URLs with cache support
-        url_cache = URLCache(retailer_name)
-        store_urls = load_urls_with_cache(
-            url_cache,
-            lambda: get_store_urls_from_sitemap(session, retailer_name, yaml_config=config, request_counter=context.request_counter),
-            refresh_urls
-        )
+    # Create scraper context
+    context = ScraperContext(
+        retailer=retailer_name,
+        session=session,
+        config=config,
+        resume=kwargs.get('resume', False),
+        limit=kwargs.get('limit'),
+        refresh_urls=kwargs.get('refresh_urls', False),
+        use_rich_cache=False  # AT&T uses simple URL cache
+    )
 
-        if not store_urls:
-            logging.warning(f"[{retailer_name}] No store URLs found")
-            return {'stores': [], 'count': 0, 'checkpoints_used': False}
+    # Create and run scraper with unified orchestration
+    runner = ScrapeRunner(context)
 
-        # Filter remaining URLs based on checkpoint and limit
-        remaining_urls = filter_remaining_items(
-            store_urls,
-            context.completed_ids,
-            limit,
-            len(context.stores),
-            retailer_name
-        )
-
-        total_to_process = len(remaining_urls)
-
-        # Use parallel extraction if workers > 1
-        if context.parallel_workers > 1 and total_to_process > 0:
-            logging.info(f"[{retailer_name}] Using parallel extraction with {context.parallel_workers} workers")
-
-            # Create session factory for parallel workers (each worker needs its own session)
-            session_factory = create_session_factory(config)
-
-            # Thread-safe counter for progress
-            processed_count = [0]  # Use list for mutable closure
-            processed_lock = threading.Lock()
-
-            with ThreadPoolExecutor(max_workers=context.parallel_workers) as executor:
-                # Submit all extraction tasks
-                futures = {
-                    executor.submit(_extract_single_store, url, session_factory, retailer_name, config, context.request_counter): url
-                    for url in remaining_urls
-                }
-
-                for future in as_completed(futures):
-                    url, store_data = future.result()
-
-                    with processed_lock:
-                        processed_count[0] += 1
-                        current_count = processed_count[0]
-
-                        if store_data:
-                            context.stores.append(store_data)
-                            context.completed_ids.add(url)
-
-                        # Progress logging every 50 stores
-                        log_progress(retailer_name, current_count, total_to_process, len(context.stores))
-
-                        # Checkpoint at intervals
-                        save_checkpoint_if_needed(context, current_count)
-        else:
-            # Sequential extraction (original behavior for direct mode)
-            for i, url in enumerate(remaining_urls, 1):
-                store_obj = extract_store_details(session, url, retailer_name, yaml_config=config, request_counter=context.request_counter)
-                if store_obj:
-                    context.stores.append(store_obj.to_dict())
-                    context.completed_ids.add(url)
-
-                    # Log successful extraction every 10 stores for more frequent updates
-                    if i % 10 == 0:
-                        logging.info(f"[{retailer_name}] Extracted {len(context.stores)} stores so far ({i}/{total_to_process})")
-
-                # Progress logging every 100 stores
-                if i % 100 == 0:
-                    logging.info(f"[{retailer_name}] Progress: {i}/{total_to_process} ({i/total_to_process*100:.1f}%)")
-
-                save_checkpoint_if_needed(context, i)
-
-        # Finalize run with validation and cleanup
-        return finalize_scraper_run(context)
-
-    except Exception as e:
-        logging.error(f"[{retailer_name}] Fatal error: {e}", exc_info=True)
-        raise
+    return runner.run_with_checkpoints(
+        url_discovery_func=get_store_urls_from_sitemap,
+        extraction_func=extract_store_details,
+        item_key_func=lambda url: url  # Use URL as unique key
+    )

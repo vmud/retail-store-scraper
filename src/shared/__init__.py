@@ -75,6 +75,11 @@ from .session_factory import (
     create_session_factory,
 )
 
+from .scrape_runner import (
+    ScrapeRunner,
+    ScraperContext,
+)
+
 from .concurrency import (
     GlobalConcurrencyManager,
     ConcurrencyConfig,
@@ -163,6 +168,9 @@ __all__ = [
     'ResponseCache',
     # Session factory
     'create_session_factory',
+    # Scrape runner (unified orchestration)
+    'ScrapeRunner',
+    'ScraperContext',
     # Concurrency management
     'GlobalConcurrencyManager',
     'ConcurrencyConfig',

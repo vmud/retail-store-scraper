@@ -269,7 +269,7 @@ class TestATTRefactoring:
         }
 
         with patch('src.scrapers.att.get_store_urls_from_sitemap') as mock_get_urls, \
-             patch('src.scrapers.att.URLCache') as mock_cache, \
+             patch('src.shared.scrape_runner.URLCache') as mock_cache, \
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
             # Ensure cache returns None so get_store_urls_from_sitemap is called
@@ -483,7 +483,7 @@ class TestNoGlobalState:
         }
 
         with patch('src.scrapers.att.get_store_urls_from_sitemap') as mock_get_urls, \
-             patch('src.scrapers.att.URLCache') as mock_cache, \
+             patch('src.shared.scrape_runner.URLCache') as mock_cache, \
              patch('src.shared.utils.validate_stores_batch') as mock_validate:
 
             # Ensure cache returns None so get_store_urls_from_sitemap is called
