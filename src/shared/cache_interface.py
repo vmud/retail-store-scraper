@@ -152,7 +152,7 @@ class CacheInterface(ABC, Generic[T]):
 
             return self.deserialize(data_str)
 
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+        except (json.JSONDecodeError, KeyError, ValueError, AttributeError) as e:
             logging.warning(f"Error reading cache for {identifier}: {e}")
             return None
 
@@ -211,7 +211,7 @@ class CacheInterface(ABC, Generic[T]):
             cache_time = datetime.fromisoformat(cached_at_str)
             return datetime.now() - cache_time <= self.ttl
 
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, KeyError, ValueError, AttributeError):
             return False
 
     def get_metadata(self, identifier: str) -> Optional[Dict[str, Any]]:
@@ -244,7 +244,7 @@ class CacheInterface(ABC, Generic[T]):
                 'expired': age > self.ttl
             }
 
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, KeyError, ValueError, AttributeError):
             return None
 
     def _get_cache_file(self, identifier: str) -> Path:
