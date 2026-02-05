@@ -16,7 +16,8 @@ For new code, prefer importing from the specific modules:
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional, Union
+from types import TracebackType
+from typing import Any, Dict, List, Optional, Type, Union
 
 import requests
 import yaml
@@ -452,7 +453,7 @@ def get_with_proxy(
 
 def create_proxied_session(
     retailer_config: Optional[Dict[str, Any]] = None
-) -> Union[requests.Session, "ProxiedSession"]:
+) -> Union[requests.Session, 'ProxiedSession']:
     """Create a session-like object that can be used as a drop-in replacement for requests.Session.
 
     For direct mode, returns a standard requests.Session.
@@ -576,7 +577,7 @@ class ProxiedSession:
         params: Optional[Dict[str, str]] = None,
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[int] = None,
-        **kwargs
+        **kwargs: Any
     ) -> Optional[Union[requests.Response, ProxyResponse]]:
         """Make GET request using configured proxy mode.
 
@@ -623,5 +624,17 @@ class ProxiedSession:
     def __enter__(self) -> "ProxiedSession":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType]
+    ) -> None:
+        """Exit context manager and close resources.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception instance if an exception occurred
+            exc_tb: Traceback object if an exception occurred
+        """
         self.close()

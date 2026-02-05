@@ -10,7 +10,11 @@ import logging
 from enum import Enum
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openpyxl import Workbook as WorkbookType
+from typing import Any, Dict, List, Optional, Union
 
 from src.shared.constants import EXPORT
 
@@ -44,7 +48,7 @@ class ExportFormat(Enum):
     GEOJSON = "geojson"
 
     @classmethod
-    def from_string(cls, value: str) -> "ExportFormat":
+    def from_string(cls, value: str) -> 'ExportFormat':
         """Parse format from string, case-insensitive."""
         value_lower = value.lower().strip()
         # Handle xlsx as alias for excel
@@ -60,7 +64,7 @@ class ExportFormat(Enum):
 CSV_INJECTION_CHARS = ('=', '+', '-', '@', '\t', '\r', '\n')
 
 
-def sanitize_csv_value(value: Any) -> Any:
+def sanitize_csv_value(value: Any) -> Union[str, Any]:
     """Sanitize a value for CSV export to prevent formula injection (#73).
 
     Spreadsheet applications like Excel interpret cells starting with

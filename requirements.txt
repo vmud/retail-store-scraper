@@ -1,5 +1,5 @@
 # Core dependencies - pinned for reproducibility (#116)
-requests==2.32.4
+requests==2.32.5
 beautifulsoup4==4.12.2
 lxml==5.1.0
 brotli==1.2.0  # Required for Brotli decompression (T-Mobile uses Content-Encoding: br)
@@ -13,6 +13,9 @@ openpyxl==3.1.2  # Excel export support
 
 # Cloud storage
 google-cloud-storage==2.14.0  # GCS integration for backup/sync
+
+# Error monitoring
+sentry-sdk==2.52.0  # Error tracking and performance monitoring
 
 # Performance
 ijson==3.2.3  # Streaming JSON parser for memory-efficient change detection (#65)

@@ -260,6 +260,14 @@ GitHub Actions can securely access secrets from 1Password using a service accoun
 
 See [docs/1password-github-actions.md](docs/1password-github-actions.md) for full documentation.
 
+### Claude Code Action (PR Reviews)
+
+The `claude-code-action` workflow uses Anthropic API keys loaded from 1Password:
+- **Use `anthropic_api_key`** - OAuth tokens (`claude setup-token`) have validation issues in CI
+- **Debug with `show_full_output: true`** - reveals actual error messages instead of generic failures
+- **Trigger CI reruns**: `gh pr update-branch <number>` or `gh run rerun <run-id>`
+- **Required permissions**: `pull-requests: write` for posting review comments
+
 ### Cloud Storage (GCS)
 
 Sync scraped data to Google Cloud Storage for backup and team access.
@@ -367,12 +375,31 @@ This repository supports parallel development by multiple AI agents. See `.claud
 - Include agent ID in commits: `Agent: cc1`
 - High-conflict files (coordinate before editing): `run.py`, `config/retailers.yaml`, `CLAUDE.md`, `requirements.txt`
 
+### Custom Agents (.claude/agents/)
+
+**PR lifecycle agents** — orchestrated by pr-coordinator:
+- `pr-coordinator` (opus) — triages open PRs and spawns sub-agents
+- `pr-reviewer` (opus) — code review with project security checklist enforcement
+- `ci-monitor` (sonnet) — diagnoses CI failures (pytest, pylint, bandit, etc.)
+- `comment-resolver` (sonnet) — implements reviewer feedback and resolves threads
+- `conflict-resolver` (opus) — three-way merge analysis and resolution
+- `rebase-manager` (sonnet) — branch sync with force-push safety (requires user confirmation)
+
+**Project-specific agents:**
+- `data-quality-reviewer` — validates scraped store data before GCS sync
+- `scraper-validator` — checks scraper implementations against project patterns
+- `proxy-tester` — tests Oxylabs proxy configuration
+
 ## Deployment
 
 Deployment tools in `deploy/`:
 - `rsync-deploy.sh` - production deployment via rsync
 - `validate.sh` - deployment validation checks
 - `diagnose-network.sh` - network troubleshooting utilities
+
+## Session Scope
+
+When asked to explore or set up something, focus narrowly on the specific task before broadening exploration. Do not spend a session exploring the codebase without taking concrete action toward the goal. Front-load actionable steps — complete at least one deliverable before doing broad discovery.
 
 ## Implementation Standards
 
@@ -385,6 +412,11 @@ For configuration/setup tasks (MCP, credentials, integrations), always verify th
 ## Code Review
 
 When doing code reviews, create a structured review checklist and document findings in a markdown file before discussing with user.
+
+When resolving code review comments across PRs:
+- Use parallel task agents to handle multiple PRs simultaneously
+- After fixing code, mark GitHub review comment threads as resolved using the GitHub CLI (`gh api repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies`)
+- Always confirm with user whether to push changes and resolve threads, or just prepare commits
 
 ## Code Style
 
@@ -476,7 +508,12 @@ pre-commit run detect-secrets --all-files
 
 ## 1Password / Credentials
 
-When working with 1Password CLI or service account tokens, remember that environment variables may not inherit properly in subprocesses, GUI apps, or LaunchAgents. Check `OP_SERVICE_ACCOUNT_TOKEN` availability in the execution context first.
+When working with 1Password CLI or service account tokens:
+- Environment variables set in shell profiles may not be inherited by GUI apps or LaunchAgents
+- Use `launchctl setenv` or LaunchAgent plists to set system-wide env vars like `OP_SERVICE_ACCOUNT_TOKEN`
+- Always verify token availability in subprocess contexts with `env | grep OP_`
+- Check `~/.config/op/config` and 1Password desktop integration settings before modifying auth flows
+- MCP servers need the env var inherited in their subprocess — check the parent process (Claude, terminal, LaunchAgent) passes variables correctly
 
 ## Debugging Tips
 

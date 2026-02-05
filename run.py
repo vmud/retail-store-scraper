@@ -19,24 +19,34 @@ import logging
 import sys
 import os
 import json
-from typing import List, Optional
+from types import ModuleType
+from typing import Any, Dict, List, Optional, Union
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
 import yaml
+import requests
 
 from src.shared.utils import (
     setup_logging,
     load_retailer_config,
     create_proxied_session,
-    close_all_proxy_clients
+    close_all_proxy_clients,
+    ProxiedSession
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
+from src.shared.sentry_integration import (
+    init_sentry,
+    capture_scraper_error,
+    set_retailer_context,
+    add_breadcrumb,
+    flush as sentry_flush,
+)
 from src.shared.constants import WORKERS
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
-from src.shared.cloud_storage import get_cloud_storage
+from src.shared.cloud_storage import get_cloud_storage, CloudStorageManager
 from src.scrapers import get_available_retailers, get_enabled_retailers, get_scraper_module
 from src.change_detector import ChangeDetector
 
@@ -321,7 +331,7 @@ def setup_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def get_retailers_to_run(args) -> List[str]:
+def get_retailers_to_run(args: argparse.Namespace) -> List[str]:
     """Determine which retailers to run based on arguments"""
     if args.retailer:
         return [args.retailer]
@@ -389,11 +399,27 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
 _scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS.EXECUTOR_MAX_WORKERS, thread_name_prefix='scraper')
 
 
-def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_module, **kwargs) -> dict:
+def _run_scraper_sync(
+    retailer: str,
+    retailer_config: Dict[str, Any],
+    session: Union[requests.Session, ProxiedSession],
+    scraper_module: ModuleType,
+    **kwargs: Any
+) -> Dict[str, Any]:
     """Synchronous wrapper that runs the scraper.
 
     This function is designed to be called via run_in_executor()
     so it doesn't block the async event loop.
+
+    Args:
+        retailer: Name of the retailer
+        retailer_config: Configuration dict for the retailer
+        session: HTTP session (either requests.Session or ProxiedSession)
+        scraper_module: Module containing the scraper implementation
+        **kwargs: Additional arguments passed to scraper
+
+    Returns:
+        Dict containing scraper results
     """
     logging.info(f"[{retailer}] Calling scraper run() function")
     return scraper_module.run(session, retailer_config, retailer=retailer, **kwargs)
@@ -402,11 +428,11 @@ def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_mod
 async def run_retailer_async(
     retailer: str,
     cli_proxy_override: Optional[str] = None,
-    cli_proxy_settings: Optional[dict] = None,
+    cli_proxy_settings: Optional[Dict[str, Any]] = None,
     export_formats: Optional[List[ExportFormat]] = None,
-    cloud_manager=None,
-    **kwargs
-) -> dict:
+    cloud_manager: Optional[CloudStorageManager] = None,
+    **kwargs: Any
+) -> Dict[str, Any]:
     """Run a single retailer scraper asynchronously
 
     Uses ThreadPoolExecutor to run synchronous scrapers without
@@ -421,6 +447,10 @@ async def run_retailer_async(
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
     logging.info(f"[{retailer}] Starting scraper")
+
+    # Set Sentry context for this retailer
+    set_retailer_context(retailer)
+    add_breadcrumb(f"Starting scraper for {retailer}", category="scraper")
 
     # Default to JSON and CSV if no formats specified
     if export_formats is None:
@@ -552,6 +582,8 @@ async def run_retailer_async(
 
     except Exception as e:
         logging.error(f"[{retailer}] Error running scraper: {e}", exc_info=True)
+        # Report to Sentry with retailer context
+        capture_scraper_error(e, retailer=retailer)
         return {
             'retailer': retailer,
             'status': 'error',
@@ -570,12 +602,12 @@ async def run_retailer_async(
 async def run_all_retailers(
     retailers: List[str],
     cli_proxy_override: Optional[str] = None,
-    cli_proxy_settings: Optional[dict] = None,
+    cli_proxy_settings: Optional[Dict[str, Any]] = None,
     export_formats: Optional[List[ExportFormat]] = None,
-    cloud_manager=None,
-    **kwargs
-) -> dict:
-    """Run multiple retailers concurrently
+    cloud_manager: Optional[CloudStorageManager] = None,
+    **kwargs: Any
+) -> Dict[str, Any]:
+    """Run multiple retailers concurrently.
 
     Args:
         retailers: List of retailer names to run
@@ -584,6 +616,9 @@ async def run_all_retailers(
         export_formats: List of formats to export
         cloud_manager: Optional CloudStorageManager for uploading to GCS
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
+
+    Returns:
+        Dict containing results for all retailers
     """
     logging.info(f"Starting concurrent scrape for {len(retailers)} retailers: {retailers}")
 
@@ -618,7 +653,7 @@ async def run_all_retailers(
     return summary
 
 
-def _get_yaml_proxy_mode(config: dict, retailer: Optional[str] = None) -> Optional[str]:
+def _get_yaml_proxy_mode(config: Dict[str, Any], retailer: Optional[str] = None) -> Optional[str]:
     """Resolve proxy mode from YAML config for a retailer or global."""
     if not config:
         return None
@@ -630,7 +665,7 @@ def _get_yaml_proxy_mode(config: dict, retailer: Optional[str] = None) -> Option
     return global_mode
 
 
-def _get_target_retailers(args) -> List[str]:
+def _get_target_retailers(args: argparse.Namespace) -> List[str]:
     """Return retailers targeted by CLI args."""
     retailer = getattr(args, 'retailer', None)
     if retailer:
@@ -641,7 +676,7 @@ def _get_target_retailers(args) -> List[str]:
     return []
 
 
-def validate_cli_options(args, config: dict = None) -> List[str]:
+def validate_cli_options(args: argparse.Namespace, config: Optional[Dict[str, Any]] = None) -> List[str]:
     """Validate CLI options for conflicts (#106).
 
     Args:
@@ -689,7 +724,7 @@ def validate_cli_options(args, config: dict = None) -> List[str]:
     return errors
 
 
-def main():
+def main() -> int:
     """Main entry point"""
     parser = setup_parser()
     args = parser.parse_args()
@@ -698,6 +733,11 @@ def main():
     log_level = logging.DEBUG if args.verbose else logging.INFO
     setup_logging(args.log_file)
     logging.getLogger().setLevel(log_level)
+
+    # Initialize Sentry for error monitoring (if configured)
+    sentry_enabled = init_sentry()
+    if sentry_enabled:
+        logging.debug("Sentry error monitoring enabled")
 
     # Handle status command
     if args.status:
@@ -910,12 +950,15 @@ def main():
         return 130
     except Exception as e:
         logging.error(f"Scraping failed: {e}")
+        capture_scraper_error(e, retailer="main")
         return 1
     finally:
         # Cleanup all proxy clients
         close_all_proxy_clients()
         # Shutdown thread pool executor
         _scraper_executor.shutdown(wait=False)
+        # Flush pending Sentry events before exit
+        sentry_flush(timeout=2.0)
 
 
 if __name__ == '__main__':
