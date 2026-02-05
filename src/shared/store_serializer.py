@@ -291,7 +291,7 @@ class StoreSerializer:
         # Collect all fields from stores
         all_fields = set()
         for store in stores:
-            data = store.to_dict(include_extra=True, flatten=True)
+            data = store.to_dict(include_extra=True, flatten=True, for_csv=True)
             all_fields.update(data.keys())
 
         # Start with standard fields (in order)
