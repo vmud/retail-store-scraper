@@ -55,7 +55,8 @@ def save_to_csv(stores: List[Dict[str, Any]], filepath: str, fieldnames: List[st
     # Route through ExportService to avoid duplication (#206)
     # Use provided fieldnames or fall back to default for backwards compatibility
     # Original save_to_csv used a fixed list of 11 fields when none provided
-    fields = fieldnames if fieldnames else DEFAULT_CSV_FIELDNAMES
+    # IMPORTANT: Check `is None` to preserve empty list behavior
+    fields = fieldnames if fieldnames is not None else DEFAULT_CSV_FIELDNAMES
     retailer_config = {'output_fields': fields}
     ExportService.export_stores(stores, ExportFormat.CSV, str(path), retailer_config)
 

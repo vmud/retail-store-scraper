@@ -24,6 +24,7 @@ class TestGetWithRetry403Handling:
         session.get.side_effect = mock_responses
 
         with patch('src.shared.http.time.sleep') as mock_sleep, \
+             patch('src.shared.delays.time.sleep') as mock_delay_sleep, \
              patch('src.shared.delays.random.uniform', return_value=0.1):  # Minimize random delay
             result = get_with_retry(session, "http://example.com", max_retries=3, min_delay=0.1, max_delay=0.1)
 
@@ -50,6 +51,7 @@ class TestGetWithRetry403Handling:
         session.get.return_value = Mock(status_code=403)
 
         with patch('src.shared.http.time.sleep'), \
+             patch('src.shared.delays.time.sleep'), \
              patch('src.shared.delays.random.uniform', return_value=0.1), \
              caplog.at_level(logging.WARNING):
             get_with_retry(session, "http://example.com/store/123", max_retries=2, min_delay=0.1, max_delay=0.1)
@@ -65,6 +67,7 @@ class TestGetWithRetry403Handling:
         session.get.return_value = Mock(status_code=403)
 
         with patch('src.shared.http.time.sleep'), \
+             patch('src.shared.delays.time.sleep'), \
              patch('src.shared.delays.random.uniform', return_value=0.1), \
              caplog.at_level(logging.WARNING):
             result = get_with_retry(session, "http://example.com", max_retries=2, min_delay=0.1, max_delay=0.1)
@@ -86,6 +89,7 @@ class TestGetWithRetry403Handling:
         session.get.side_effect = mock_responses
 
         with patch('src.shared.http.time.sleep'), \
+             patch('src.shared.delays.time.sleep'), \
              patch('src.shared.delays.random.uniform', return_value=0.1):
             result = get_with_retry(session, "http://example.com", max_retries=3, min_delay=0.1, max_delay=0.1)
 
