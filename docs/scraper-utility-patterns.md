@@ -99,8 +99,7 @@ def run(session, config: dict, **kwargs) -> dict:
     # Load URLs with caching (automatically fetches if cache expired)
     store_urls = load_urls_with_cache(
         cache=cache,
-        session=session,
-        fetch_function=lambda: discover_store_urls(session),
+        fetch_callback=lambda: discover_store_urls(session),
         refresh_urls=kwargs.get('refresh_urls', False)
     )
 ```
@@ -347,8 +346,7 @@ def run(session: requests.Session, config: dict, **kwargs) -> dict:
         cache = RichURLCache('target')
         store_urls = load_urls_with_cache(
             cache=cache,
-            session=session,
-            fetch_function=lambda: discover_all_store_urls(session),
+            fetch_callback=lambda: discover_all_store_urls(session),
             refresh_urls=kwargs.get('refresh_urls', False)
         )
 
