@@ -273,7 +273,11 @@ class TestStructuredLogger:
     def test_log_phase_end_calculates_duration(self, mock_time, caplog):
         """log_phase_end should calculate phase duration if start was logged."""
         logger = StructuredLogger(retailer='target')
-        mock_time.side_effect = [1000.0, 1000.05]  # 50ms duration
+        # Python version differences: logging framework may or may not intercept time.time()
+        # Local (3.14): calls 1 (start), 2 (duration calc)
+        # CI (3.9-3.12): calls 1 (start), 2 (LogRecord), 3 (duration calc), 4 (LogRecord)
+        # Provide values ensuring duration is always calculated as 50ms
+        mock_time.side_effect = [1000.0, 1000.05, 1000.05, 1000.06, 1000.07]
 
         # Start phase
         logger.log_phase_start('discovery')
@@ -363,7 +367,11 @@ class TestStructuredLogger:
     def test_log_phase_end_does_not_mutate_metadata(self, mock_time, caplog):
         """log_phase_end should not mutate the caller's metadata dict."""
         logger = StructuredLogger(retailer='target')
-        mock_time.side_effect = [1000.0, 1000.05]  # 50ms duration
+        # Python version differences: logging framework may or may not intercept time.time()
+        # Local (3.14): calls 1 (start), 2 (duration calc)
+        # CI (3.9-3.12): calls 1 (start), 2 (LogRecord), 3 (duration calc), 4 (LogRecord)
+        # Provide values ensuring duration is always calculated as 50ms
+        mock_time.side_effect = [1000.0, 1000.05, 1000.05, 1000.06, 1000.07]
         original_metadata = {'custom_field': 'value'}
 
         # Start phase
