@@ -1,30 +1,32 @@
 # Multi-Retailer Store Scraper
 
-A production-ready Python web scraper that collects retail store locations from multiple retailer websites. Features concurrent execution, intelligent change detection, optional proxy integration, and a modern real-time monitoring dashboard.
+A production-ready Python web scraper that collects retail store locations from multiple US and Canadian retailer websites. Features concurrent execution, intelligent change detection, checkpoint/resume, cloud storage sync, and optional Oxylabs proxy integration.
 
 ## Features
 
 ### Core Capabilities
-- **Multi-Retailer Support**: Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy (WIP)
-- **Concurrent Execution**: Run all retailers simultaneously for faster completion
+- **11 Retailers**: Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, Telus, Cricket Wireless, Bell, Costco, Sam's Club
+- **Concurrent Execution**: Run all retailers simultaneously with global concurrency management
 - **Change Detection**: Detect new, closed, and modified stores between runs with incremental mode
 - **Checkpoint System**: Resume from interruptions without data loss
-- **Memory Efficient**: Streaming JSON parser for large datasets (50MB+ files)
 - **Flexible Export**: JSON, CSV, Excel, and GeoJSON format support
+- **Cloud Storage**: Sync results to Google Cloud Storage for backup and team access
+- **Store Schema**: Centralized store data schema with standardized field naming across all retailers
 
 ### Anti-Blocking & Performance
 - **Oxylabs Proxy Integration**: Support for residential proxies and Web Scraper API
-- **JavaScript Rendering**: Dynamic content scraping for complex sites
-- **Smart Rate Limiting**: Configurable delays and pause thresholds
+- **JavaScript Rendering**: Dynamic content scraping via Web Scraper API for bot-protected sites
+- **Dual Delay Profiles**: Automatic fast/slow switching based on proxy mode (5-10x speedup)
+- **Global Concurrency Limits**: Prevents CPU oversubscription when running all retailers
+- **Smart Rate Limiting**: Configurable delays, pause thresholds, and proxy rate limits
 - **User-Agent Rotation**: Multiple browser signatures
-- **Automatic Retry**: HTTP 429/500 error handling with exponential backoff
+- **URL Caching**: 7-day cache for discovered store URLs (reduces repeat work)
 
-### Deployment & Monitoring
-- **Docker Support**: Multi-stage builds with health checks and non-root user
-- **Systemd Integration**: Production-grade service for Linux servers
-- **Web Dashboard**: Real-time monitoring with soft dark theme UI
-- **API Rate Limiting**: Flask-Limiter integration for dashboard endpoints
-- **Security Hardening**: CSRF protection, XSS prevention, path traversal safeguards
+### Observability & Reliability
+- **Sentry.io Integration**: Error monitoring with retailer-specific context and breadcrumbs
+- **Structured Logging**: JSON-formatted log output for observability pipelines
+- **Self-Healing Setup**: Automated environment probing, diagnostics, and auto-fix
+- **Comprehensive Type Hints**: Full type annotations across core modules
 
 ## Quick Links
 
@@ -34,32 +36,25 @@ A production-ready Python web scraper that collects retail store locations from 
 
 ## Quick Start
 
-### Local Installation
+### Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/retail-store-scraper.git
 cd retail-store-scraper
 
-# Create virtual environment (requires Python 3.8-3.11)
-python3.11 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Recommended: automated setup with diagnostics and auto-fix
+python scripts/setup.py
 
-# Install dependencies
+# Or manual setup (requires Python 3.9-3.14)
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Optional: Copy environment template
 cp .env.example .env
 # Edit .env with your Oxylabs credentials (if using proxies)
 ```
-
-### Remote Server Deployment
-
-For production deployment to a remote dev server, see the comprehensive [Deployment Guide](DEPLOYMENT.md) with detailed instructions for:
-- Docker deployment (recommended)
-- Native Python deployment
-- Systemd service deployment
-- Network security and monitoring
 
 ### Basic Usage
 
@@ -102,7 +97,25 @@ python run.py --all --proxy residential --validate-proxy
 python run.py --retailer target --format json,csv,excel,geojson
 
 # Exclude specific retailers
-python run.py --all --exclude bestbuy --resume
+python run.py --all --exclude bestbuy att --resume
+
+# Targeted state scraping (Verizon only)
+python run.py --retailer verizon --states MD,PA,RI
+
+# Force URL re-discovery
+python run.py --retailer verizon --refresh-urls
+
+# Geo-targeted proxy
+python run.py --retailer target --proxy residential --proxy-country ca
+
+# Cloud storage sync to GCS
+python run.py --retailer verizon --cloud
+
+# Cloud with timestamped history copies
+python run.py --all --cloud --gcs-history
+
+# Disable cloud (overrides env/config)
+python run.py --all --no-cloud
 
 # Verbose logging for debugging
 python run.py --retailer verizon --verbose
@@ -113,15 +126,18 @@ python run.py --retailer verizon --verbose
 ### Basic Options
 | Option | Description |
 |--------|-------------|
-| `--retailer, -r` | Run specific retailer (verizon, att, target, tmobile, walmart, bestbuy) |
+| `--retailer, -r` | Run specific retailer |
 | `--all, -a` | Run all enabled retailers concurrently |
-| `--exclude, -e` | Exclude retailers when using --all (comma-separated) |
+| `--exclude, -e` | Exclude retailers when using --all |
 | `--resume` | Resume from checkpoints |
 | `--incremental` | Only process new/changed stores (change detection mode) |
+| `--refresh-urls` | Force URL re-discovery (ignore cached store URLs) |
+| `--states STATES` | Comma-separated state abbreviations to scrape (Verizon only) |
 | `--test` | Quick test mode (limit 10 stores per retailer) |
 | `--limit N` | Limit stores per retailer (cannot combine with --test) |
 | `--status` | Show progress without running scrapers |
 | `--verbose, -v` | Verbose output with debug logging |
+| `--log-file PATH` | Log file path (default: logs/scraper.log) |
 
 ### Proxy Options
 | Option | Description |
@@ -134,209 +150,283 @@ python run.py --retailer verizon --verbose
 ### Export Options
 | Option | Description |
 |--------|-------------|
-| `--format FORMATS` | Export formats: `json`, `csv`, `excel`, `geojson` (comma-separated) |
-| `--no-export` | Skip export generation |
+| `--format FORMATS` | Export formats: `json`, `csv`, `excel`, `geojson` (comma-separated, default: json,csv) |
+
+### Cloud Storage Options
+| Option | Description |
+|--------|-------------|
+| `--cloud` | Enable cloud storage sync (uploads to GCS after local export) |
+| `--no-cloud` | Disable cloud storage sync (overrides env/config) |
+| `--gcs-bucket NAME` | Override GCS bucket name |
+| `--gcs-history` | Upload timestamped copies to history/ folder |
+
+## Supported Retailers
+
+| Retailer | Country | Discovery Method | Proxy Mode |
+|----------|---------|------------------|------------|
+| Verizon | US | 4-phase HTML crawl | Residential |
+| AT&T | US | XML Sitemap | Residential |
+| Target | US | Gzipped Sitemap + API | Residential |
+| T-Mobile | US | Paginated Sitemaps | Web Scraper API |
+| Walmart | US | Multiple Gzipped Sitemaps | Hybrid (Residential + WSAPI) |
+| Best Buy | US | XML Sitemap | Web Scraper API |
+| Cricket Wireless | US | Yext API (geo-grid) | Direct |
+| Costco | US | Page scrape | Web Scraper API |
+| Sam's Club | US | Sitemap | Hybrid (Direct + WSAPI) |
+| Telus | Canada | Uberall API | Residential |
+| Bell | Canada | Sitemap + JSON-LD | Direct |
 
 ## Project Structure
 
 ```
 retail-store-scraper/
-├── run.py                      # Unified CLI entry point
+├── run.py                          # Unified CLI entry point
 ├── requirements.txt
-├── Dockerfile
+├── Dockerfile                      # Multi-stage build (non-root, security hardened)
 ├── docker-compose.yml
+├── scripts/
+│   └── setup.py                    # Self-healing project setup
 ├── config/
-│   ├── retailers.yaml          # All retailer configurations
-│   └── *_config.py             # Per-retailer Python configs
+│   ├── retailers.yaml              # All retailer configurations, concurrency, proxy, cloud
+│   └── *_config.py                 # Per-retailer Python configs
 ├── src/
-│   ├── change_detector.py      # Change detection system
+│   ├── change_detector.py          # Change detection system
+│   ├── setup/                      # Self-healing setup module
+│   │   ├── probe.py                # Environment probing
+│   │   ├── fix.py                  # Idempotent auto-fix
+│   │   ├── verify.py               # Verification suite
+│   │   └── runner.py               # Orchestration with checkpoints
 │   ├── shared/
-│   │   ├── utils.py            # HTTP, checkpoints, exports
-│   │   └── request_counter.py  # Rate limiting
+│   │   ├── constants.py            # Centralized magic numbers (HTTP, cache, workers, etc.)
+│   │   ├── concurrency.py          # Global concurrency and rate limit management
+│   │   ├── cache_interface.py      # Unified caching with consistent TTL
+│   │   ├── session_factory.py      # Thread-safe session creation
+│   │   ├── proxy_client.py         # Oxylabs proxy abstraction
+│   │   ├── export_service.py       # Multi-format export (JSON, CSV, Excel, GeoJSON)
+│   │   ├── cloud_storage.py        # GCS integration for backup/sync
+│   │   ├── store_schema.py         # Central store data schema
+│   │   ├── store_serializer.py     # Store data serialization
+│   │   ├── scrape_runner.py        # Shared scrape runner for unified orchestration
+│   │   ├── scraper_utils.py        # Common scraper patterns
+│   │   ├── structured_logging.py   # JSON-formatted structured logging
+│   │   ├── sentry_integration.py   # Sentry.io error monitoring
+│   │   ├── logging_config.py       # Logging configuration
+│   │   ├── http.py                 # HTTP helpers and retry logic
+│   │   ├── delays.py               # Delay and rate-limiting utilities
+│   │   ├── checkpoint.py           # Checkpoint management
+│   │   ├── validation.py           # Store data validation
+│   │   ├── io.py                   # File I/O utilities
+│   │   ├── notifications.py        # Pluggable notifications (Slack, console)
+│   │   ├── run_tracker.py          # Run metadata tracking
+│   │   ├── scraper_manager.py      # Process lifecycle management
+│   │   ├── request_counter.py      # Rate limiting tracker
+│   │   ├── status.py               # Progress reporting
+│   │   ├── cache.py                # URL caching (legacy)
+│   │   └── utils.py                # Backward-compatible aliases
 │   └── scrapers/
-│       ├── verizon.py
-│       ├── att.py
-│       ├── target.py
-│       ├── tmobile.py
-│       ├── walmart.py
-│       └── bestbuy.py
-├── dashboard/
-│   ├── app.py                  # Flask backend API
-│   ├── index.html              # Dashboard entry point
-│   ├── vite.config.js          # Vite build configuration
-│   └── src/
-│       ├── main.js             # App initialization
-│       ├── api.js              # API client
-│       ├── state.js            # Reactive state store
-│       ├── components/         # UI components
-│       └── styles/             # CSS design system
+│       ├── __init__.py             # Scraper registry and dynamic loader
+│       ├── verizon.py              # 4-phase HTML crawl
+│       ├── att.py                  # XML sitemap
+│       ├── target.py               # Gzipped sitemap + API
+│       ├── tmobile.py              # Paginated sitemaps
+│       ├── walmart.py              # Multiple gzipped sitemaps (hybrid proxy)
+│       ├── bestbuy.py              # XML sitemap + Web Scraper API
+│       ├── telus.py                # Uberall API (Canadian)
+│       ├── cricket.py              # Yext API geo-grid (US)
+│       ├── bell.py                 # Sitemap + JSON-LD (Canadian)
+│       ├── costco.py               # Page scrape with Akamai bypass
+│       └── samsclub.py             # Sitemap + hybrid proxy
 ├── deploy/
-│   ├── scraper.service         # Systemd unit file
-│   └── install.sh              # Linux deployment script
-└── data/                       # Output data (gitignored)
+│   ├── rsync-deploy.sh             # Production deployment via rsync
+│   ├── validate.sh                 # Deployment validation
+│   └── diagnose-network.sh         # Network troubleshooting
+├── .github/workflows/              # CI/CD pipelines
+└── data/                           # Output data (gitignored)
     └── {retailer}/
         ├── checkpoints/
         ├── output/
         └── history/
 ```
 
-## Web Dashboard
+## Configuration
 
-The dashboard provides real-time monitoring of scraper operations with a modern soft dark theme.
+### Global Concurrency
 
-### Features
+Concurrency limits in `config/retailers.yaml` prevent CPU oversubscription when running `--all`:
 
-- **Real-time Updates**: Auto-refreshes every 5 seconds with no visual flash
-- **Retailer Cards**: Progress bars, store counts, duration, and phase tracking
-- **Brand Identity**: Each retailer has its logo and accent color
-- **Config Editor**: Edit `retailers.yaml` directly from the UI
-- **Log Viewer**: Filter logs by level (INFO, WARNING, ERROR, DEBUG)
-- **Change Detection**: Delta report showing new, closed, and modified stores
-
-### Running the Dashboard
-
-```bash
-# Start the Flask server
-cd dashboard
-python app.py
-
-# Access at http://localhost:5001
-
-# With API authentication (optional)
-export DASHBOARD_API_KEY=$(openssl rand -hex 32)
-python app.py
+```yaml
+concurrency:
+  global_max_workers: 10      # Max concurrent workers across ALL retailers
+  per_retailer_max:
+    verizon: 7                # High parallelism with proxy
+    walmart: 3                # JS rendering is resource-heavy
+    bell: 1                   # Respects crawl-delay: 10
+  proxy_rate_limit: 10.0      # Requests/second for proxy modes
 ```
 
-**Dashboard Features:**
-- Real-time scraper status and progress tracking
-- Live log viewer with level filtering (INFO, WARNING, ERROR, DEBUG)
-- Configuration editor for `retailers.yaml`
-- Change detection reports (new/closed/modified stores)
-- Export panel for downloading data in multiple formats
-- Keyboard shortcuts (ESC to close modals, etc.)
-- Auto-refresh every 5 seconds with smooth animations
+### Dual Delay Profiles
 
-### Development
+Each retailer defines separate delay profiles for direct and proxied requests:
 
-```bash
-cd dashboard
-
-# Install dependencies
-npm install
-
-# Development mode with hot reload
-npm run dev
-
-# Production build
-npm run build
+```yaml
+delays:
+  direct:      # Conservative (no proxy)
+    min_delay: 2.0
+    max_delay: 5.0
+  proxied:     # Aggressive (with proxy)
+    min_delay: 0.2
+    max_delay: 0.5
 ```
 
-### Screenshot
+This provides 5-10x speedup when using residential proxies with automatic profile switching.
 
-![Dashboard](https://github.com/vmud/retail-store-scraper/assets/dashboard-preview.png)
+### Retailer Configuration
+
+Edit `config/retailers.yaml` to customize:
+- Request delays (dual profiles)
+- Pause thresholds
+- Enabled/disabled retailers
+- Output fields
+- Per-retailer proxy modes
+- Worker counts
+
+### Enabling/Disabling Retailers
+
+```yaml
+retailers:
+  bestbuy:
+    enabled: false  # Won't appear in CLI choices or --all
+```
+
+## Cloud Storage (GCS)
+
+Sync scraped data to Google Cloud Storage for backup and team access.
+
+### Setup
+
+1. Create a GCS bucket with object versioning enabled
+2. Create a service account with `Storage Object Admin` role
+3. Download the service account key JSON
+4. Set environment variables:
+
+```bash
+export GCS_SERVICE_ACCOUNT_KEY=/path/to/service-account.json
+export GCS_BUCKET_NAME=your-bucket-name
+```
+
+### Usage
+
+```bash
+# Sync after scraping
+python run.py --retailer verizon --cloud
+
+# With timestamped history
+python run.py --all --cloud --gcs-history
+
+# Custom bucket
+python run.py --all --cloud --gcs-bucket my-backup-bucket
+```
+
+### GCS Bucket Structure
+
+```
+gs://{bucket}/
+├── verizon/stores_latest.json    # Overwritten each run (versioned by GCS)
+├── verizon/stores_latest.csv
+├── att/stores_latest.json
+└── history/                      # Optional (--gcs-history)
+    └── verizon/stores_2026-01-26_143022.json
+```
+
+## Oxylabs Proxy Integration
+
+For faster scraping with reduced blocking risk, integrate with [Oxylabs](https://oxylabs.io/) proxy services.
+
+### Setup
+
+1. Sign up at [Oxylabs](https://oxylabs.io/)
+2. Set environment variables:
+   ```bash
+   # Mode-specific credentials (preferred)
+   export OXYLABS_RESIDENTIAL_USERNAME=your_username
+   export OXYLABS_RESIDENTIAL_PASSWORD=your_password
+   export OXYLABS_SCRAPER_API_USERNAME=your_username
+   export OXYLABS_SCRAPER_API_PASSWORD=your_password
+
+   # Or legacy fallback
+   export OXYLABS_USERNAME=your_username
+   export OXYLABS_PASSWORD=your_password
+   ```
+
+3. Or use `.env` file (copy from `.env.example`)
+
+### Proxy Modes
+
+| Mode | Description | Best For |
+|------|-------------|----------|
+| `direct` | No proxy (default) | Testing, low-volume |
+| `residential` | 175M+ rotating residential IPs | Most retailers |
+| `web_scraper_api` | Managed service with JS rendering | Bot-protected sites (Costco, Best Buy, T-Mobile) |
+
+Some retailers use **hybrid mode** (e.g., Walmart, Sam's Club) where sitemaps are fetched directly but store pages use Web Scraper API for JavaScript rendering.
+
+## Error Recovery
+
+### HTTP-Level Retries (Automatic)
+Every HTTP request automatically retries 3 times with exponential backoff for 429, 500, 502, 503, 504 errors.
+
+### Checkpoint Resume
+Failed store URLs are not marked as completed. Running with `--resume` retries any failed extractions:
+```bash
+python run.py --retailer verizon --proxy residential --resume
+```
+
+### Discovery Refresh
+For Verizon's parallel discovery phases, force complete re-discovery:
+```bash
+python run.py --retailer verizon --proxy residential --refresh-urls
+```
 
 ## Docker Deployment
 
 ### Quick Start
 
 ```bash
-# Build and run all services (dashboard + scraper)
+# Build and run
 docker compose up -d
 
-# Check container status
-docker compose ps
-
-# View logs
-docker compose logs -f scraper
-docker compose logs -f dashboard
-
-# Access dashboard at http://localhost:5001
-```
-
-### Container Management
-
-```bash
 # Run specific retailer
 docker compose exec scraper python run.py --retailer verizon
 
 # Run all with proxies
 docker compose exec scraper python run.py --all --proxy residential --resume
 
-# Check scraper status
+# Check status
 docker compose exec scraper python run.py --status
+
+# View logs
+docker compose logs -f scraper
 
 # Stop services
 docker compose down
-
-# Rebuild after code changes
-docker compose build
-docker compose up -d
 ```
 
 ### Environment Variables
 
 ```bash
-# Set proxy credentials
+# Proxy credentials
 export OXYLABS_RESIDENTIAL_USERNAME=your_username
 export OXYLABS_RESIDENTIAL_PASSWORD=your_password
-
-# Set dashboard API key (optional)
-export DASHBOARD_API_KEY=$(openssl rand -hex 32)
 
 # Start with environment
 docker compose up -d
 ```
 
-**Container Features:**
-- Multi-stage build for smaller image size (non-root user, security hardening)
-- Health checks for dashboard service
-- Automatic restarts on failure
+### Container Features
+- Multi-stage build for smaller image size
+- Non-root user for security
+- Health checks with automatic restarts
 - Volume mounts for data persistence
-- Isolated network for security
-
-## Linux Server Deployment
-
-For detailed deployment instructions including network setup, security, and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
-### Quick Deploy
-
-```bash
-# Clone repository on server
-git clone https://github.com/yourusername/retail-store-scraper.git
-cd retail-store-scraper
-
-# Run installation script as root
-sudo ./deploy/install.sh
-
-# Configure environment
-sudo nano /opt/retail-store-scraper/.env
-
-# Start services
-sudo systemctl start retail-scraper
-sudo systemctl enable retail-scraper
-
-# Check status
-sudo systemctl status retail-scraper
-
-# View logs
-sudo journalctl -u retail-scraper -f
-```
-
-### Systemd Management
-
-```bash
-# Start/stop/restart
-sudo systemctl start retail-scraper
-sudo systemctl stop retail-scraper
-sudo systemctl restart retail-scraper
-
-# Enable/disable auto-start
-sudo systemctl enable retail-scraper
-sudo systemctl disable retail-scraper
-
-# Check scraper status remotely
-ssh user@server "cd /opt/retail-store-scraper && ./venv/bin/python run.py --status"
-```
 
 ## Data Output
 
@@ -345,147 +435,27 @@ ssh user@server "cd /opt/retail-store-scraper && ./venv/bin/python run.py --stat
 - `data/{retailer}/output/stores_latest.json` - Current run data
 - `data/{retailer}/output/stores_latest.csv` - Current run CSV
 - `data/{retailer}/output/stores_previous.json` - Previous run data
+- `data/{retailer}/history/changes_*.json` - Change detection reports
+- `runs/{run_id}.json` - Run metadata
+- `logs/{run_id}.log` - Per-run log files
 
 ### Change Detection
 
 ```bash
-# Run with incremental mode to detect changes
 python run.py --retailer target --incremental
 ```
 
-Change reports are saved to `data/{retailer}/history/changes_YYYY-MM-DD.json` and include:
-- New stores (opened since last run)
-- Closed stores (removed since last run)
-- Modified stores (changed attributes)
-
-## Configuration
-
-### Retailer Configuration
-
-Edit `config/retailers.yaml` to customize:
-- Request delays
-- Pause thresholds
-- Enabled/disabled retailers
-- Output fields
-
-### Anti-Blocking Settings
-
-Each retailer has configurable anti-blocking measures:
-- `min_delay` / `max_delay`: Random delay between requests
-- `pause_50_requests`: Pause after every 50 requests
-- `pause_200_requests`: Longer pause after 200 requests
-- User-agent rotation (4 different browsers)
-
-### Error Recovery & Retry Behavior
-
-The scraper has multiple layers of error recovery:
-
-#### HTTP-Level Retries (Automatic)
-Every HTTP request automatically retries 3 times with exponential backoff for:
-- 429 (Rate Limited)
-- 500, 502, 503, 504 (Server Errors)
-
-#### Phase 4 (Store Extraction) - Resumable
-Failed store URLs are NOT marked as completed. Running with `--resume` will automatically retry any failed extractions:
-```bash
-# Initial run
-python run.py --retailer verizon --proxy residential
-
-# Resume to retry failed store URLs
-python run.py --retailer verizon --proxy residential --resume
-```
-
-#### Phases 2-3 (Discovery) - Requires Refresh
-For Verizon's parallel discovery phases (city/store URL discovery), failed states or cities return empty results. To retry failed discovery:
-```bash
-# Force complete re-discovery of all states, cities, and store URLs
-python run.py --retailer verizon --proxy residential --refresh-urls
-```
-
-#### Recommended Recovery Workflow
-1. **First run**: `python run.py --retailer verizon --proxy residential`
-2. **If Phase 4 failures**: `python run.py --retailer verizon --proxy residential --resume`
-3. **If Phase 2-3 failures**: `python run.py --retailer verizon --proxy residential --refresh-urls`
-
-### Oxylabs Proxy Integration (Optional)
-
-For faster scraping with reduced blocking risk, integrate with [Oxylabs](https://oxylabs.io/) proxy services.
-
-#### Setup
-
-1. Sign up at [Oxylabs](https://oxylabs.io/) and get your credentials
-2. Set environment variables:
-   ```bash
-   export OXYLABS_USERNAME=your_username
-   export OXYLABS_PASSWORD=your_password
-   ```
-
-3. Or create a `.env` file (copy from `.env.example`):
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
-
-#### Proxy Modes
-
-| Mode | Description | Best For |
-|------|-------------|----------|
-| `direct` | No proxy (default) | Testing, low-volume |
-| `residential` | 175M+ rotating residential IPs | Most retailers |
-| `web_scraper_api` | Managed service with JS rendering | Walmart, Best Buy |
-
-#### Usage
-
-```bash
-# Run with residential proxies
-python run.py --all --proxy residential
-
-# Run with Web Scraper API (includes JS rendering)
-python run.py --retailer walmart --proxy web_scraper_api --render-js
-
-# Specify country for geo-targeting
-python run.py --all --proxy residential --proxy-country us
-
-# Configure in retailers.yaml (per-retailer override)
-# See config/retailers.yaml for examples
-```
-
-#### Docker with Proxies
-
-```bash
-# Set credentials and run
-OXYLABS_USERNAME=user OXYLABS_PASSWORD=pass \
-  docker-compose run scraper python run.py --all --proxy residential
-```
+Change reports include new stores (opened since last run), closed stores (removed), and modified stores (changed attributes).
 
 ## Expected Performance
 
 | Metric | Direct Mode | Residential Proxy | Web Scraper API |
 |--------|-------------|-------------------|-----------------|
-| Full run (6 retailers) | 8-12 hours | 1-2 hours | 30-60 mins |
-| Incremental run | 1-2 hours | 15-30 mins | 5-15 mins |
-| Test mode (60 stores) | 5-10 mins | 1-2 mins | <1 min |
+| Full run (11 retailers) | 10-16 hours | 2-4 hours | 1-2 hours |
+| Incremental run | 2-3 hours | 20-40 mins | 10-20 mins |
+| Test mode | 5-10 mins | 1-2 mins | <1 min |
 | IP blocking risk | Medium | Very Low | None |
-| Rate limit handling | Manual delays | Automatic rotation | Managed service |
-| JavaScript rendering | ❌ No | ❌ No | ✅ Yes |
-| Memory usage (peak) | ~500MB | ~500MB | ~300MB |
-
-**Performance Tips:**
-- Use `--proxy residential` for 6-8x speedup without blocking
-- Use `--incremental` after first run to only process changes
-- Use `--resume` to continue interrupted runs without data loss
-- Run retailers individually during peak hours to reduce server load
-
-## Supported Retailers
-
-| Retailer | Status | Discovery Method |
-|----------|--------|------------------|
-| Verizon | ✅ Active | 4-phase HTML crawl |
-| AT&T | ✅ Active | XML Sitemap |
-| Target | ✅ Active | Gzipped Sitemap + API |
-| T-Mobile | ✅ Active | Paginated Sitemaps |
-| Walmart | ✅ Active | Multiple Gzipped Sitemaps |
-| Best Buy | 🚧 WIP | XML Sitemap |
+| JavaScript rendering | No | No | Yes |
 
 ## Development
 
@@ -503,12 +473,6 @@ pytest tests/test_scrapers/
 
 # Run with coverage report
 pytest tests/ --cov=src --cov-report=html
-
-# Run integration tests only
-pytest tests/test_proxy_integration.py -v
-
-# Run with verbose output
-pytest tests/ -v -s
 ```
 
 ### Linting
@@ -516,12 +480,6 @@ pytest tests/ -v -s
 ```bash
 # Lint all Python files (matches CI pipeline)
 pylint $(git ls-files '*.py')
-
-# Lint specific file
-pylint src/scrapers/verizon.py
-
-# Check for common issues
-pylint --disable=all --enable=E,F src/
 ```
 
 ### Adding a New Retailer
@@ -529,48 +487,37 @@ pylint --disable=all --enable=E,F src/
 1. **Create scraper module**: `src/scrapers/newretailer.py`
    - Implement `run(session, retailer_config, retailer, **kwargs)` function
    - Return `{'stores': [...], 'count': int, 'checkpoints_used': bool}`
-   - Use `src/shared/utils.py` helpers for HTTP requests and validation
-
 2. **Add configuration**: `config/newretailer_config.py`
-   - Define sitemap URLs, delays, retry settings
-   - Export required store fields
-
-3. **Register scraper**: `src/scrapers/__init__.py`
-   - Add to `SCRAPER_REGISTRY` dict
-   - Import scraper module
-
-4. **Configure retailer**: `config/retailers.yaml`
-   - Add retailer block with enabled flag, delays, output fields
-   - Optionally set proxy mode and rendering settings
-
+3. **Register scraper**: Add to `SCRAPER_REGISTRY` in `src/scrapers/__init__.py`
+4. **Configure retailer**: Add block in `config/retailers.yaml`
 5. **Write tests**: `tests/test_scrapers/test_newretailer.py`
-   - Test scraper function with mocked responses
-   - Verify data validation and checkpoint handling
-   - Test error handling and edge cases
-
-6. **Run validation**:
+6. **Validate**:
    ```bash
-   # Test scraper
    python run.py --retailer newretailer --test
-
-   # Run unit tests
    pytest tests/test_scrapers/test_newretailer.py -v
-
-   # Lint code
    pylint src/scrapers/newretailer.py
    ```
 
-### CI/CD Pipeline
+### CI/CD Pipelines
 
 GitHub Actions workflows:
-- **Pylint**: Runs on every push/PR to check code quality
-- **Pytest**: Runs full test suite on Python 3.8-3.11
-- **Security**: Scans for vulnerabilities and secrets
+- **test.yml**: Full test suite on Python 3.9-3.14
+- **pylint.yml**: Code quality checks on every push/PR
+- **type-check.yml**: Static type checking
+- **security.yml**: Vulnerability and secret scanning
+- **docker.yml**: Docker image build verification
+- **pr-validation.yml**: PR quality gates
+- **claude-code-review.yml**: AI-assisted code review
+- **multi-agent-pr.yml**: Multi-agent conflict detection and auto-labeling
+- **scraper-health.yml**: Retailer endpoint health checks
+- **scraper-proxy-test.yml**: Proxy connectivity validation
+- **1password-secrets.yml**: Secure secret loading
+- **release.yml**: Release automation
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+2. Create a feature branch (`git checkout -b feat/amazing-feature`)
 3. Make your changes following the coding standards in [AGENTS.md](AGENTS.md)
 4. Write tests for new functionality
 5. Run linter and tests locally
@@ -584,6 +531,7 @@ MIT License - see LICENSE file for details.
 ## Acknowledgments
 
 - **Oxylabs** for proxy infrastructure
-- **Flask** and **Vite** for dashboard framework
+- **Sentry** for error monitoring
+- **Google Cloud Storage** for cloud sync
 - **Pytest** for testing framework
 - All contributors who helped improve this project
