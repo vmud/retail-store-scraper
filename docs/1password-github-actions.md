@@ -49,6 +49,8 @@ Vault: DEV
 ├── OXYLABS_SCRAPER_API
 │   ├── username
 │   └── credential (password)
+├── ANTHROPIC_API_KEY
+│   └── credential (API key)
 ├── GCS-ServiceAccount (optional)
 │   └── credential (JSON key)
 └── CODECOV_TOKEN (optional)
@@ -182,6 +184,7 @@ op read "op://Scraper/Oxylabs/residential-username"
 | `OXYLABS_RESIDENTIAL_PASSWORD` | `op://DEV/OXYLABS_RESIDENTIAL/credential` | Residential proxy password |
 | `OXYLABS_SCRAPER_API_USERNAME` | `op://DEV/OXYLABS_SCRAPER_API/username` | Web Scraper API username |
 | `OXYLABS_SCRAPER_API_PASSWORD` | `op://DEV/OXYLABS_SCRAPER_API/credential` | Web Scraper API password |
+| `ANTHROPIC_API_KEY` | `op://DEV/ANTHROPIC_API_KEY/credential` | Anthropic API key |
 | `GCS_SERVICE_ACCOUNT_KEY` | `op://DEV/GCS-ServiceAccount/credential` | GCS service account JSON (if configured) |
 | `CODECOV_TOKEN` | `op://DEV/CODECOV_TOKEN/credential` | Codecov upload token (if configured) |
 
