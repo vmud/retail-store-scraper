@@ -37,6 +37,13 @@ from src.shared.utils import (
     ProxiedSession
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
+from src.shared.sentry_integration import (
+    init_sentry,
+    capture_scraper_error,
+    set_retailer_context,
+    add_breadcrumb,
+    flush as sentry_flush,
+)
 from src.shared.constants import WORKERS
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
 from src.shared.cloud_storage import get_cloud_storage, CloudStorageManager
@@ -441,6 +448,10 @@ async def run_retailer_async(
     """
     logging.info(f"[{retailer}] Starting scraper")
 
+    # Set Sentry context for this retailer
+    set_retailer_context(retailer)
+    add_breadcrumb(f"Starting scraper for {retailer}", category="scraper")
+
     # Default to JSON and CSV if no formats specified
     if export_formats is None:
         export_formats = [ExportFormat.JSON, ExportFormat.CSV]
@@ -571,6 +582,8 @@ async def run_retailer_async(
 
     except Exception as e:
         logging.error(f"[{retailer}] Error running scraper: {e}", exc_info=True)
+        # Report to Sentry with retailer context
+        capture_scraper_error(e, retailer=retailer)
         return {
             'retailer': retailer,
             'status': 'error',
@@ -720,6 +733,11 @@ def main() -> int:
     log_level = logging.DEBUG if args.verbose else logging.INFO
     setup_logging(args.log_file)
     logging.getLogger().setLevel(log_level)
+
+    # Initialize Sentry for error monitoring (if configured)
+    sentry_enabled = init_sentry()
+    if sentry_enabled:
+        logging.debug("Sentry error monitoring enabled")
 
     # Handle status command
     if args.status:
@@ -932,12 +950,15 @@ def main() -> int:
         return 130
     except Exception as e:
         logging.error(f"Scraping failed: {e}")
+        capture_scraper_error(e, retailer="main")
         return 1
     finally:
         # Cleanup all proxy clients
         close_all_proxy_clients()
         # Shutdown thread pool executor
         _scraper_executor.shutdown(wait=False)
+        # Flush pending Sentry events before exit
+        sentry_flush(timeout=2.0)
 
 
 if __name__ == '__main__':
