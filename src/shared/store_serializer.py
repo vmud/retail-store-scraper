@@ -5,6 +5,8 @@ Provides canonical field names and normalization to ensure consistent
 field naming across scrapers and export formats.
 """
 
+import json
+import logging
 from dataclasses import dataclass, asdict, field as dataclass_field
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -109,12 +111,8 @@ class Store:
         if 'scraped_at' not in normalized or not normalized['scraped_at']:
             normalized['scraped_at'] = datetime.now().isoformat()
 
-        # Extract fields that belong to the Store schema
-        store_fields = {
-            'store_id', 'name', 'street_address', 'city', 'state',
-            'zip', 'country', 'phone', 'latitude', 'longitude',
-            'url', 'hours', 'retailer', 'scraped_at'
-        }
+        # Extract fields that belong to the Store schema (derived from dataclass)
+        store_fields = {f for f in cls.__dataclass_fields__ if f != 'extra_fields'}
 
         # Separate schema fields from extra fields
         store_data = {}
@@ -141,17 +139,52 @@ class Store:
     def _normalize_fields(data: Dict[str, Any]) -> Dict[str, Any]:
         """Map retailer-specific field names to canonical names.
 
+        Detects and warns about field alias collisions where both the aliased
+        field and canonical field exist in input data (e.g., both 'postal_code'
+        and 'zip'). The canonical field value takes precedence.
+
         Args:
             data: Raw store data with potentially non-standard field names
 
         Returns:
             Dictionary with normalized field names
         """
-        result = {}
+        # First pass: detect collisions
+        canonical_mapping = {}  # Maps canonical keys to list of (source_key, value)
         for key, value in data.items():
-            # Apply alias if exists, otherwise keep original name
             canonical_key = FIELD_ALIASES.get(key, key)
-            result[canonical_key] = value
+            if canonical_key not in canonical_mapping:
+                canonical_mapping[canonical_key] = []
+            canonical_mapping[canonical_key].append((key, value))
+
+        # Second pass: build result and warn on collisions
+        result = {}
+        for canonical_key, sources in canonical_mapping.items():
+            if len(sources) > 1:
+                # Collision detected - multiple sources for same canonical field
+                # Check if values differ
+                values = [value for _, value in sources]
+                if len(set(str(v) for v in values)) > 1:  # Different values
+                    # Find which is the canonical field (not an alias)
+                    canonical_source = next(
+                        (key for key, _ in sources if key == canonical_key),
+                        None
+                    )
+                    alias_sources = [key for key, _ in sources if key != canonical_key]
+
+                    logging.warning(
+                        f"Field alias collision: both {alias_sources} and canonical "
+                        f"field '{canonical_key}' exist with different values. "
+                        f"Canonical value will be used."
+                    )
+
+            # Use the canonical field's value if present, otherwise first source
+            canonical_value = next(
+                (value for key, value in sources if key == canonical_key),
+                sources[0][1]  # Fallback to first source if no canonical field
+            )
+            result[canonical_key] = canonical_value
+
         return result
 
     def to_dict(self, include_extra: bool = True, flatten: bool = False) -> Dict[str, Any]:
@@ -232,7 +265,6 @@ class StoreSerializer:
                 str_value = ''
             elif isinstance(value, (list, dict)):
                 # JSON serialize complex types
-                import json
                 str_value = json.dumps(value)
             else:
                 str_value = str(value)
@@ -256,7 +288,7 @@ class StoreSerializer:
             Ordered list of field names
         """
         if not stores:
-            return cls.FIELD_ORDER
+            return list(cls.FIELD_ORDER)
 
         # Collect all fields from stores
         all_fields = set()
@@ -293,6 +325,9 @@ def normalize_store_dict(data: Dict[str, Any], retailer: str = None) -> Dict[str
         return store.to_dict(include_extra=True, flatten=True)
     except ValueError as e:
         # If missing required fields, do basic normalization
-        import logging
         logging.warning(f"Cannot create Store from data, applying basic normalization: {e}")
-        return Store._normalize_fields(data)
+        normalized = Store._normalize_fields(data)
+        # Apply retailer to fallback path as well
+        if retailer:
+            normalized['retailer'] = retailer
+        return normalized

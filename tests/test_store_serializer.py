@@ -547,3 +547,99 @@ class TestIntegrationScenarios:
         custom_idx_1 = fields.index('custom_field_1')
         custom_idx_2 = fields.index('custom_field_2')
         assert custom_idx_1 < custom_idx_2  # Alphabetical order
+
+
+class TestBugFixes:
+    """Test specific bug fixes from PR #216 reviews."""
+
+    def test_normalize_store_dict_uses_retailer_in_fallback(self):
+        """Test fix for retailer parameter ignored in fallback normalization path.
+
+        Issue: When Store.from_raw() raises ValueError, normalize_store_dict
+        should still apply the retailer parameter to the fallback result.
+        """
+        # Data missing required fields (triggers fallback)
+        raw = {
+            'postal_code': '12345',
+            'phone_number': '555-0000'
+        }
+        normalized = normalize_store_dict(raw, retailer='test_retailer')
+
+        # Should have normalized field names
+        assert normalized['zip'] == '12345'
+        assert normalized['phone'] == '555-0000'
+
+        # Should have retailer applied in fallback path
+        assert normalized['retailer'] == 'test_retailer'
+
+    def test_get_ordered_fields_returns_copy_for_empty_list(self):
+        """Test fix for mutable class constant returned for empty stores list.
+
+        Issue: get_ordered_fields([]) returned direct reference to FIELD_ORDER,
+        allowing callers to corrupt the class constant.
+        """
+        fields1 = StoreSerializer.get_ordered_fields([])
+        fields2 = StoreSerializer.get_ordered_fields([])
+
+        # Should return equal lists
+        assert fields1 == fields2
+
+        # But they should be different objects (copies)
+        assert fields1 is not fields2
+
+        # Modifying one should not affect the other or the class constant
+        fields1.append('custom_field')
+        assert 'custom_field' not in fields2
+        assert 'custom_field' not in StoreSerializer.FIELD_ORDER
+
+    def test_field_alias_collision_warning(self, caplog):
+        """Test fix for field alias collision causing silent data loss.
+
+        Issue: When both 'postal_code' and 'zip' exist with different values,
+        the function should warn about the collision.
+        """
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        # Data with both alias and canonical field (different values)
+        raw = {
+            'store_id': 'TEST001',
+            'name': 'Collision Test',
+            'street_address': '123 Test St',
+            'city': 'TestCity',
+            'state': 'TC',
+            'postal_code': '11111',  # Alias
+            'zip': '22222'           # Canonical (should win)
+        }
+
+        store = Store.from_raw(raw)
+
+        # Canonical value should be used
+        assert store.zip == '22222'
+
+        # Should have logged a warning
+        assert any('Field alias collision' in record.message for record in caplog.records)
+
+    def test_field_alias_no_warning_same_value(self, caplog):
+        """Test that no warning is logged when alias and canonical have same value."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        # Data with both alias and canonical field (same value - harmless)
+        raw = {
+            'store_id': 'TEST002',
+            'name': 'No Collision Test',
+            'street_address': '456 Test Ave',
+            'city': 'TestCity',
+            'state': 'TC',
+            'postal_code': '33333',  # Alias
+            'zip': '33333'           # Canonical (same value)
+        }
+
+        store = Store.from_raw(raw)
+
+        # Should work fine
+        assert store.zip == '33333'
+
+        # Should NOT have logged a warning (same value is harmless)
+        assert not any('Field alias collision' in record.message for record in caplog.records)
