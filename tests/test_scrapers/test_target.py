@@ -326,8 +326,9 @@ class TestTargetRun:
     @patch('src.scrapers.target._request_counter')
     def test_run_returns_correct_structure(self, mock_counter, mock_get, mock_cache_class, mock_session):
         """Test that run() returns the expected structure."""
-        # Setup URLCache mock
-        mock_cache = Mock()
+        # Setup URLCache mock that behaves like RichURLCache
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
@@ -351,8 +352,9 @@ class TestTargetRun:
     @patch('src.scrapers.target._request_counter')
     def test_run_with_limit(self, mock_counter, mock_get, mock_cache_class, mock_session):
         """Test run() respects limit parameter."""
-        # Setup URLCache mock
-        mock_cache = Mock()
+        # Setup URLCache mock that behaves like RichURLCache
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
@@ -373,7 +375,8 @@ class TestTargetRun:
     def test_run_empty_sitemap(self, mock_counter, mock_get, mock_cache_class, mock_session):
         """Test run() with empty sitemap returns empty stores."""
         # Setup URLCache mock
-        mock_cache = Mock()
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
@@ -393,8 +396,9 @@ class TestTargetRun:
     @patch('src.scrapers.target._request_counter')
     def test_run_count_matches_stores_length(self, mock_counter, mock_get, mock_cache_class, mock_session):
         """Test that count matches the actual number of stores."""
-        # Setup URLCache mock
-        mock_cache = Mock()
+        # Setup URLCache mock that behaves like RichURLCache
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
@@ -420,8 +424,9 @@ class TestTargetCheckpoint:
     @patch('src.scrapers.target._request_counter')
     def test_resume_loads_checkpoint(self, mock_counter, mock_get, mock_save, mock_load, mock_cache_class, mock_session):
         """Test that resume=True loads existing checkpoint."""
-        # Setup URLCache mock
-        mock_cache = Mock()
+        # Setup URLCache mock that behaves like RichURLCache
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
@@ -449,8 +454,9 @@ class TestTargetCheckpoint:
     @patch('src.scrapers.target._request_counter')
     def test_resume_skips_completed_stores(self, mock_counter, mock_get, mock_save, mock_load, mock_cache_class, mock_session):
         """Test that resumed run skips already completed stores."""
-        # Setup URLCache mock
-        mock_cache = Mock()
+        # Setup URLCache mock that behaves like RichURLCache
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
@@ -487,8 +493,9 @@ class TestTargetCheckpoint:
     @patch('src.scrapers.target._request_counter')
     def test_no_resume_starts_fresh(self, mock_counter, mock_get, mock_load, mock_cache_class, mock_session):
         """Test that resume=False does not load checkpoint."""
-        # Setup URLCache mock
-        mock_cache = Mock()
+        # Setup URLCache mock that behaves like RichURLCache
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
@@ -572,8 +579,9 @@ class TestTargetErrorHandling:
     @patch('src.scrapers.target._request_counter')
     def test_api_error_skips_store(self, mock_counter, mock_get, mock_cache_class, mock_session):
         """Test that API error for one store doesn't fail entire run."""
-        # Setup URLCache mock
-        mock_cache = Mock()
+        # Setup URLCache mock that behaves like RichURLCache
+        mock_cache = Mock(spec=RichURLCache)
+        mock_cache.retailer = 'target'
         mock_cache.get_rich.return_value = None  # No cache, force sitemap fetch
         mock_cache_class.return_value = mock_cache
 
