@@ -39,7 +39,7 @@ registerShortcut('escape', () => {
       logModal.classList.remove('open'); // Fallback
     }
   }
-  
+
   // Close config modal if open
   const configModal = document.getElementById('config-modal');
   if (configModal && configModal.classList.contains('open')) {
@@ -108,7 +108,7 @@ User presses Escape
   → keyboard.js looks for wrong class
   → Class not found, nothing happens
   → Modal stays open
-  
+
 OR (if class name was fixed):
 
 User presses Escape

@@ -15,7 +15,9 @@ import requests
 from src.shared import utils
 
 
-__all__ = ["create_session_factory"]
+__all__ = [
+    'create_session_factory',
+]
 
 
 def create_session_factory(retailer_config: dict) -> Callable[[], requests.Session]:

@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Iterator
 
+from src.shared.constants import STREAMING
+
 try:
     import ijson
     IJSON_AVAILABLE = True
@@ -136,39 +138,83 @@ class ChangeDetector:
         """Build store index and fingerprint maps with collision handling (#148).
 
         Uses deterministic identity-hash-based keys that remain stable across runs,
-        even when comparison fields change. When multiple stores have the same key
-        (multi-tenant or data issues), stores them with suffixes to prevent data loss.
+        even when comparison fields change. All address-based stores use the consistent
+        format 'base_key::col:{hash}' for stability. When multiple stores have the same
+        key (multi-tenant or data issues), stores get deterministic suffixes based on a
+        hash of ALL fields to prevent data loss and ensure order-independence.
 
         Returns:
             Tuple of (stores_by_key dict, fingerprints_by_key dict, collision_count)
         """
+        # First pass: detect all collisions
+        base_key_groups = {}  # Map base_key -> list of (index, store)
+
+        for idx, store in enumerate(stores):
+            # Compute identity hash for stable key generation (address-based stores only)
+            identity_hash = self.compute_identity_hash(store)
+            # Keys use identity hash to remain stable when comparison fields change
+            base_key = self._get_store_key(store, identity_hash[:8])
+
+            if base_key not in base_key_groups:
+                base_key_groups[base_key] = []
+            base_key_groups[base_key].append((idx, store))
+
+        # Second pass: assign keys with deterministic suffixes for collisions
         stores_by_key = {}
         fingerprints_by_key = {}
         collision_count = 0
 
-        for store in stores:
-            # Compute identity hash for stable key generation (address-based stores only)
-            identity_hash = self.compute_identity_hash(store)
-            # Compute full fingerprint for change detection (includes comparison fields)
-            fingerprint = self.compute_fingerprint(store)
+        for base_key, group_stores in base_key_groups.items():
+            # Check if this is an address-based key (needs consistent collision format)
+            is_address_based = base_key.startswith('addr:')
+            has_collision = len(group_stores) > 1
 
-            # Keys use identity hash to remain stable when comparison fields change
-            key = self._get_store_key(store, identity_hash[:8])
+            if has_collision:
+                collision_count += len(group_stores) - 1
 
-            # Handle collision by appending numeric suffix (#148)
-            if key in stores_by_key:
-                collision_count += 1
-                suffix = 1
-                while f"{key}::{suffix}" in stores_by_key:
-                    suffix += 1
-                key = f"{key}::{suffix}"
-                logging.debug(
-                    f"Key collision detected, using disambiguated key: '{key}'"
-                )
+            # Track duplicate keys within this group for true duplicates
+            seen_keys = {}
 
-            stores_by_key[key] = store
-            # Store full fingerprint for change detection
-            fingerprints_by_key[key] = fingerprint
+            for _, store in group_stores:
+                if is_address_based:
+                    if has_collision:
+                        # Collision: use full_hash for disambiguation
+                        full_hash = self._get_deterministic_store_hash(store)
+                        key = f"{base_key}::col:{full_hash}"
+                    else:
+                        # Single address-based store: use identity_hash for stable keys
+                        # This ensures keys remain stable when comparison fields change
+                        identity_hash = self.compute_identity_hash(store)
+                        key = f"{base_key}::col:{identity_hash}"
+
+                    # Handle true duplicates (identical stores) by adding counter suffix
+                    # Use counter instead of original index for order-independence
+                    if key in stores_by_key:
+                        count = seen_keys.get(key, 0) + 1
+                        seen_keys[key] = count
+                        key = f"{key}::{count}"
+                        logging.debug(f"True duplicate detected, using counter suffix: '{key}'")
+                elif has_collision:
+                    # ID/URL-based stores with collision (edge case): use full_hash
+                    full_hash = self._get_deterministic_store_hash(store)
+                    key = f"{base_key}::col:{full_hash}"
+
+                    if key in stores_by_key:
+                        count = seen_keys.get(key, 0) + 1
+                        seen_keys[key] = count
+                        key = f"{key}::{count}"
+                        logging.debug(f"True duplicate detected, using counter suffix: '{key}'")
+                else:
+                    # Single ID/URL-based store - use base_key directly (already unique)
+                    key = base_key
+
+                fingerprint = self.compute_fingerprint(store)
+
+                stores_by_key[key] = store
+                fingerprints_by_key[key] = fingerprint
+
+            if has_collision:
+                logging.debug(f"Key collision resolved with deterministic suffixes for base_key: '{base_key}'")
 
         if collision_count > 0:
             logging.warning(
@@ -178,16 +224,33 @@ class ChangeDetector:
 
         return stores_by_key, fingerprints_by_key, collision_count
 
+    def _get_deterministic_store_hash(self, store: Dict[str, Any]) -> str:
+        """Generate a deterministic hash unique to this store instance.
+
+        Uses all available fields to ensure two different stores
+        always get different hashes, even if identity fields are identical.
+        This provides stable disambiguation for true collisions.
+
+        Args:
+            store: Store dictionary
+
+        Returns:
+            Full SHA256 hash string (64 hex characters)
+        """
+        # json.dumps with sort_keys=True handles key ordering
+        json_str = json.dumps(store, sort_keys=True, default=str)
+        return hashlib.sha256(json_str.encode()).hexdigest()
+
     def compute_identity_hash(self, store: Dict[str, Any]) -> str:
         """Compute a hash of ONLY identity fields for stable key generation.
-        
+
         This hash is used for address-based key suffixes and remains stable
         when comparison fields (phone, status, etc.) change. This prevents
         false positives in change detection.
-        
+
         Args:
             store: Store dictionary
-            
+
         Returns:
             SHA256 hash of identity fields only
         """
@@ -199,20 +262,20 @@ class ChangeDetector:
                 data[k] = store.get('zip') or store.get('postal_code', '')
             elif k in store:
                 data[k] = store.get(k, '')
-        
+
         # Sort keys for consistent hashing
         json_str = json.dumps(data, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
     def compute_fingerprint(self, store: Dict[str, Any]) -> str:
         """Compute a fingerprint hash of a store's key attributes.
-        
+
         This includes both identity and comparison fields, so it changes
         when any important field changes. Used for detecting modifications.
-        
+
         Args:
             store: Store dictionary
-            
+
         Returns:
             SHA256 hash of all relevant fields (identity + comparison)
         """
@@ -226,7 +289,7 @@ class ChangeDetector:
             if field not in seen:
                 seen.add(field)
                 unique_fields.append(field)
-        
+
         # Normalize postal code field (some scrapers use 'zip', others 'postal_code')
         data = {}
         for k in unique_fields:
@@ -288,7 +351,7 @@ class ChangeDetector:
         try:
             file_size = previous_path.stat().st_size
             # Use streaming for large files (>50MB) if ijson is available
-            if file_size > 50 * 1024 * 1024 and IJSON_AVAILABLE:
+            if file_size > STREAMING.LARGE_FILE_THRESHOLD_BYTES and IJSON_AVAILABLE:
                 logging.info(f"[{self.retailer}] Loading previous data with streaming parser (file size: {file_size / 1024 / 1024:.1f}MB)")
                 return list(self._load_stores_streaming(previous_path))
 

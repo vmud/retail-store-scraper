@@ -50,7 +50,7 @@ registerShortcut('escape', () => {
       logModal.classList.remove('open');
     }
   }
-  
+
   // Close config modal if open
   const configModal = document.getElementById('config-modal');
   if (configModal && configModal.classList.contains('open')) {

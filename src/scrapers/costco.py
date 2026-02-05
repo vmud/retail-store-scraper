@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 
 from config import costco_config as config
 from src.shared import utils
+from src.shared.constants import TEST_MODE
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
 
 
@@ -360,7 +361,7 @@ def run(session, retailer_config: Dict[str, Any], retailer: str, **kwargs) -> di
     resume = kwargs.get('resume', False)
 
     if test_mode:
-        limit = 10
+        limit = TEST_MODE.STORE_LIMIT
 
     # Checkpoint setup
     retailer_name = retailer.lower()

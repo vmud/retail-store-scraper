@@ -18,6 +18,7 @@ import requests
 from config import bestbuy_config
 from src.shared import utils
 from src.shared.cache import URLCache, DEFAULT_CACHE_EXPIRY_DAYS
+from src.shared.constants import WORKERS
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
@@ -746,12 +747,13 @@ def _save_failed_extractions(
         logging.warning(f"[{retailer}] Failed to save failed extractions: {e}")
 
 
-def run(session, config: dict, **kwargs) -> dict:
+def run(session, retailer_config: dict, retailer: str, **kwargs) -> dict:
     """Standard scraper entry point with parallel extraction and URL caching.
 
     Args:
         session: Configured session (requests.Session or ProxyClient)
-        config: Retailer configuration dict from retailers.yaml
+        retailer_config: Retailer configuration dict from retailers.yaml
+        retailer: Retailer name for logging
         **kwargs: Additional options
             - resume: bool - Resume from checkpoint
             - limit: int - Max stores to process
@@ -763,8 +765,18 @@ def run(session, config: dict, **kwargs) -> dict:
             - stores: List[dict] - Scraped store data
             - count: int - Number of stores processed
             - checkpoints_used: bool - Whether resume was used
+
+    Raises:
+        None.
+
+    Examples:
+        >>> run(session, retailer_config, "bestbuy", resume=True)
+
+    Note:
+        Defaults are sourced from src.shared.constants (WORKERS, etc).
     """
-    retailer_name = kwargs.get('retailer', 'bestbuy')
+    retailer_name = retailer
+    config = retailer_config
     logging.info(f"[{retailer_name}] Starting scrape run")
 
     try:
@@ -779,8 +791,8 @@ def run(session, config: dict, **kwargs) -> dict:
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
         logging.info(f"[{retailer_name}] Using delays: {min_delay:.2f}-{max_delay:.2f}s (mode: {proxy_mode})")
 
-        # Get parallel workers count (default: 5 for proxy modes, 1 for direct)
-        default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        # Get parallel workers count (default: WORKERS.PROXIED_WORKERS for proxy modes, WORKERS.DIRECT_WORKERS for direct)
+        default_workers = WORKERS.PROXIED_WORKERS if proxy_mode in ('residential', 'web_scraper_api') else WORKERS.DIRECT_WORKERS
         parallel_workers = config.get('parallel_workers', default_workers)
         logging.info(f"[{retailer_name}] Extraction workers: {parallel_workers}")
 

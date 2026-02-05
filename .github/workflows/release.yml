@@ -36,7 +36,7 @@ jobs:
         run: |
           # Get previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          
+
           if [ -n "$PREV_TAG" ]; then
             echo "Generating changelog from $PREV_TAG to ${{ github.ref_name }}"
             CHANGELOG=$(git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD)
@@ -44,7 +44,7 @@ jobs:
             echo "First release - including all commits"
             CHANGELOG=$(git log --pretty=format:"- %s (%h)")
           fi
-          
+
           # Save to file for multiline output
           echo "$CHANGELOG" > CHANGELOG.md
           echo "changelog_file=CHANGELOG.md" >> $GITHUB_OUTPUT

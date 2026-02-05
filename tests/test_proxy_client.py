@@ -16,14 +16,14 @@ from src.shared.proxy_client import (
 
 class TestProxyClientInitialization:
     """Test ProxyClient initialization and validation"""
-    
+
     def test_init_with_valid_direct_config(self):
         """Test initialization with direct mode config"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
         client = ProxyClient(config)
         assert client.config.mode == ProxyMode.DIRECT
         assert client._request_count == 0
-    
+
     def test_init_with_valid_residential_config(self):
         """Test initialization with valid residential config"""
         config = ProxyConfig(
@@ -33,7 +33,7 @@ class TestProxyClientInitialization:
         )
         client = ProxyClient(config)
         assert client.config.mode == ProxyMode.RESIDENTIAL
-    
+
     def test_init_with_invalid_config_falls_back_to_direct(self):
         """Test invalid config falls back to direct mode"""
         config = ProxyConfig(
@@ -43,7 +43,7 @@ class TestProxyClientInitialization:
         )
         client = ProxyClient(config)
         assert client.config.mode == ProxyMode.DIRECT
-    
+
     def test_init_from_env_with_no_config(self):
         """Test initialization without config loads from env"""
         with patch.dict('os.environ', {}, clear=True):
@@ -53,7 +53,7 @@ class TestProxyClientInitialization:
 
 class TestProxyClientSessionManagement:
     """Test session property and configuration"""
-    
+
     def test_session_lazy_creation(self):
         """Test session is created lazily"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
@@ -62,7 +62,7 @@ class TestProxyClientSessionManagement:
         session = client.session
         assert session is not None
         assert client._session is session
-    
+
     def test_session_configuration_for_residential(self):
         """Test session is configured with proxy for residential mode"""
         config = ProxyConfig(
@@ -81,7 +81,7 @@ class TestProxyClientSessionManagement:
 
 class TestProxyClientResidentialProxyURL:
     """Test residential proxy URL building"""
-    
+
     def test_build_proxy_url_basic(self):
         """Test basic proxy URL with username and password"""
         config = ProxyConfig(
@@ -95,7 +95,7 @@ class TestProxyClientResidentialProxyURL:
         url = client._build_residential_proxy_url()
         # Oxylabs format adds customer- prefix to username
         assert url == "http://customer-customer_test:testpass@pr.oxylabs.io:7777"
-    
+
     def test_build_proxy_url_with_country(self):
         """Test proxy URL with country targeting"""
         config = ProxyConfig(
@@ -108,7 +108,7 @@ class TestProxyClientResidentialProxyURL:
         url = client._build_residential_proxy_url()
         # Oxylabs uses cc-{COUNTRY} format with uppercase country code
         assert "cc-DE" in url
-    
+
     def test_build_proxy_url_with_city(self):
         """Test proxy URL with city targeting"""
         config = ProxyConfig(
@@ -123,7 +123,7 @@ class TestProxyClientResidentialProxyURL:
         # Oxylabs uses cc-{COUNTRY} and city-{city} format
         assert "cc-US" in url
         assert "city-newyork" in url
-    
+
     def test_build_proxy_url_with_state(self):
         """Test proxy URL with state targeting"""
         config = ProxyConfig(
@@ -136,7 +136,7 @@ class TestProxyClientResidentialProxyURL:
         url = client._build_residential_proxy_url()
         # Oxylabs uses st-{state} format for US states
         assert "st-california" in url
-    
+
     def test_build_proxy_url_with_sticky_session(self):
         """Test proxy URL with sticky session"""
         config = ProxyConfig(
@@ -154,7 +154,7 @@ class TestProxyClientResidentialProxyURL:
 
 class TestProxyClientGetHeaders:
     """Test header generation"""
-    
+
     def test_get_headers_default(self):
         """Test default headers include user agent and accept headers"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
@@ -164,7 +164,7 @@ class TestProxyClientGetHeaders:
         assert "Accept" in headers
         assert "Accept-Language" in headers
         assert "Accept-Encoding" in headers
-    
+
     def test_get_headers_with_custom_headers(self):
         """Test custom headers are merged"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
@@ -174,7 +174,7 @@ class TestProxyClientGetHeaders:
         assert headers["X-Custom"] == "value"
         assert headers["Authorization"] == "Bearer token"
         assert "User-Agent" in headers  # Default headers still present
-    
+
     def test_get_headers_user_agent_rotation(self):
         """Test user agent is randomly selected"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
@@ -189,58 +189,58 @@ class TestProxyClientGetHeaders:
 
 class TestProxyClientDirectMode:
     """Test direct mode requests"""
-    
+
     def test_request_direct_success(self):
         """Test successful direct mode request"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.text = "<html>test</html>"
         mock_response.content = b"<html>test</html>"
         mock_response.headers = {"Content-Type": "text/html"}
         mock_response.url = "https://example.com"
-        
+
         with patch.object(client.session, 'get', return_value=mock_response):
             response = client.get("https://example.com")
-            
+
         assert response is not None
         assert response.status_code == 200
         assert response.text == "<html>test</html>"
         assert response.proxy_mode == ProxyMode.DIRECT
-    
+
     def test_request_direct_with_params(self):
         """Test direct mode request with query parameters"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.text = "response"
         mock_response.content = b"response"
         mock_response.headers = {}
         mock_response.url = "https://example.com?key=value"
-        
+
         with patch.object(client.session, 'get', return_value=mock_response) as mock_get:
             response = client.get("https://example.com", params={"key": "value"})
-            
+
         assert response is not None
         mock_get.assert_called_once()
 
 
 class TestProxyClientRetryLogic:
     """Test retry and error handling logic"""
-    
+
     def test_retry_on_429_rate_limit(self):
         """Test exponential backoff on 429 errors"""
         config = ProxyConfig(mode=ProxyMode.DIRECT, max_retries=3, retry_delay=0.1)
         client = ProxyClient(config)
-        
+
         mock_response_429 = Mock()
         mock_response_429.status_code = 429
         mock_response_429.ok = False
-        
+
         mock_response_200 = Mock()
         mock_response_200.status_code = 200
         mock_response_200.ok = True
@@ -248,22 +248,22 @@ class TestProxyClientRetryLogic:
         mock_response_200.content = b"success"
         mock_response_200.headers = {}
         mock_response_200.url = "https://example.com"
-        
+
         with patch.object(client.session, 'get', side_effect=[mock_response_429, mock_response_200]):
             response = client.get("https://example.com")
-            
+
         assert response is not None
         assert response.status_code == 200
-    
+
     def test_retry_on_500_server_error(self):
         """Test retry on 5xx server errors"""
         config = ProxyConfig(mode=ProxyMode.DIRECT, max_retries=2, retry_delay=0.1)
         client = ProxyClient(config)
-        
+
         mock_response_500 = Mock()
         mock_response_500.status_code = 500
         mock_response_500.ok = False
-        
+
         mock_response_200 = Mock()
         mock_response_200.status_code = 200
         mock_response_200.ok = True
@@ -271,18 +271,18 @@ class TestProxyClientRetryLogic:
         mock_response_200.content = b"success"
         mock_response_200.headers = {}
         mock_response_200.url = "https://example.com"
-        
+
         with patch.object(client.session, 'get', side_effect=[mock_response_500, mock_response_200]):
             response = client.get("https://example.com")
-            
+
         assert response is not None
         assert response.status_code == 200
-    
+
     def test_no_retry_on_404(self):
         """Test 404 errors return immediately without retry"""
         config = ProxyConfig(mode=ProxyMode.DIRECT, max_retries=3)
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 404
         mock_response.ok = False
@@ -290,35 +290,35 @@ class TestProxyClientRetryLogic:
         mock_response.content = b"Not Found"
         mock_response.headers = {}
         mock_response.url = "https://example.com"
-        
+
         with patch.object(client.session, 'get', return_value=mock_response) as mock_get:
             response = client.get("https://example.com")
-            
+
         # Should only call once (no retries)
         assert mock_get.call_count == 1
         assert response.status_code == 404
-    
+
     def test_max_retries_exhausted(self):
         """Test returns None after max retries exhausted"""
         config = ProxyConfig(mode=ProxyMode.DIRECT, max_retries=2, retry_delay=0.1)
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 500
         mock_response.ok = False
-        
+
         with patch.object(client.session, 'get', return_value=mock_response) as mock_get:
             response = client.get("https://example.com")
-            
+
         assert response is None
         assert mock_get.call_count == 2  # Initial + 1 retry
-    
+
     def test_timeout_exception_retry(self):
         """Test timeout exceptions trigger retry"""
         import requests
         config = ProxyConfig(mode=ProxyMode.DIRECT, max_retries=2, retry_delay=0.1)
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.ok = True
@@ -326,20 +326,20 @@ class TestProxyClientRetryLogic:
         mock_response.content = b"success"
         mock_response.headers = {}
         mock_response.url = "https://example.com"
-        
+
         with patch.object(client.session, 'get', side_effect=[
             requests.exceptions.Timeout("Timeout"),
             mock_response
         ]):
             response = client.get("https://example.com")
-            
+
         assert response is not None
         assert response.status_code == 200
 
 
 class TestProxyClientWebScraperAPI:
     """Test Web Scraper API mode"""
-    
+
     def test_web_scraper_api_payload_basic(self):
         """Test basic Web Scraper API payload construction"""
         config = ProxyConfig(
@@ -349,7 +349,7 @@ class TestProxyClientWebScraperAPI:
             country_code="us"
         )
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -360,22 +360,22 @@ class TestProxyClientWebScraperAPI:
             "job_id": "job123",
             "credits_used": 1.5
         }
-        
+
         with patch('requests.post', return_value=mock_response) as mock_post:
             response = client.get("https://example.com")
-            
+
         assert response is not None
         assert response.text == "<html>test</html>"
         assert response.job_id == "job123"
         assert response.credits_used == 1.5
-        
+
         # Verify payload
         call_kwargs = mock_post.call_args[1]
         payload = call_kwargs['json']
         assert payload['source'] == 'universal'
         assert payload['url'] == 'https://example.com'
         assert payload['geo_location'] == 'US'
-    
+
     def test_web_scraper_api_with_render_js(self):
         """Test Web Scraper API with JavaScript rendering"""
         config = ProxyConfig(
@@ -385,7 +385,7 @@ class TestProxyClientWebScraperAPI:
             render_js=True
         )
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -394,13 +394,13 @@ class TestProxyClientWebScraperAPI:
                 "status_code": 200
             }]
         }
-        
+
         with patch('requests.post', return_value=mock_response) as mock_post:
             response = client.get("https://example.com")
-            
+
         payload = mock_post.call_args[1]['json']
         assert payload['render'] == 'html'
-    
+
     def test_web_scraper_api_with_parse(self):
         """Test Web Scraper API with parsing enabled"""
         config = ProxyConfig(
@@ -410,7 +410,7 @@ class TestProxyClientWebScraperAPI:
             parse=True
         )
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -419,17 +419,17 @@ class TestProxyClientWebScraperAPI:
                 "status_code": 200
             }]
         }
-        
+
         with patch('requests.post', return_value=mock_response) as mock_post:
             response = client.get("https://example.com")
-            
+
         payload = mock_post.call_args[1]['json']
         assert payload['parse'] is True
 
 
 class TestProxyResponse:
     """Test ProxyResponse object"""
-    
+
     def test_proxy_response_ok_property(self):
         """Test ok property for 2xx status codes"""
         response = ProxyResponse(
@@ -442,7 +442,7 @@ class TestProxyResponse:
             proxy_mode=ProxyMode.DIRECT
         )
         assert response.ok is True
-        
+
         response_404 = ProxyResponse(
             status_code=404,
             text="not found",
@@ -453,7 +453,7 @@ class TestProxyResponse:
             proxy_mode=ProxyMode.DIRECT
         )
         assert response_404.ok is False
-    
+
     def test_proxy_response_json_method(self):
         """Test json() method parses JSON content"""
         json_data = {"key": "value", "number": 123}
@@ -468,7 +468,7 @@ class TestProxyResponse:
         )
         parsed = response.json()
         assert parsed == json_data
-    
+
     def test_proxy_response_raise_for_status_success(self):
         """Test raise_for_status doesn't raise for successful responses"""
         response = ProxyResponse(
@@ -482,7 +482,7 @@ class TestProxyResponse:
         )
         # Should not raise
         response.raise_for_status()
-    
+
     def test_proxy_response_raise_for_status_error(self):
         """Test raise_for_status raises for error responses"""
         import requests
@@ -501,7 +501,7 @@ class TestProxyResponse:
 
 class TestProxyClientStats:
     """Test client statistics"""
-    
+
     def test_get_stats(self):
         """Test get_stats returns client statistics"""
         config = ProxyConfig(
@@ -512,18 +512,18 @@ class TestProxyClientStats:
             render_js=False
         )
         client = ProxyClient(config)
-        
+
         stats = client.get_stats()
         assert stats['mode'] == 'residential'
         assert stats['country'] == 'de'
         assert stats['render_js'] is False
         assert stats['request_count'] == 0
-    
+
     def test_request_count_increments(self):
         """Test request count increments with each request"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
         client = ProxyClient(config)
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.ok = True
@@ -531,27 +531,27 @@ class TestProxyClientStats:
         mock_response.content = b"test"
         mock_response.headers = {}
         mock_response.url = "https://example.com"
-        
+
         with patch.object(client.session, 'get', return_value=mock_response):
             client.get("https://example.com")
             client.get("https://example.com")
             client.get("https://example.com")
-        
+
         stats = client.get_stats()
         assert stats['request_count'] == 3
 
 
 class TestProxyClientContextManager:
     """Test context manager support"""
-    
+
     def test_context_manager_closes_session(self):
         """Test context manager properly closes session"""
         config = ProxyConfig(mode=ProxyMode.DIRECT)
-        
+
         with ProxyClient(config) as client:
             _ = client.session  # Create session
             assert client._session is not None
-        
+
         # After context, session should be closed (session set to None)
         assert client._session is None
 

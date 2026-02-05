@@ -183,7 +183,7 @@ sudo systemctl status retail-scraper
 ### Test Run (60 stores)
 ```
 ✓ Verizon: 10 stores in ~1-2 min
-✓ AT&T: 10 stores in ~1-2 min  
+✓ AT&T: 10 stores in ~1-2 min
 ✓ Target: 10 stores in ~30 sec
 ✓ T-Mobile: 10 stores in ~1-2 min
 ✓ Walmart: 10 stores in ~1-2 min

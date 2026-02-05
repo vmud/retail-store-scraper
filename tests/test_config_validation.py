@@ -17,7 +17,7 @@ class TestConfigValidation:
 
     def test_non_numeric_delays_dont_crash_validation(self):
         """Test that non-numeric min_delay/max_delay values don't cause TypeError.
-        
+
         This tests the fix for the issue where validation would crash when trying
         to compare non-numeric delay values at line 106, instead of properly
         collecting and returning validation errors.
@@ -41,14 +41,14 @@ class TestConfigValidation:
         try:
             # Validation should complete without crashing
             errors = validate_config_on_startup(config_path)
-            
+
             # Should have errors for both non-numeric fields
             assert len(errors) >= 2, f"Expected at least 2 errors, got {len(errors)}: {errors}"
-            
+
             # Check that both delay fields are reported as invalid
             delay_errors = [e for e in errors if 'min_delay' in e or 'max_delay' in e]
             assert len(delay_errors) >= 2, f"Expected 2 delay errors, got {len(delay_errors)}: {delay_errors}"
-            
+
         finally:
             # Clean up temp file
             Path(config_path).unlink()
@@ -71,11 +71,11 @@ class TestConfigValidation:
 
         try:
             errors = validate_config_on_startup(config_path)
-            
+
             # Should have at least 1 error for min_delay
             assert len(errors) >= 1
             assert any('min_delay' in e for e in errors)
-            
+
         finally:
             Path(config_path).unlink()
 
@@ -98,10 +98,10 @@ class TestConfigValidation:
 
         try:
             errors = validate_config_on_startup(config_path)
-            
+
             # Should have no errors
             assert len(errors) == 0, f"Expected no errors, got: {errors}"
-            
+
         finally:
             Path(config_path).unlink()
 
@@ -123,11 +123,11 @@ class TestConfigValidation:
 
         try:
             errors = validate_config_on_startup(config_path)
-            
+
             # Should have error about delay order
             assert len(errors) >= 1
             assert any('cannot be greater than' in e for e in errors)
-            
+
         finally:
             Path(config_path).unlink()
 
@@ -149,11 +149,11 @@ class TestConfigValidation:
 
         try:
             errors = validate_config_on_startup(config_path)
-            
+
             # Should have errors for both negative values
             assert len(errors) >= 2
             negative_errors = [e for e in errors if 'non-negative' in e]
             assert len(negative_errors) >= 2
-            
+
         finally:
             Path(config_path).unlink()

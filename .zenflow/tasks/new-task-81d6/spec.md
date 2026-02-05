@@ -11,7 +11,7 @@ Currently, the scraper supports three proxy modes (direct, residential, web_scra
 ## Technical Context
 
 - **Language**: Python 3.11+
-- **Key Dependencies**: 
+- **Key Dependencies**:
   - requests (HTTP client)
   - PyYAML (configuration parsing)
   - BeautifulSoup4 (HTML parsing)
@@ -81,21 +81,21 @@ def get_retailer_proxy_config(
 ) -> Dict[str, Any]:
     """
     Get proxy configuration for specific retailer with priority resolution.
-    
+
     Priority (highest to lowest):
     1. CLI override (--proxy flag)
     2. Retailer-specific config in YAML
     3. Global proxy section in YAML
     4. Environment variables (PROXY_MODE)
     5. Default: direct mode
-    
+
     Returns:
         Dict compatible with ProxyConfig.from_dict()
     """
     # Priority 1: CLI override
     if cli_override:
         return _build_proxy_config_dict(mode=cli_override)
-    
+
     # Load YAML configuration
     try:
         import yaml
@@ -104,22 +104,22 @@ def get_retailer_proxy_config(
     except FileNotFoundError:
         logging.warning(f"Config file {yaml_path} not found")
         config = {}
-    
+
     # Priority 2: Retailer-specific config
     retailer_config = config.get('retailers', {}).get(retailer, {})
     if 'proxy' in retailer_config:
         proxy_settings = retailer_config['proxy']
         return _merge_proxy_config(proxy_settings, config.get('proxy', {}))
-    
+
     # Priority 3: Global YAML proxy section
     if 'proxy' in config:
         return _build_proxy_config_from_yaml(config['proxy'])
-    
+
     # Priority 4: Environment variables
     env_mode = os.getenv('PROXY_MODE')
     if env_mode:
         return _build_proxy_config_dict(mode=env_mode)
-    
+
     # Priority 5: Default
     return {'mode': 'direct'}
 
@@ -141,23 +141,23 @@ def _merge_proxy_config(
     """
     # Start with global settings for mode-specific details
     mode = retailer_proxy.get('mode', global_proxy.get('mode', 'direct'))
-    
+
     config = {'mode': mode}
-    
+
     # Get mode-specific settings from global config
     if mode == 'residential' and 'residential' in global_proxy:
         config.update(global_proxy['residential'])
     elif mode == 'web_scraper_api' and 'web_scraper_api' in global_proxy:
         config.update(global_proxy['web_scraper_api'])
-    
+
     # Copy timeout/retry settings from global
     for key in ['timeout', 'max_retries', 'retry_delay']:
         if key in global_proxy:
             config[key] = global_proxy[key]
-    
+
     # Override with retailer-specific settings
     config.update(retailer_proxy)
-    
+
     return config
 
 
@@ -165,18 +165,18 @@ def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any
     """Build config dict from global YAML proxy section"""
     mode = global_proxy.get('mode', 'direct')
     config = {'mode': mode}
-    
+
     # Add mode-specific settings
     if mode == 'residential' and 'residential' in global_proxy:
         config.update(global_proxy['residential'])
     elif mode == 'web_scraper_api' and 'web_scraper_api' in global_proxy:
         config.update(global_proxy['web_scraper_api'])
-    
+
     # Add general settings
     for key in ['timeout', 'max_retries', 'retry_delay']:
         if key in global_proxy:
             config[key] = global_proxy[key]
-    
+
     return config
 ```
 
@@ -211,7 +211,7 @@ def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Deprecation of `init_proxy_from_yaml()`**: 
+**Deprecation of `init_proxy_from_yaml()`**:
 - Keep for backward compatibility
 - Document as legacy global proxy initialization
 - New code should use `get_retailer_proxy_config()` + `create_proxied_session()`
@@ -233,41 +233,41 @@ def get_proxy_client(
 ) -> ProxyClient:
     """
     Get or create proxy client.
-    
+
     If retailer is specified, returns/creates retailer-specific client.
     Otherwise returns/creates global client.
     """
     global _proxy_clients
-    
+
     cache_key = retailer if retailer else '__global__'
-    
+
     # Return cached client if exists and no config override
     if cache_key in _proxy_clients and config is None:
         return _proxy_clients[cache_key]
-    
+
     # Create new client
     if config:
         proxy_config = ProxyConfig.from_dict(config)
     else:
         proxy_config = ProxyConfig.from_env()
-    
+
     client = ProxyClient(proxy_config)
     _proxy_clients[cache_key] = client
-    
+
     return client
 
 
 def close_all_proxy_clients() -> None:
     """Close all proxy client sessions and clear cache"""
     global _proxy_clients
-    
+
     for name, client in _proxy_clients.items():
         try:
             client.close()
             logging.debug(f"Closed proxy client: {name}")
         except Exception as e:
             logging.warning(f"Error closing proxy client {name}: {e}")
-    
+
     _proxy_clients.clear()
     logging.info("All proxy clients closed")
 ```
@@ -286,21 +286,21 @@ def close_all_proxy_clients() -> None:
 def load_retailer_config(retailer: str, cli_proxy_override: Optional[str] = None) -> Dict[str, Any]:
     """
     Load full retailer configuration including proxy settings.
-    
+
     Returns:
         Dict with retailer config including 'proxy' key
     """
     import yaml
-    
+
     with open('config/retailers.yaml', 'r') as f:
         config = yaml.safe_load(f)
-    
+
     retailer_config = config.get('retailers', {}).get(retailer, {})
-    
+
     # Inject proxy configuration with priority resolution
     proxy_config = get_retailer_proxy_config(retailer, cli_override=cli_proxy_override)
     retailer_config['proxy'] = proxy_config
-    
+
     return retailer_config
 ```
 
@@ -310,30 +310,30 @@ def load_retailer_config(retailer: str, cli_proxy_override: Optional[str] = None
 async def run_retailer_async(retailer: str, cli_proxy_override: Optional[str] = None, **kwargs) -> dict:
     """Run a single retailer scraper asynchronously"""
     logging.info(f"Starting scraper for {retailer}")
-    
+
     try:
         # Load retailer configuration with proxy settings
         retailer_config = load_retailer_config(retailer, cli_proxy_override)
-        
+
         # Create proxied session (uses retailer-specific proxy config)
         session = create_proxied_session(retailer_config)
-        
+
         # Get scraper module
         scraper_module = get_scraper_module(retailer)
-        
+
         # Run scraper (implementation depends on scraper structure)
         # For now, scrapers need entry point functions
         # TODO: Each scraper needs a run() or main() function that accepts session
-        
+
         result = {
             'retailer': retailer,
             'status': 'completed',
             'stores': 0,
             'error': None
         }
-        
+
         return result
-        
+
     except Exception as e:
         logging.error(f"Error running {retailer}: {e}")
         return {
@@ -349,10 +349,10 @@ async def run_retailer_async(retailer: str, cli_proxy_override: Optional[str] = 
 ```python
 def main():
     # ... existing code ...
-    
+
     # Get CLI proxy override
     cli_proxy_override = args.proxy if args.proxy else None
-    
+
     # Run scrapers
     if len(retailers) == 1:
         result = asyncio.run(run_retailer_async(
@@ -370,7 +370,7 @@ def main():
             incremental=args.incremental,
             limit=limit
         ))
-    
+
     # Cleanup
     close_all_proxy_clients()
 ```
@@ -381,14 +381,14 @@ def main():
 async def run_all_retailers(retailers: List[str], cli_proxy_override: Optional[str] = None, **kwargs) -> dict:
     """Run multiple retailers concurrently"""
     logging.info(f"Starting concurrent scrape for {len(retailers)} retailers: {retailers}")
-    
+
     tasks = [
         run_retailer_async(retailer, cli_proxy_override=cli_proxy_override, **kwargs)
         for retailer in retailers
     ]
-    
+
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     # ... rest of function unchanged ...
 ```
 
@@ -404,12 +404,12 @@ retailers:
     proxy:
       mode: "residential"  # or "direct" or "web_scraper_api"
       render_js: false
-      
+
   walmart:
     proxy:
       mode: "web_scraper_api"
       render_js: true
-      
+
   att:
     proxy:
       mode: "direct"  # No proxy
@@ -461,7 +461,7 @@ def get_retailer_proxy_config(
 ) -> Dict[str, Any]:
     """
     Get proxy configuration for specific retailer.
-    
+
     Applies configuration priority rules.
     Returns dict compatible with ProxyConfig.from_dict()
     """
@@ -610,20 +610,20 @@ When running `--all` with multiple retailers using different proxy modes:
 # In create_proxied_session():
 def create_proxied_session(retailer_config: Optional[Dict[str, Any]] = None) -> Union[requests.Session, ProxyClient]:
     """Create session with credential validation"""
-    
+
     proxy_config_dict = retailer_config.get('proxy', {}) if retailer_config else {}
     mode = proxy_config_dict.get('mode', 'direct')
-    
+
     # For direct mode, no validation needed
     if mode == 'direct':
         session = requests.Session()
         session.headers.update(get_headers())
         return session
-    
+
     # Validate credentials for proxy modes
     try:
         client = get_proxy_client(proxy_config_dict)
-        
+
         # Validate credentials are present
         if not client.config.validate():
             retailer_name = retailer_config.get('name', 'unknown') if retailer_config else 'unknown'
@@ -631,9 +631,9 @@ def create_proxied_session(retailer_config: Optional[Dict[str, Any]] = None) -> 
             session = requests.Session()
             session.headers.update(get_headers())
             return session
-        
+
         return client
-        
+
     except Exception as e:
         retailer_name = retailer_config.get('name', 'unknown') if retailer_config else 'unknown'
         logging.error(f"[{retailer_name}] Error creating proxy client: {e}, falling back to direct")
@@ -778,7 +778,7 @@ python run.py --all --limit 5
 
 Recommended implementation order to minimize risk:
 
-1. **Phase 1: Configuration Layer** 
+1. **Phase 1: Configuration Layer**
    - Implement `get_retailer_proxy_config()` and helper functions
    - Add comprehensive unit tests for priority resolution
    - Test in isolation before integration
@@ -924,7 +924,7 @@ This specification was significantly updated after initial review to address cri
 
 **Original Assessment**: 70% complete, 65% accurate, 60% actionable
 
-**Updated Assessment**: 
+**Updated Assessment**:
 - **Completeness**: 95% - All Priority 1 and Priority 2 items addressed
 - **Accuracy**: 95% - Code examples match actual codebase structure
 - **Actionability**: 90% - Clear implementation path with code examples

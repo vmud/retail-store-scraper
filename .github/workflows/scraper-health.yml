@@ -93,7 +93,7 @@ jobs:
         with:
           script: |
             const title = `🚨 Scraper Health Check Failed - ${new Date().toISOString().split('T')[0]}`;
-            
+
             // Check for existing open issue
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -101,7 +101,7 @@ jobs:
               state: 'open',
               labels: 'scraper-health'
             });
-            
+
             if (issues.data.length === 0) {
               await github.rest.issues.create({
                 owner: context.repo.owner,

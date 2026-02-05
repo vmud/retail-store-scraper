@@ -17,11 +17,13 @@ import requests
 from config import target_config
 from src.shared import utils
 from src.shared.cache import RichURLCache
+from src.shared.constants import WORKERS
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
-# Global request counter
+# Global request counter (deprecated - kept for backwards compatibility)
+# Use instance-based counter passed to functions instead
 _request_counter = RequestCounter()
 
 
@@ -80,7 +82,8 @@ def _extract_single_store(
     retailer_name: str,
     yaml_config: dict = None,
     min_delay: float = None,
-    max_delay: float = None
+    max_delay: float = None,
+    request_counter: RequestCounter = None
 ) -> Tuple[int, Optional[Dict[str, Any]]]:
     """Worker function for parallel store extraction.
 
@@ -93,6 +96,7 @@ def _extract_single_store(
         yaml_config: Retailer configuration from retailers.yaml
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         Tuple of (store_id, store_data_dict) where store_data_dict is None on failure
@@ -106,13 +110,21 @@ def _extract_single_store(
             retailer_name,
             min_delay=min_delay,
             max_delay=max_delay,
-            yaml_config=yaml_config
+            yaml_config=yaml_config,
+            request_counter=request_counter
         )
         if store_obj:
             return (store_id, store_obj.to_dict())
         return (store_id, None)
+    except requests.RequestException as e:
+        logging.warning(f"[{retailer_name}] Network error extracting store {store_id}: {e}")
+        return (store_id, None)
+    except (KeyError, TypeError, AttributeError) as e:
+        logging.warning(f"[{retailer_name}] Data extraction error for store {store_id}: {e}", exc_info=True)
+        return (store_id, None)
     except Exception as e:
-        logging.warning(f"[{retailer_name}] Error extracting store {store_id}: {e}")
+        # Catch-all for worker threads to prevent crashes
+        logging.warning(f"[{retailer_name}] Unexpected error extracting store {store_id}: {e}")
         return (store_id, None)
     finally:
         # Clean up session resources
@@ -147,7 +159,8 @@ def get_all_store_ids(
     retailer: str = 'target',
     min_delay: float = None,
     max_delay: float = None,
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> List[Dict[str, Any]]:
     """Extract all store IDs from Target's sitemap.
 
@@ -157,6 +170,7 @@ def get_all_store_ids(
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
         yaml_config: Retailer config dict (for pause settings)
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         List of store dictionaries with store_id, slug, and url
@@ -173,8 +187,9 @@ def get_all_store_ids(
         logging.error(f"[{retailer}] Failed to fetch sitemap: {target_config.SITEMAP_URL}")
         return []
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         # Check if content is already decompressed (starts with XML) or gzipped
@@ -213,8 +228,8 @@ def get_all_store_ids(
     except gzip.BadGzipFile as e:
         logging.error(f"[{retailer}] Failed to decompress gzip sitemap: {e}")
         return []
-    except Exception as e:
-        logging.error(f"[{retailer}] Unexpected error processing sitemap: {e}")
+    except (UnicodeDecodeError, re.error) as e:
+        logging.error(f"[{retailer}] Error processing sitemap content: {e}")
         return []
 
 
@@ -224,7 +239,8 @@ def get_store_details(
     retailer: str = 'target',
     min_delay: float = None,
     max_delay: float = None,
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> Optional[TargetStore]:
     """Fetch detailed store info from Redsky API.
 
@@ -235,6 +251,7 @@ def get_store_details(
         min_delay: Minimum delay between requests
         max_delay: Maximum delay between requests
         yaml_config: Retailer config dict (for pause settings)
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         TargetStore object if successful, None otherwise
@@ -258,8 +275,9 @@ def get_store_details(
         logging.warning(f"[{retailer}] Failed to fetch store details for store_id={store_id}")
         return None
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         if response.status_code == 200:
@@ -315,8 +333,8 @@ def get_store_details(
     except json.JSONDecodeError as e:
         logging.warning(f"[{retailer}] Failed to parse JSON response for store_id={store_id}: {e}")
         return None
-    except Exception as e:
-        logging.warning(f"[{retailer}] Unexpected error processing store_id={store_id}: {e}")
+    except (KeyError, TypeError, AttributeError) as e:
+        logging.warning(f"[{retailer}] Data extraction error for store_id={store_id}: {e}", exc_info=True)
         return None
 
 
@@ -356,15 +374,17 @@ def run(session, config: dict, **kwargs) -> dict:
         resume = kwargs.get('resume', False)
         refresh_urls = kwargs.get('refresh_urls', False)
 
-        reset_request_counter()
+        # Create fresh RequestCounter instance for this run
+        request_counter = RequestCounter()
+        reset_request_counter()  # Reset global counter for backwards compatibility
 
         # Auto-select delays based on proxy mode for optimal performance
         proxy_mode = config.get('proxy', {}).get('mode', 'direct')
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
         logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
 
-        # Get parallel workers count (default: 5 for residential proxy, 1 for direct)
-        default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        # Get parallel workers count (default: WORKERS.PROXIED_WORKERS for residential proxy, WORKERS.DIRECT_WORKERS for direct)
+        default_workers = WORKERS.PROXIED_WORKERS if proxy_mode in ('residential', 'web_scraper_api') else WORKERS.DIRECT_WORKERS
         parallel_workers = config.get('parallel_workers', default_workers)
         logging.info(f"[{retailer_name}] Parallel workers: {parallel_workers}")
 
@@ -399,7 +419,8 @@ def run(session, config: dict, **kwargs) -> dict:
                 retailer_name,
                 min_delay=min_delay,
                 max_delay=max_delay,
-                yaml_config=config
+                yaml_config=config,
+                request_counter=request_counter
             )
             logging.info(f"[{retailer_name}] Found {len(store_list)} store IDs from sitemap")
 
@@ -457,7 +478,8 @@ def run(session, config: dict, **kwargs) -> dict:
                         retailer_name,
                         config,
                         min_delay,
-                        max_delay
+                        max_delay,
+                        request_counter
                     ): store_info
                     for store_info in remaining_stores
                 }
@@ -504,7 +526,8 @@ def run(session, config: dict, **kwargs) -> dict:
                     retailer_name,
                     min_delay=min_delay,
                     max_delay=max_delay,
-                    yaml_config=config
+                    yaml_config=config,
+                    request_counter=request_counter
                 )
                 if store_obj:
                     stores.append(store_obj.to_dict())

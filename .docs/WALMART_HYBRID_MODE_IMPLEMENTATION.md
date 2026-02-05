@@ -57,20 +57,20 @@ def run(session, config: dict, **kwargs) -> dict:
     - Uses passed-in session (residential) for fast sitemap fetching
     - Creates web_scraper_api session for store pages (JS rendering)
     """
-    
+
     # Session 1: Residential (passed in from run.py)
     # Used for: get_store_urls_from_sitemap()
-    
+
     # Session 2: Web Scraper API (created here)
     proxy_config = ProxyConfig.from_env()
     proxy_config.mode = ProxyMode.WEB_SCRAPER_API
     proxy_config.render_js = True
     store_client = ProxyClient(proxy_config)
     store_session = store_client.session
-    
+
     # Fetch sitemaps with residential proxy
     store_urls = get_store_urls_from_sitemap(session, retailer_name)
-    
+
     # Extract stores with web_scraper_api
     for url in store_urls:
         store = extract_store_details(store_session, url, retailer_name)
@@ -261,6 +261,6 @@ OXYLABS_SCRAPER_API_PASSWORD=your_api_password
 
 ---
 
-**Status:** ✅ Production Ready  
-**Last Updated:** 2026-01-20  
+**Status:** ✅ Production Ready
+**Last Updated:** 2026-01-20
 **Author:** Code Review Team

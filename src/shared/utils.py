@@ -18,36 +18,49 @@ import requests
 # Import proxy client for Oxylabs integration
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode, ProxyResponse, redact_credentials
 
+# Import centralized constants (Issue #171)
+from src.shared.constants import HTTP, LOGGING, VALIDATION
 
 __all__ = [
-    # Configuration constants
-    "DEFAULT_MIN_DELAY", "DEFAULT_MAX_DELAY", "DEFAULT_MAX_RETRIES",
-    "DEFAULT_TIMEOUT", "DEFAULT_RATE_LIMIT_BASE_WAIT", "DEFAULT_USER_AGENTS",
-    "REQUIRED_STORE_FIELDS", "RECOMMENDED_STORE_FIELDS",
-    # Logging
-    "setup_logging",
-    # HTTP utilities
-    "get_headers", "random_delay", "select_delays", "get_with_retry",
-    # Checkpoint utilities
-    "save_checkpoint", "load_checkpoint",
-    # Export utilities
-    "save_to_csv", "save_to_json",
-    # Validation
-    "ValidationResult", "validate_store_data", "validate_stores_batch",
-    # Proxy configuration
-    "get_retailer_proxy_config", "load_retailer_config",
-    # Proxy client utilities
-    "get_proxy_client", "get_with_proxy", "init_proxy_from_yaml",
-    "create_proxied_session", "close_proxy_client", "close_all_proxy_clients", "ProxiedSession",
+    'DEFAULT_MAX_DELAY',
+    'DEFAULT_MAX_RETRIES',
+    'DEFAULT_MIN_DELAY',
+    'DEFAULT_RATE_LIMIT_BASE_WAIT',
+    'DEFAULT_TIMEOUT',
+    'DEFAULT_USER_AGENTS',
+    'ProxiedSession',
+    'RECOMMENDED_STORE_FIELDS',
+    'REQUIRED_STORE_FIELDS',
+    'ValidationResult',
+    'close_all_proxy_clients',
+    'close_proxy_client',
+    'create_proxied_session',
+    'get_headers',
+    'get_proxy_client',
+    'get_retailer_proxy_config',
+    'get_with_proxy',
+    'get_with_retry',
+    'init_proxy_from_yaml',
+    'load_checkpoint',
+    'load_retailer_config',
+    'random_delay',
+    'save_checkpoint',
+    'save_to_csv',
+    'save_to_json',
+    'select_delays',
+    'setup_logging',
+    'validate_store_data',
+    'validate_stores_batch',
 ]
 
 
-# Default configuration values (can be overridden per-retailer)
-DEFAULT_MIN_DELAY = 2.0
-DEFAULT_MAX_DELAY = 5.0
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_TIMEOUT = 30
-DEFAULT_RATE_LIMIT_BASE_WAIT = 30
+# Default configuration values - backward compatible aliases to centralized constants
+# These can be overridden per-retailer in config/retailers.yaml
+DEFAULT_MIN_DELAY = HTTP.MIN_DELAY
+DEFAULT_MAX_DELAY = HTTP.MAX_DELAY
+DEFAULT_MAX_RETRIES = HTTP.MAX_RETRIES
+DEFAULT_TIMEOUT = HTTP.TIMEOUT
+DEFAULT_RATE_LIMIT_BASE_WAIT = HTTP.RATE_LIMIT_BASE_WAIT
 
 # Default user agents for rotation
 DEFAULT_USER_AGENTS = [
@@ -65,7 +78,7 @@ _proxy_clients_lock = threading.Lock()
 _logging_lock = threading.Lock()
 
 
-def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = 10*1024*1024, backup_count: int = 5) -> None:
+def setup_logging(log_file: str = "logs/scraper.log", max_bytes: int = LOGGING.MAX_BYTES, backup_count: int = LOGGING.BACKUP_COUNT) -> None:
     """Setup logging configuration with rotation (#118).
 
     This function is idempotent and thread-safe - calling it multiple times
@@ -157,24 +170,24 @@ def random_delay(min_sec: float = None, max_sec: float = None) -> None:
 
 def select_delays(config: dict, proxy_mode: str) -> tuple:
     """Select appropriate delays based on proxy mode.
-    
+
     Args:
         config: Retailer configuration dict
         proxy_mode: Proxy mode string ('direct', 'residential', 'web_scraper_api')
-    
+
     Returns:
         Tuple of (min_delay, max_delay)
-    
+
     Examples:
-        >>> select_delays({'delays': {'direct': {'min_delay': 2.0, 'max_delay': 5.0}, 
-        ...                            'proxied': {'min_delay': 0.2, 'max_delay': 0.5}}}, 
+        >>> select_delays({'delays': {'direct': {'min_delay': 2.0, 'max_delay': 5.0},
+        ...                            'proxied': {'min_delay': 0.2, 'max_delay': 0.5}}},
         ...               'residential')
         (0.2, 0.5)
     """
     # Check if config has dual delay profiles
     if 'delays' in config:
         delays_config = config['delays']
-        
+
         # Use proxied delays for any proxy mode except 'direct'
         if proxy_mode and proxy_mode != 'direct':
             if 'proxied' in delays_config:
@@ -182,14 +195,14 @@ def select_delays(config: dict, proxy_mode: str) -> tuple:
                     delays_config['proxied'].get('min_delay', DEFAULT_MIN_DELAY),
                     delays_config['proxied'].get('max_delay', DEFAULT_MAX_DELAY)
                 )
-        
+
         # Use direct mode delays
         if 'direct' in delays_config:
             return (
                 delays_config['direct'].get('min_delay', DEFAULT_MIN_DELAY),
                 delays_config['direct'].get('max_delay', DEFAULT_MAX_DELAY)
             )
-    
+
     # Fallback to legacy min_delay/max_delay fields
     return (
         config.get('min_delay', DEFAULT_MIN_DELAY),
@@ -231,7 +244,7 @@ def get_with_retry(
     session.headers.update(headers)
 
     response = None  # Initialize response to prevent AttributeError
-    
+
     for attempt in range(max_retries):
         try:
             random_delay(min_delay, max_delay)
@@ -262,12 +275,12 @@ def get_with_retry(
                 # Continue to retry instead of immediate return (#144)
 
             elif response.status_code >= 500:  # Server error
-                wait_time = 10
+                wait_time = HTTP.SERVER_ERROR_WAIT
                 logging.warning(f"Server error ({response.status_code}) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
 
             elif response.status_code == 408:  # Request timeout - might succeed on retry
-                wait_time = 10
+                wait_time = HTTP.SERVER_ERROR_WAIT
                 logging.warning(f"Request timeout (408) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
 
@@ -283,7 +296,7 @@ def get_with_retry(
 
         except requests.exceptions.RequestException as e:
             response = None  # Ensure response is None after exception
-            wait_time = 10
+            wait_time = HTTP.SERVER_ERROR_WAIT
             # Redact credentials from error messages to prevent leaking sensitive info
             safe_error = redact_credentials(str(e))
             logging.warning(f"Request error for {url}: {safe_error}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
@@ -453,10 +466,10 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
         try:
             lat_float = float(lat)
             lng_float = float(lng)
-            if not (-90 <= lat_float <= 90):
-                errors.append(f"Invalid latitude: {lat} (must be between -90 and 90)")
-            if not (-180 <= lng_float <= 180):
-                errors.append(f"Invalid longitude: {lng} (must be between -180 and 180)")
+            if not (VALIDATION.LAT_MIN <= lat_float <= VALIDATION.LAT_MAX):
+                errors.append(f"Invalid latitude: {lat} (must be between {VALIDATION.LAT_MIN} and {VALIDATION.LAT_MAX})")
+            if not (VALIDATION.LON_MIN <= lng_float <= VALIDATION.LON_MAX):
+                errors.append(f"Invalid longitude: {lng} (must be between {VALIDATION.LON_MIN} and {VALIDATION.LON_MAX})")
         except (ValueError, TypeError):
             errors.append(f"Invalid coordinate format: lat={lat}, lng={lng}")
 
@@ -464,8 +477,8 @@ def validate_store_data(store: Dict[str, Any], strict: bool = False) -> Validati
     postal_code = store.get('postal_code') or store.get('zip_code')
     if postal_code:
         postal_str = str(postal_code).strip()
-        if postal_str and not (len(postal_str) == 5 or len(postal_str) == 10):
-            # 10 chars for "12345-6789" format
+        if postal_str and not (len(postal_str) == VALIDATION.ZIP_LENGTH_SHORT or len(postal_str) == VALIDATION.ZIP_LENGTH_LONG):
+            # ZIP_LENGTH_LONG (10) for "12345-6789" format
             warnings.append(f"Unusual postal code format: {postal_code}")
 
     return ValidationResult(len(errors) == 0, errors, warnings)
@@ -505,10 +518,10 @@ def validate_stores_batch(
 
     if log_issues:
         if all_errors:
-            for error in all_errors[:10]:  # Limit logging to first 10
+            for error in all_errors[:VALIDATION.ERROR_LOG_LIMIT]:
                 logging.warning(error)
-            if len(all_errors) > 10:
-                logging.warning(f"... and {len(all_errors) - 10} more validation errors")
+            if len(all_errors) > VALIDATION.ERROR_LOG_LIMIT:
+                logging.warning(f"... and {len(all_errors) - VALIDATION.ERROR_LOG_LIMIT} more validation errors")
 
     return {
         'total': total,
@@ -540,20 +553,20 @@ def _merge_proxy_config(
     Retailer settings take precedence.
     """
     mode = retailer_proxy.get('mode', global_proxy.get('mode', 'direct'))
-    
+
     config = {'mode': mode}
-    
+
     if mode == 'residential' and 'residential' in global_proxy:
         config.update(global_proxy['residential'])
     elif mode == 'web_scraper_api' and 'web_scraper_api' in global_proxy:
         config.update(global_proxy['web_scraper_api'])
-    
+
     for key in ['timeout', 'max_retries', 'retry_delay']:
         if key in global_proxy:
             config[key] = global_proxy[key]
-    
+
     config.update(retailer_proxy)
-    
+
     return config
 
 
@@ -561,16 +574,16 @@ def _build_proxy_config_from_yaml(global_proxy: Dict[str, Any]) -> Dict[str, Any
     """Build config dict from global YAML proxy section"""
     mode = global_proxy.get('mode', 'direct')
     config = {'mode': mode}
-    
+
     if mode == 'residential' and 'residential' in global_proxy:
         config.update(global_proxy['residential'])
     elif mode == 'web_scraper_api' and 'web_scraper_api' in global_proxy:
         config.update(global_proxy['web_scraper_api'])
-    
+
     for key in ['timeout', 'max_retries', 'retry_delay']:
         if key in global_proxy:
             config[key] = global_proxy[key]
-    
+
     return config
 
 
@@ -626,7 +639,7 @@ def get_retailer_proxy_config(
         # Include all CLI settings in the config (#52)
         config = _build_proxy_config_dict(mode=cli_override)
         return _apply_cli_settings(config, cli_settings)
-    
+
     try:
         with open(yaml_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
@@ -636,10 +649,10 @@ def get_retailer_proxy_config(
     except Exception as e:
         logging.warning(f"[{retailer}] Error loading config: {e}")
         config = {}
-    
+
     # Handle empty YAML files (safe_load returns None)
     config = config or {}
-    
+
     retailer_config = config.get('retailers', {}).get(retailer, {})
     if 'proxy' in retailer_config:
         proxy_settings = retailer_config['proxy']
@@ -651,7 +664,7 @@ def get_retailer_proxy_config(
         else:
             logging.info(f"[{retailer}] Using retailer-specific proxy mode: {mode}")
         return _apply_cli_settings(merged_config, cli_settings)
-    
+
     if 'proxy' in config:
         proxy_config = _build_proxy_config_from_yaml(config['proxy'])
         mode = proxy_config.get('mode', 'direct')
@@ -661,7 +674,7 @@ def get_retailer_proxy_config(
         else:
             logging.info(f"[{retailer}] Using global YAML proxy mode: {mode}")
         return _apply_cli_settings(proxy_config, cli_settings)
-    
+
     env_mode = os.getenv('PROXY_MODE')
     if env_mode:
         if env_mode not in VALID_MODES:
@@ -670,7 +683,7 @@ def get_retailer_proxy_config(
         logging.info(f"[{retailer}] Using environment variable proxy mode: {env_mode}")
         env_config = _build_proxy_config_dict(mode=env_mode)
         return _apply_cli_settings(env_config, cli_settings)
-    
+
     logging.info(f"[{retailer}] Using default proxy mode: direct")
     return _apply_cli_settings({'mode': 'direct'}, cli_settings)
 
@@ -768,7 +781,7 @@ def get_proxy_client(config: Optional[Dict[str, Any]] = None, retailer: Optional
 def init_proxy_from_yaml(yaml_path: str = "config/retailers.yaml") -> ProxyClient:
     """
     Initialize proxy client from retailers.yaml configuration.
-    
+
     Deprecated: Use get_retailer_proxy_config() + create_proxied_session() for new code.
     This function loads global proxy config and caches it under '__global__' key.
 
@@ -868,13 +881,13 @@ def create_proxied_session(
     proxy_config_dict = retailer_config.get('proxy', {}) if retailer_config else {}
     mode = proxy_config_dict.get('mode', 'direct')
     retailer_name = retailer_config.get('name', 'unknown') if retailer_config else 'unknown'
-    
+
     if mode == 'direct':
         session = requests.Session()
         session.headers.update(get_headers())
         logging.info(f"[{retailer_name}] Created Session for mode: {mode}")
         return session
-    
+
     try:
         # Check credentials before creating client to properly detect missing credentials
         # ProxyClient.__init__ silently falls back to DIRECT mode if credentials are missing,
@@ -885,13 +898,13 @@ def create_proxied_session(
             session = requests.Session()
             session.headers.update(get_headers())
             return session
-        
+
         # Return ProxiedSession instead of ProxyClient to provide headers attribute
         proxied_session = ProxiedSession(proxy_config_dict)
-        
+
         logging.info(f"[{retailer_name}] Created ProxiedSession for mode: {mode}")
         return proxied_session
-        
+
     except Exception as e:
         # Redact credentials from error messages
         safe_error = redact_credentials(str(e))

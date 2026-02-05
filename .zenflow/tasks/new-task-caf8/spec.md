@@ -314,7 +314,7 @@ Response:
 ### Configuration API
 ```http
 GET /api/config
-Response: 
+Response:
 {
   "proxy": {...},
   "defaults": {...},

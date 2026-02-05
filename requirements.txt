@@ -5,7 +5,7 @@ lxml==5.1.0
 brotli==1.2.0  # Required for Brotli decompression (T-Mobile uses Content-Encoding: br)
 
 # Async support for concurrent scraping
-aiohttp==3.9.1  # Used in tests/uat/protocol.py for async API testing
+aiohttp==3.13.3  # CVE-2024-23334, CVE-2024-27306, CVE-2024-30251, CVE-2025-53643 fixed
 aiofiles==23.2.1
 
 # Export formats
@@ -13,6 +13,9 @@ openpyxl==3.1.2  # Excel export support
 
 # Cloud storage
 google-cloud-storage==2.14.0  # GCS integration for backup/sync
+
+# Error monitoring
+sentry-sdk==2.52.0  # Error tracking and performance monitoring
 
 # Performance
 ijson==3.2.3  # Streaming JSON parser for memory-efficient change detection (#65)
@@ -31,6 +34,7 @@ pytest-cov==5.0.0  # 6.x requires Python 3.9+
 black==24.8.0      # Code formatter (24.3.0+ fixes ReDoS vulnerability)
 isort==5.13.2      # Import sorter
 mypy==1.8.0        # Type checker
+pydocstyle==6.3.0  # Docstring style checker (Google style)
 types-requests==2.31.0.20240125  # Type stubs for requests
 types-PyYAML==6.0.12.12          # Type stubs for PyYAML
 

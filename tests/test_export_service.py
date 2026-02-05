@@ -245,17 +245,17 @@ class TestExportServiceGeoJSON:
 
         # All 4 stores should be included
         assert len(result['features']) == 4
-        
+
         # Verify equator store
         equator = result['features'][0]
         assert equator['properties']['name'] == 'Equator Store'
         assert equator['geometry']['coordinates'] == [100.0, 0]
-        
+
         # Verify prime meridian store
         prime = result['features'][1]
         assert prime['properties']['name'] == 'Prime Meridian Store'
         assert prime['geometry']['coordinates'] == [0, 50.0]
-        
+
         # Verify null island
         null_island = result['features'][2]
         assert null_island['properties']['name'] == 'Null Island'
@@ -277,16 +277,16 @@ class TestExportServiceGeoJSON:
 
         # All 4 stores should be included
         assert len(result['features']) == 4
-        
+
         # Store with lat/lng
         assert result['features'][0]['geometry']['coordinates'] == [-74.0, 40.0]
-        
+
         # Store with lat/lon
         assert result['features'][1]['geometry']['coordinates'] == [-120.0, 50.0]
-        
+
         # Store with zero lat
         assert result['features'][2]['geometry']['coordinates'] == [100.0, 0]
-        
+
         # Primary fields take precedence (latitude/longitude should be used, not lat/lng)
         assert result['features'][3]['geometry']['coordinates'] == [0, 0]
 
@@ -500,7 +500,7 @@ class TestFormulaInjectionProtection:
             'phone': '@SUM(A1:A10)'
         }
         sanitized = sanitize_store_for_csv(dangerous_store)
-        
+
         assert sanitized['name'] == "'=MALICIOUS()"
         assert sanitized['address'] == "'+evil command"
         assert sanitized['city'] == 'Safe City'  # unchanged
@@ -517,17 +517,17 @@ class TestFormulaInjectionProtection:
                 'phone': '@SUM(A1:A10)'
             }
         ]
-        
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             output_path = f.name
-        
+
         try:
             ExportService.export_stores(
                 dangerous_stores,
                 ExportFormat.CSV,
                 output_path
             )
-            
+
             # Read the CSV and verify sanitization
             with open(output_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -544,7 +544,7 @@ class TestFormulaInjectionProtection:
             from openpyxl import load_workbook
         except ImportError:
             pytest.skip("openpyxl not available")
-        
+
         dangerous_stores = [
             {
                 'store_id': '1001',
@@ -553,17 +553,17 @@ class TestFormulaInjectionProtection:
                 'phone': '@SUM(A1:A10)'
             }
         ]
-        
+
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as f:
             output_path = f.name
-        
+
         try:
             ExportService.export_stores(
                 dangerous_stores,
                 ExportFormat.EXCEL,
                 output_path
             )
-            
+
             # Load the Excel file and verify sanitization
             wb = load_workbook(output_path)
             ws = wb.active
@@ -591,12 +591,12 @@ class TestFormulaInjectionProtection:
                 'value': '+123'
             }
         ]
-        
+
         csv_string = ExportService.generate_csv_string(
             dangerous_stores,
             fieldnames=['name', 'value']
         )
-        
+
         assert "'=MALICIOUS()" in csv_string
         assert "'+123" in csv_string
 
@@ -607,23 +607,23 @@ class TestFormulaInjectionProtection:
             from io import BytesIO
         except ImportError:
             pytest.skip("openpyxl not available")
-        
+
         dangerous_stores = [
             {
                 'name': '=MALICIOUS()',
                 'value': '-evil'
             }
         ]
-        
+
         excel_bytes = ExportService.generate_excel_bytes(
             dangerous_stores,
             fieldnames=['name', 'value']
         )
-        
+
         # Load from bytes and verify sanitization
         wb = load_workbook(BytesIO(excel_bytes))
         ws = wb.active
-        
+
         assert ws['A2'].value == "'=MALICIOUS()"
         assert ws['B2'].value == "'-evil"
 

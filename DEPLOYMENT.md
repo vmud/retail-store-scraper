@@ -812,7 +812,7 @@ tar -xzf retail-scraper-backup-YYYYMMDD.tar.gz
    ```bash
    # Keep system packages updated
    sudo apt-get update && sudo apt-get upgrade
-   
+
    # Keep Python packages updated
    pip install --upgrade -r requirements.txt
    ```

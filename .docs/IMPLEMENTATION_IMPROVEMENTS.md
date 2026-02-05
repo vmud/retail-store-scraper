@@ -7,8 +7,8 @@ This document tracks the improvements made to the scraper manager implementation
 ## Critical Issues Fixed
 
 ### 1. ✅ Log File Location (FIXED)
-**Issue**: Logs were stored in `logs/scrapers/{retailer}_{timestamp}.log`  
-**Expected**: `data/{retailer}/logs/{run_id}.log` per spec  
+**Issue**: Logs were stored in `logs/scrapers/{retailer}_{timestamp}.log`
+**Expected**: `data/{retailer}/logs/{run_id}.log` per spec
 **Fix**: Modified `_get_log_file()` method to use proper location
 - Changed signature to accept `run_id` parameter
 - Log files now created in `data/{retailer}/logs/` directory
@@ -27,8 +27,8 @@ data/verizon/logs/verizon_20260117_051808.log
 ---
 
 ### 2. ✅ Test Files Location (FIXED)
-**Issue**: Test files were in project root  
-**Expected**: `tests/` directory per spec  
+**Issue**: Test files were in project root
+**Expected**: `tests/` directory per spec
 **Fix**: Created `tests/` directory and moved all test files
 - Moved `test_scraper_manager.py` → `tests/`
 - Moved `test_scraper_lifecycle.py` → `tests/`
@@ -40,7 +40,7 @@ data/verizon/logs/verizon_20260117_051808.log
 ---
 
 ### 3. ✅ Process State Persistence (FIXED)
-**Issue**: In-memory `_processes` dict lost on Flask restart, orphaning scrapers  
+**Issue**: In-memory `_processes` dict lost on Flask restart, orphaning scrapers
 **Fix**: Implemented `_recover_running_processes()` method
 - Checks RunTracker metadata for all retailers on startup
 - Verifies PIDs still exist using `os.kill(pid, 0)`
@@ -72,7 +72,7 @@ def _recover_running_processes(self) -> None:
 ---
 
 ### 4. ✅ RunTracker Status Updates (FIXED)
-**Issue**: RunTracker status remained "running" forever after process exit  
+**Issue**: RunTracker status remained "running" forever after process exit
 **Fix**: Updated RunTracker in all exit scenarios
 - Modified `is_running()` to call `tracker.complete()` or `tracker.fail()`
 - Modified `stop()` to update tracker based on exit code
@@ -106,7 +106,7 @@ $ cat data/verizon/runs/verizon_20260117_051808.json | jq .status
 ## Medium Priority Issues Fixed
 
 ### 5. ✅ Thread Safety (FIXED)
-**Issue**: No locks for concurrent Flask requests  
+**Issue**: No locks for concurrent Flask requests
 **Fix**: Added `threading.Lock()` to all mutating operations
 - Added `self._lock = threading.Lock()` in `__init__`
 - Wrapped all dict mutations in `with self._lock:` blocks
@@ -118,7 +118,7 @@ $ cat data/verizon/runs/verizon_20260117_051808.json | jq .status
 ---
 
 ### 6. ✅ Windows Compatibility (FIXED)
-**Issue**: `signal.SIGTERM` doesn't exist on Windows  
+**Issue**: `signal.SIGTERM` doesn't exist on Windows
 **Fix**: Added platform-specific signal handling
 ```python
 if platform.system() == 'Windows':
@@ -133,7 +133,7 @@ else:
 ---
 
 ### 7. ✅ Cleanup on Exit (FIXED)
-**Issue**: No automatic cleanup when Flask crashes/exits  
+**Issue**: No automatic cleanup when Flask crashes/exits
 **Fix**: Added `atexit` handler to stop all scrapers
 ```python
 atexit.register(self._cleanup_on_exit)
@@ -149,7 +149,7 @@ def _cleanup_on_exit(self) -> None:
 ---
 
 ### 8. ✅ Hardcoded Sleep (IMPROVED)
-**Issue**: `time.sleep(1)` hardcoded in restart  
+**Issue**: `time.sleep(1)` hardcoded in restart
 **Fix**: Made configurable with `restart_delay` parameter (default 0.5s)
 
 **Files Modified**:
@@ -160,7 +160,7 @@ def _cleanup_on_exit(self) -> None:
 ## Suggestions Implemented
 
 ### 9. ✅ Error Tracking on Startup (IMPLEMENTED)
-**Enhancement**: Track errors when scraper fails to start  
+**Enhancement**: Track errors when scraper fails to start
 **Implementation**:
 ```python
 except Exception as e:

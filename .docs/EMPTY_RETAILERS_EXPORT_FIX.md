@@ -79,7 +79,7 @@ def test_api_export_multi_all_empty_stores_returns_404(self, client, tmp_path, m
     """Test that multi export with all retailers having empty stores returns 404"""
     # Creates temp data directory with empty store files
     # ...
-    
+
     response = client.post('/api/export/multi',
                           json={'retailers': ['verizon', 'att'], 'format': 'excel'},
                           content_type='application/json')

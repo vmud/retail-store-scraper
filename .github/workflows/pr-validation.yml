@@ -86,10 +86,10 @@ jobs:
           python -c "
           import yaml
           import sys
-          
+
           files = ['config/retailers.yaml']
           errors = []
-          
+
           for f in files:
               try:
                   with open(f) as fp:
@@ -98,7 +98,7 @@ jobs:
               except Exception as e:
                   errors.append(f'{f}: {e}')
                   print(f'❌ {f}: {e}')
-          
+
           if errors:
               sys.exit(1)
           "
@@ -133,9 +133,9 @@ jobs:
           ADDITIONS=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{sum+=$1} END {print sum}')
           DELETIONS=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{sum+=$2} END {print sum}')
           TOTAL=$((ADDITIONS + DELETIONS))
-          
+
           echo "PR Stats: +$ADDITIONS -$DELETIONS (total: $TOTAL lines)"
-          
+
           if [ "$TOTAL" -gt 1000 ]; then
             echo "::warning::Large PR detected ($TOTAL lines). Consider breaking into smaller PRs."
           fi

@@ -256,9 +256,9 @@ Deployment is successful when:
 
 ---
 
-**Deployment Date**: ___________________  
-**Deployed By**: ___________________  
-**Notes**: 
+**Deployment Date**: ___________________
+**Deployed By**: ___________________
+**Notes**:
 ```
 
 ```

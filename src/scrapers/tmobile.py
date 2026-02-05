@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import threading
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -16,6 +16,7 @@ import requests
 from config import tmobile_config
 from src.shared import utils
 from src.shared.cache import URLCache
+from src.shared.constants import WORKERS
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
@@ -88,8 +89,12 @@ def _extract_single_store(
         if store_obj:
             return (url, store_obj.to_dict())
         return (url, None)
+    except requests.RequestException as e:
+        logging.warning(f"[{retailer_name}] Network error extracting {url}: {e}")
+        return (url, None)
     except Exception as e:
-        logging.warning(f"[{retailer_name}] Error extracting {url}: {e}")
+        # Catch-all for worker threads to prevent crashes
+        logging.warning(f"[{retailer_name}] Unexpected error extracting {url}: {e}")
         return (url, None)
     finally:
         # Clean up session resources
@@ -191,11 +196,8 @@ def get_store_urls_from_sitemap(session: requests.Session, retailer: str = 'tmob
 
             logging.info(f"[{retailer}] Found {len(all_store_urls)} retail store URLs from page {page}")
 
-        except ET.ParseError as e:
+        except (ET.ParseError, UnicodeDecodeError) as e:
             logging.error(f"[{retailer}] Failed to parse XML sitemap page {page}: {e}")
-            continue
-        except Exception as e:
-            logging.error(f"[{retailer}] Unexpected error parsing sitemap page {page}: {e}")
             continue
 
     logging.info(f"[{retailer}] Total retail store URLs collected: {len(all_store_urls)}")
@@ -276,7 +278,7 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
                     if isinstance(first_script, list) and first_script:
                         first_type = first_script[0].get('@type', 'Unknown') if isinstance(first_script[0], dict) else 'Unknown'
                     logging.debug(f"[{retailer}] Skipping {url}: No Store found (first @type: '{first_type}')")
-                except Exception:
+                except (json.JSONDecodeError, KeyError, TypeError, AttributeError, IndexError):
                     logging.debug(f"[{retailer}] Skipping {url}: No Store found")
             return None
 
@@ -326,8 +328,8 @@ def extract_store_details(session: requests.Session, url: str, retailer: str = '
         logging.debug(f"[{retailer}] Extracted store: {store.name}")
         return store
 
-    except Exception as e:
-        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
+        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}", exc_info=True)
         return None
 
 
@@ -374,8 +376,8 @@ def run(session, config: dict, **kwargs) -> dict:
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
         logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
 
-        # Get parallel workers count (default: 5 for residential proxy, 1 for direct)
-        default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        # Get parallel workers count (default: WORKERS.PROXIED_WORKERS for residential proxy, WORKERS.DIRECT_WORKERS for direct)
+        default_workers = WORKERS.PROXIED_WORKERS if proxy_mode in ('residential', 'web_scraper_api') else WORKERS.DIRECT_WORKERS
         parallel_workers = config.get('parallel_workers', default_workers)
         logging.info(f"[{retailer_name}] Parallel workers: {parallel_workers}")
 

@@ -70,21 +70,21 @@ def fix_fstring_logging(filepath):
 
 def fix_open_encoding(filepath):
     """Add encoding='utf-8' to all open() calls.
-    
+
     WARNING: This function is disabled due to regex limitations.
     The pattern r'\bopen\(([^)]+)\)' fails on nested parentheses.
-    
+
     Example problem:
     - Input: open(os.path.join(dir, file), 'r')
     - Pattern matches: os.path.join(dir, file  (stops at first ')')
     - Result: open(os.path.join(dir, file, encoding="utf-8"), 'r')
     - This is WRONG: encoding added to join() instead of open()
-    
+
     Proper parsing would require:
     1. AST-based analysis, OR
     2. Balanced parenthesis counting in regex, OR
     3. Manual review
-    
+
     Manual review is required for such changes.
     """
     # DISABLED: This transformation is unsafe with nested function calls

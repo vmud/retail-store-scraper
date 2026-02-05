@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import threading
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -16,11 +16,13 @@ import requests
 from config import att_config
 from src.shared import utils
 from src.shared.cache import URLCache
+from src.shared.constants import WORKERS
 from src.shared.request_counter import RequestCounter, check_pause_logic
 from src.shared.session_factory import create_session_factory
 
 
-# Global request counter
+# Global request counter (deprecated - kept for backwards compatibility)
+# Use instance-based counter passed to functions instead
 _request_counter = RequestCounter()
 
 
@@ -56,7 +58,8 @@ def _extract_single_store(
     url: str,
     session_factory,
     retailer_name: str,
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Worker function for parallel store extraction.
 
@@ -67,18 +70,23 @@ def _extract_single_store(
         session_factory: Callable that creates session instances
         retailer_name: Name of retailer for logging
         yaml_config: Retailer configuration from retailers.yaml
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         Tuple of (url, store_data_dict) where store_data_dict is None on failure
     """
     session = session_factory()
     try:
-        store_obj = extract_store_details(session, url, retailer_name, yaml_config)
+        store_obj = extract_store_details(session, url, retailer_name, yaml_config, request_counter)
         if store_obj:
             return (url, store_obj.to_dict())
         return (url, None)
+    except requests.RequestException as e:
+        logging.warning(f"[{retailer_name}] Network error extracting {url}: {e}")
+        return (url, None)
     except Exception as e:
-        logging.warning(f"[{retailer_name}] Error extracting {url}: {e}")
+        # Catch-all for worker threads to prevent crashes
+        logging.warning(f"[{retailer_name}] Unexpected error extracting {url}: {e}")
         return (url, None)
     finally:
         # Clean up session resources
@@ -116,11 +124,11 @@ def _extract_store_type_and_dealer(html_content: str) -> tuple:
         r"storeMasterDealer:\s*(['\"])([^'\"]+)\1",
         html_content
     )
-    
+
     # Group 1 is the quote character, group 2 is the actual value
     display_type = display_type_match.group(2) if display_type_match else None
     dealer_raw = dealer_match.group(2) if dealer_match else None
-    
+
     # Determine sub_channel and dealer_name based on display type
     if display_type == "AT&T Retail":
         # Corporate store
@@ -139,14 +147,15 @@ def _extract_store_type_and_dealer(html_content: str) -> tuple:
         logging.debug(f"[att] Unknown display type: {display_type}, defaulting to COR")
         sub_channel = "COR"
         dealer_name = None
-    
+
     return sub_channel, dealer_name
 
 
 def get_store_urls_from_sitemap(
     session: requests.Session,
     retailer: str = 'att',
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> List[str]:
     """Fetch all store URLs from the AT&T sitemap.
 
@@ -154,6 +163,7 @@ def get_store_urls_from_sitemap(
         session: Requests session object
         retailer: Retailer name for logging
         yaml_config: Retailer configuration from retailers.yaml
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         List of store URLs (filtered to only those ending in numeric IDs)
@@ -165,8 +175,9 @@ def get_store_urls_from_sitemap(
         logging.error(f"[{retailer}] Failed to fetch sitemap")
         return []
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         # Parse XML
@@ -197,11 +208,8 @@ def get_store_urls_from_sitemap(
 
         return store_urls
 
-    except ET.ParseError as e:
+    except (ET.ParseError, UnicodeDecodeError) as e:
         logging.error(f"[{retailer}] Failed to parse XML sitemap: {e}")
-        return []
-    except Exception as e:
-        logging.error(f"[{retailer}] Unexpected error parsing sitemap: {e}")
         return []
 
 
@@ -209,7 +217,8 @@ def extract_store_details(
     session: requests.Session,
     url: str,
     retailer: str = 'att',
-    yaml_config: dict = None
+    yaml_config: dict = None,
+    request_counter: RequestCounter = None
 ) -> Optional[ATTStore]:
     """Extract store data from a single AT&T store page.
 
@@ -218,6 +227,7 @@ def extract_store_details(
         url: Store page URL
         retailer: Retailer name for logging
         yaml_config: Retailer configuration from retailers.yaml
+        request_counter: Optional RequestCounter instance for tracking requests
 
     Returns:
         ATTStore object if successful, None otherwise
@@ -229,8 +239,9 @@ def extract_store_details(
         logging.warning(f"[{retailer}] Failed to fetch store details: {url}")
         return None
 
-    _request_counter.increment()
-    check_pause_logic(_request_counter, retailer=retailer, config=yaml_config)
+    if request_counter:
+        request_counter.increment()
+        check_pause_logic(request_counter, retailer=retailer, config=yaml_config)
 
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -282,7 +293,7 @@ def extract_store_details(
         rating_value = None
         rating_count = None
 
-        if rating:
+        if rating and isinstance(rating, dict):
             rating_val = rating.get('ratingValue')
             if rating_val:
                 try:
@@ -319,8 +330,8 @@ def extract_store_details(
         logging.debug(f"[{retailer}] Extracted store: %s (%s%s)", store.name, sub_channel, dealer_info)
         return store
 
-    except Exception as e:
-        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}")
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as e:
+        logging.warning(f"[{retailer}] Error extracting store data from {url}: {e}", exc_info=True)
         return None
 
 
@@ -360,15 +371,17 @@ def run(session, config: dict, **kwargs) -> dict:
         resume = kwargs.get('resume', False)
         refresh_urls = kwargs.get('refresh_urls', False)
 
-        reset_request_counter()
+        # Create fresh RequestCounter instance for this run
+        request_counter = RequestCounter()
+        reset_request_counter()  # Reset global counter for backwards compatibility
 
         # Auto-select delays based on proxy mode for optimal performance
         proxy_mode = config.get('proxy', {}).get('mode', 'direct')
         min_delay, max_delay = utils.select_delays(config, proxy_mode)
         logging.info(f"[{retailer_name}] Using delays: {min_delay:.1f}-{max_delay:.1f}s (mode: {proxy_mode})")
 
-        # Get parallel workers count (default: 5 for residential proxy, 1 for direct)
-        default_workers = 5 if proxy_mode in ('residential', 'web_scraper_api') else 1
+        # Get parallel workers count (default: WORKERS.PROXIED_WORKERS for residential proxy, WORKERS.DIRECT_WORKERS for direct)
+        default_workers = WORKERS.PROXIED_WORKERS if proxy_mode in ('residential', 'web_scraper_api') else WORKERS.DIRECT_WORKERS
         parallel_workers = config.get('parallel_workers', default_workers)
         logging.info(f"[{retailer_name}] Parallel workers: {parallel_workers}")
 
@@ -397,7 +410,7 @@ def run(session, config: dict, **kwargs) -> dict:
 
         if store_urls is None:
             # Cache miss or refresh requested - fetch from sitemap
-            store_urls = get_store_urls_from_sitemap(session, retailer_name, yaml_config=config)
+            store_urls = get_store_urls_from_sitemap(session, retailer_name, yaml_config=config, request_counter=request_counter)
             logging.info(f"[{retailer_name}] Found {len(store_urls)} store URLs from sitemap")
 
             # Save to cache for future runs
@@ -443,7 +456,7 @@ def run(session, config: dict, **kwargs) -> dict:
             with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
                 # Submit all extraction tasks
                 futures = {
-                    executor.submit(_extract_single_store, url, session_factory, retailer_name, config): url
+                    executor.submit(_extract_single_store, url, session_factory, retailer_name, config, request_counter): url
                     for url in remaining_urls
                 }
 
@@ -474,7 +487,7 @@ def run(session, config: dict, **kwargs) -> dict:
         else:
             # Sequential extraction (original behavior for direct mode)
             for i, url in enumerate(remaining_urls, 1):
-                store_obj = extract_store_details(session, url, retailer_name, yaml_config=config)
+                store_obj = extract_store_details(session, url, retailer_name, yaml_config=config, request_counter=request_counter)
                 if store_obj:
                     stores.append(store_obj.to_dict())
                     completed_urls.add(url)

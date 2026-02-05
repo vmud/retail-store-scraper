@@ -8,7 +8,7 @@ Multi-retailer web scraper that collects retail store locations from Verizon, AT
 
 ## Environment Setup
 
-Requires Python 3.8-3.11. Use the self-healing setup script for automated environment configuration:
+Requires Python 3.9-3.14. Use the self-healing setup script for automated environment configuration:
 ```bash
 # Recommended: automated setup with diagnostics and auto-fix
 python scripts/setup.py
@@ -137,6 +137,7 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   └── bell.py                 # Sitemap + JSON-LD (Canadian)
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
+│   ├── constants.py            # Centralized magic numbers (HTTP, CACHE, PAUSE, WORKERS, etc.) (#171)
 │   ├── cache.py                # URL caching (URLCache, RichURLCache)
 │   ├── session_factory.py      # Thread-safe session creation for parallel workers
 │   ├── proxy_client.py         # Oxylabs proxy abstraction (ProxyMode, ProxyClient)
@@ -166,12 +167,21 @@ def run(session, retailer_config, retailer: str, **kwargs) -> dict:
     # Returns: {'stores': [...], 'count': int, 'checkpoints_used': bool}
 ```
 
-### Key Defaults (from utils.py)
+### Key Defaults (from constants.py - Issue #171)
 
-- `DEFAULT_MIN_DELAY = 2.0` / `DEFAULT_MAX_DELAY = 5.0` - delay between requests
-- `DEFAULT_MAX_RETRIES = 3` - HTTP retry attempts
-- `DEFAULT_TIMEOUT = 30` - request timeout in seconds
-- `DEFAULT_RATE_LIMIT_BASE_WAIT = 30` - wait time on 429 errors
+Magic numbers are centralized in `src/shared/constants.py` as frozen dataclasses:
+- `HTTP.MIN_DELAY = 2.0` / `HTTP.MAX_DELAY = 5.0` - delay between requests
+- `HTTP.MAX_RETRIES = 3` - HTTP retry attempts
+- `HTTP.TIMEOUT = 30` - request timeout in seconds
+- `HTTP.RATE_LIMIT_BASE_WAIT = 30` - wait time on 429 errors
+- `PAUSE.SHORT_THRESHOLD = 50` / `PAUSE.LONG_THRESHOLD = 200` - rate-limiting pauses
+- `CACHE.URL_CACHE_EXPIRY_DAYS = 7` - URL cache expiry
+- `WORKERS.PROXIED_WORKERS = 5` / `WORKERS.DIRECT_WORKERS = 1` - parallel workers
+- `EXPORT.FIELD_SAMPLE_SIZE = 100` - export field discovery
+- `TEST_MODE.STORE_LIMIT = 10` - test mode store limit
+- `VALIDATION.*` - coordinate and ZIP validation bounds
+
+See `src/shared/constants.py` for complete list. Backward-compatible aliases exist in `utils.py` for legacy code.
 
 ### Dual Delay Profiles
 
@@ -226,6 +236,37 @@ Proxy modes in `config/retailers.yaml`:
 - `direct` - no proxy (default, 2-5s delays)
 - `residential` - rotating residential IPs (0.2-0.5s delays, 9.6x faster)
 - `web_scraper_api` - managed service with JS rendering
+
+### 1Password for GitHub Actions
+
+GitHub Actions can securely access secrets from 1Password using a service account.
+
+**Setup:**
+1. Create 1Password Service Account with vault access
+2. Store token as GitHub Secret: `OP_SERVICE_ACCOUNT_TOKEN`  <!-- pragma: allowlist secret -->
+3. Use `1password/load-secrets-action@v2` in workflows
+
+**Usage in workflows:**
+```yaml
+- name: Load secrets from 1Password
+  uses: 1password/load-secrets-action@v2
+  with:
+    export-env: true
+  env:
+    OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+    OXYLABS_RESIDENTIAL_USERNAME: op://DEV/OXYLABS_RESIDENTIAL/username
+    OXYLABS_RESIDENTIAL_PASSWORD: op://DEV/OXYLABS_RESIDENTIAL/credential
+```
+
+See [docs/1password-github-actions.md](docs/1password-github-actions.md) for full documentation.
+
+### Claude Code Action (PR Reviews)
+
+The `claude-code-action` workflow uses Anthropic API keys loaded from 1Password:
+- **Use `anthropic_api_key`** - OAuth tokens (`claude setup-token`) have validation issues in CI
+- **Debug with `show_full_output: true`** - reveals actual error messages instead of generic failures
+- **Trigger CI reruns**: `gh pr update-branch <number>` or `gh run rerun <run-id>`
+- **Required permissions**: `pull-requests: write` for posting review comments
 
 ### Cloud Storage (GCS)
 
@@ -352,3 +393,103 @@ For configuration/setup tasks (MCP, credentials, integrations), always verify th
 ## Code Review
 
 When doing code reviews, create a structured review checklist and document findings in a markdown file before discussing with user.
+
+## Code Style
+
+### Docstrings (Google Style)
+
+All functions and methods should use Google-style docstrings:
+
+```python
+def function_name(arg1: str, arg2: int = 10) -> bool:
+    """Short one-line description.
+
+    Args:
+        arg1: Description of the first argument
+        arg2: Description with default value noted
+
+    Returns:
+        Description of return value.
+
+    Raises:
+        ValueError: When input validation fails
+    """
+```
+
+**Verification:**
+```bash
+# Check docstring compliance
+pydocstyle --convention=google --add-ignore=D100,D104 src/shared/
+
+# Common ignores:
+# D100 - Missing module docstring
+# D104 - Missing package docstring
+```
+
+**Google style sections:**
+- `Args:` - Function parameters
+- `Returns:` - Return value description
+- `Raises:` - Exceptions that may be raised
+- `Yields:` - For generator functions
+- `Examples:` - Usage examples (optional)
+- `Note:` - Important notes (optional)
+
+## Security Review Checklist
+
+When reviewing code or implementing features, verify the following:
+
+### Dependencies
+- [ ] No new dependencies with known CVEs (`safety check`)
+- [ ] Dependencies pinned to specific versions in requirements.txt
+- [ ] Major version bumps reviewed for breaking changes
+- [ ] Security-critical packages (aiohttp, requests, cryptography) at latest versions
+
+### Imports
+- [ ] No `xml.etree` - use `defusedxml` for XML parsing
+- [ ] No `pickle` or `marshal` - use `json` for serialization
+- [ ] No `eval()` or `exec()` anywhere in production code
+- [ ] No `os.system()` - use `subprocess.run()` with `shell=False`
+
+### Secrets
+- [ ] No hardcoded API keys, passwords, or tokens
+- [ ] Secrets loaded from environment variables only
+- [ ] `.env.example` updated when adding new secrets
+- [ ] Test files use mock/fake credentials (not real ones)
+
+### Data Handling
+- [ ] User/external input validated before use
+- [ ] URLs validated before making requests
+- [ ] File paths sanitized (no path traversal via `../`)
+- [ ] JSON/XML from external sources parsed safely
+
+### Cryptography
+- [ ] SHA256+ for security-sensitive hashing (not MD5/SHA1)
+- [ ] MD5 only used for non-security purposes (cache keys, checksums)
+- [ ] `secrets.compare_digest()` for constant-time token comparison
+- [ ] No custom cryptography implementations
+
+### Pre-Commit Hooks
+```bash
+# Install hooks (one-time setup)
+pip install pre-commit
+pre-commit install
+
+# Run all hooks manually
+pre-commit run --all-files
+
+# Run specific hook
+pre-commit run bandit --all-files
+pre-commit run detect-secrets --all-files
+```
+
+## 1Password / Credentials
+
+When working with 1Password CLI or service account tokens, remember that environment variables may not inherit properly in subprocesses, GUI apps, or LaunchAgents. Check `OP_SERVICE_ACCOUNT_TOKEN` availability in the execution context first.
+
+## Debugging Tips
+
+For MCP server configuration issues, check both the server's environment variable access AND how the parent process (Claude, terminal, LaunchAgent) passes those variables.
+
+## Development Workflow
+
+When implementing large features from a design plan, create all modules systematically with tests before moving to integration. Use the TUI scraping researcher project as a reference pattern.

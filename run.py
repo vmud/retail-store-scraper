@@ -34,10 +34,58 @@ from src.shared.utils import (
     close_all_proxy_clients
 )
 from src.shared import init_proxy_from_yaml, get_proxy_client
+from src.shared.sentry_integration import (
+    init_sentry,
+    capture_scraper_error,
+    set_retailer_context,
+    add_breadcrumb,
+    flush as sentry_flush,
+)
+from src.shared.constants import WORKERS
 from src.shared.export_service import ExportService, ExportFormat, parse_format_list
 from src.shared.cloud_storage import get_cloud_storage
 from src.scrapers import get_available_retailers, get_enabled_retailers, get_scraper_module
 from src.change_detector import ChangeDetector
+
+
+# Valid US state abbreviations (50 states + DC) for CLI validation (#173)
+VALID_STATE_ABBREVS = frozenset({
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL',
+    'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME',
+    'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH',
+    'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI',
+    'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
+})
+
+
+def validate_states(states_str: str) -> Optional[List[str]]:
+    """Validate and parse comma-separated state abbreviations (#173).
+
+    Args:
+        states_str: Comma-separated state abbreviations (e.g., "MD,PA,RI")
+
+    Returns:
+        List of uppercase state abbreviations, or None if empty
+
+    Raises:
+        argparse.ArgumentTypeError: If any state abbreviation is invalid
+    """
+    if not states_str:
+        return None
+
+    states = [s.strip().upper() for s in states_str.split(',') if s.strip()]
+
+    if not states:
+        return None
+
+    invalid = [s for s in states if s not in VALID_STATE_ABBREVS]
+    if invalid:
+        raise argparse.ArgumentTypeError(
+            f"Invalid state abbreviation(s): {', '.join(invalid)}. "
+            f"Use standard 2-letter US state codes (e.g., MD, PA, RI, DC)."
+        )
+
+    return states
 
 
 def validate_config_on_startup(config_path: str = "config/retailers.yaml") -> List[str]:
@@ -175,8 +223,9 @@ def setup_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--states',
-        type=str,
+        type=validate_states,
         default=None,
+        metavar='STATES',
         help='Comma-separated list of state abbreviations to scrape (Verizon only). '
              'Example: --states MD,PA,RI. Runs targeted discovery for specified states '
              'and merges results with existing data.'
@@ -344,7 +393,7 @@ def show_status(retailers: Optional[List[str]] = None) -> None:
 
 
 # Thread pool executor for running synchronous scrapers without blocking the event loop
-_scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=6, thread_name_prefix='scraper')
+_scraper_executor = concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS.EXECUTOR_MAX_WORKERS, thread_name_prefix='scraper')
 
 
 def _run_scraper_sync(retailer: str, retailer_config: dict, session, scraper_module, **kwargs) -> dict:
@@ -379,6 +428,10 @@ async def run_retailer_async(
         **kwargs: Additional arguments (resume, incremental, limit, etc.)
     """
     logging.info(f"[{retailer}] Starting scraper")
+
+    # Set Sentry context for this retailer
+    set_retailer_context(retailer)
+    add_breadcrumb(f"Starting scraper for {retailer}", category="scraper")
 
     # Default to JSON and CSV if no formats specified
     if export_formats is None:
@@ -510,6 +563,8 @@ async def run_retailer_async(
 
     except Exception as e:
         logging.error(f"[{retailer}] Error running scraper: {e}", exc_info=True)
+        # Report to Sentry with retailer context
+        capture_scraper_error(e, retailer=retailer)
         return {
             'retailer': retailer,
             'status': 'error',
@@ -656,6 +711,11 @@ def main():
     log_level = logging.DEBUG if args.verbose else logging.INFO
     setup_logging(args.log_file)
     logging.getLogger().setLevel(log_level)
+
+    # Initialize Sentry for error monitoring (if configured)
+    sentry_enabled = init_sentry()
+    if sentry_enabled:
+        logging.debug("Sentry error monitoring enabled")
 
     # Handle status command
     if args.status:
@@ -812,8 +872,8 @@ def main():
     try:
         # Get refresh_urls flag (convert hyphen to underscore for attribute access)
         refresh_urls = getattr(args, 'refresh_urls', False)
-        # Parse states list if provided
-        target_states = [s.strip().upper() for s in args.states.split(',') if s.strip()] if args.states else None
+        # States are already validated and parsed by validate_states() (#173)
+        target_states = args.states
 
         if len(retailers) == 1:
             # Single retailer - run directly
@@ -868,12 +928,15 @@ def main():
         return 130
     except Exception as e:
         logging.error(f"Scraping failed: {e}")
+        capture_scraper_error(e, retailer="main")
         return 1
     finally:
         # Cleanup all proxy clients
         close_all_proxy_clients()
         # Shutdown thread pool executor
         _scraper_executor.shutdown(wait=False)
+        # Flush pending Sentry events before exit
+        sentry_flush(timeout=2.0)
 
 
 if __name__ == '__main__':
