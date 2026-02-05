@@ -73,6 +73,16 @@ from .concurrency import (
     ConcurrencyConfig,
 )
 
+from .sentry_integration import (
+    init_sentry,
+    capture_scraper_error,
+    capture_message,
+    set_retailer_context,
+    add_breadcrumb,
+    start_transaction,
+    flush as sentry_flush,
+)
+
 __all__ = [
     # Core utilities
     'setup_logging',
@@ -130,4 +140,12 @@ __all__ = [
     # Concurrency management
     'GlobalConcurrencyManager',
     'ConcurrencyConfig',
+    # Sentry integration
+    'init_sentry',
+    'capture_scraper_error',
+    'capture_message',
+    'set_retailer_context',
+    'add_breadcrumb',
+    'start_transaction',
+    'sentry_flush',
 ]
