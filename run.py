@@ -448,6 +448,10 @@ async def run_retailer_async(
     """
     logging.info(f"[{retailer}] Starting scraper")
 
+    # Set Sentry context for this retailer
+    set_retailer_context(retailer)
+    add_breadcrumb(f"Starting scraper for {retailer}", category="scraper")
+
     # Default to JSON and CSV if no formats specified
     if export_formats is None:
         export_formats = [ExportFormat.JSON, ExportFormat.CSV]
@@ -578,6 +582,8 @@ async def run_retailer_async(
 
     except Exception as e:
         logging.error(f"[{retailer}] Error running scraper: {e}", exc_info=True)
+        # Report to Sentry with retailer context
+        capture_scraper_error(e, retailer=retailer)
         return {
             'retailer': retailer,
             'status': 'error',
@@ -1050,6 +1056,7 @@ def main() -> int:
         return 130
     except Exception as e:
         logging.error(f"Scraping failed: {e}")
+        capture_scraper_error(e, retailer="main")
         return 1
     finally:
         # Cleanup all proxy clients
