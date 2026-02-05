@@ -12,8 +12,16 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 __all__ = [
+    'DEFAULT_CSV_FIELDNAMES',
     'save_to_csv',
     'save_to_json',
+]
+
+# Default fieldnames for backwards compatibility with original save_to_csv
+# These are the original 11 fields used when no fieldnames were provided
+DEFAULT_CSV_FIELDNAMES = [
+    'name', 'street_address', 'city', 'state', 'zip',
+    'country', 'latitude', 'longitude', 'phone', 'url', 'scraped_at'
 ]
 
 
@@ -45,8 +53,10 @@ def save_to_csv(stores: List[Dict[str, Any]], filepath: str, fieldnames: List[st
     path.parent.mkdir(parents=True, exist_ok=True)
 
     # Route through ExportService to avoid duplication (#206)
-    # Build retailer_config with output_fields if fieldnames provided
-    retailer_config = {'output_fields': fieldnames} if fieldnames else None
+    # Use provided fieldnames or fall back to default for backwards compatibility
+    # Original save_to_csv used a fixed list of 11 fields when none provided
+    fields = fieldnames if fieldnames else DEFAULT_CSV_FIELDNAMES
+    retailer_config = {'output_fields': fields}
     ExportService.export_stores(stores, ExportFormat.CSV, str(path), retailer_config)
 
 
