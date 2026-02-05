@@ -103,25 +103,28 @@ def get_with_retry(
             # Pass headers per-request instead of mutating session.headers (#206)
             response = session.get(url, headers=headers, timeout=timeout)
 
+            # Redact credentials from URL for safe logging (prevents leaking proxy credentials)
+            safe_url = redact_credentials(url)
+
             # Check if response is valid before accessing attributes
             if response is None:
-                logging.warning(f"Received None response for {url}")
+                logging.warning(f"Received None response for {safe_url}")
                 continue
 
             if response.status_code == 200:
-                logging.debug(f"Successfully fetched {url}")
+                logging.debug(f"Successfully fetched {safe_url}")
                 return response
 
             if response.status_code == 429:  # Rate limited
                 wait_time = (2 ** attempt) * rate_limit_base_wait
-                logging.warning(f"Rate limited (429) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+                logging.warning(f"Rate limited (429) for {safe_url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
 
             elif response.status_code == 403:  # Blocked
                 # Use exponential backoff starting at 30s (#144)
                 wait_time = (2 ** attempt) * rate_limit_base_wait
                 logging.warning(
-                    f"Blocked (403) for {url}. "
+                    f"Blocked (403) for {safe_url}. "
                     f"Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})"
                 )
                 time.sleep(wait_time)
@@ -129,33 +132,35 @@ def get_with_retry(
 
             elif response.status_code >= 500:  # Server error
                 wait_time = HTTP.SERVER_ERROR_WAIT
-                logging.warning(f"Server error ({response.status_code}) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+                logging.warning(f"Server error ({response.status_code}) for {safe_url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
 
             elif response.status_code == 408:  # Request timeout - might succeed on retry
                 wait_time = HTTP.SERVER_ERROR_WAIT
-                logging.warning(f"Request timeout (408) for {url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+                logging.warning(f"Request timeout (408) for {safe_url}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
                 time.sleep(wait_time)
 
             elif 400 <= response.status_code < 500:  # Client errors (4xx) - fail fast except 403/429/408
                 # 404, 401, 410, etc. won't succeed on retry
-                logging.error(f"Client error ({response.status_code}) for {url}. Failing immediately.")
+                logging.error(f"Client error ({response.status_code}) for {safe_url}. Failing immediately.")
                 return None
 
             else:
                 # 3xx redirects should be handled by requests library, but log unexpected codes
-                logging.warning(f"Unexpected HTTP {response.status_code} for {url}")
+                logging.warning(f"Unexpected HTTP {response.status_code} for {safe_url}")
                 return None
 
         except requests.exceptions.RequestException as e:
             response = None  # Ensure response is None after exception
             wait_time = HTTP.SERVER_ERROR_WAIT
-            # Redact credentials from error messages to prevent leaking sensitive info
+            # Redact credentials from error messages and URLs to prevent leaking sensitive info
+            safe_url = redact_credentials(url)
             safe_error = redact_credentials(str(e))
-            logging.warning(f"Request error for {url}: {safe_error}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+            logging.warning(f"Request error for {safe_url}: {safe_error}. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})...")
             time.sleep(wait_time)
 
     # Log final failure with context (#144)
+    safe_url = redact_credentials(url)
     final_status = response.status_code if response else 'no response'
-    logging.error(f"Failed to fetch {url} after {max_retries} attempts (last status: {final_status})")
+    logging.error(f"Failed to fetch {safe_url} after {max_retries} attempts (last status: {final_status})")
     return None
