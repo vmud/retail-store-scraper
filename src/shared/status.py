@@ -4,11 +4,14 @@ import csv
 import json
 import yaml
 import time
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
 from src.shared.constants import STATUS
+
+logger = logging.getLogger(__name__)
 
 
 __all__ = [
@@ -35,7 +38,8 @@ def load_retailers_config() -> Dict[str, Any]:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         return config.get('retailers', {})
-    except Exception:
+    except (FileNotFoundError, yaml.YAMLError, AttributeError) as e:
+        logger.warning(f"Failed to load retailers config from {CONFIG_PATH}: {e}")
         return {}
 
 

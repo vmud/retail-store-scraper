@@ -336,6 +336,8 @@ retailers:
     name: "Best Buy"
     enabled: true
     base_url: "https://www.bestbuy.com"
+    # Health check uses sitemap URL (no bot protection) instead of base_url (Akamai-protected)
+    health_check_url: "https://stores.bestbuy.com/sitemap1.xml"
     sitemap_urls:
       - "https://stores.bestbuy.com/sitemap1.xml"
     discovery_method: "sitemap"
@@ -560,6 +562,8 @@ retailers:
     name: "Costco"
     enabled: true
     base_url: "https://www.costco.com"
+    # Health check uses robots.txt (no bot protection) instead of base_url (Akamai-protected)
+    health_check_url: "https://www.costco.com/robots.txt"
     # Costco uses Akamai bot protection - requires Web Scraper API with JS rendering
     sitemap_urls: []
     discovery_method: "page_scrape"
