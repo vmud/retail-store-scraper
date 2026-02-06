@@ -66,18 +66,6 @@ LOCATOR_SEARCH_RADIUS = 200
 # Feature and Service Mappings
 # ===========================================================================
 
-FEATURE_CODES = {
-    "PPS": "Passport Photo Services",
-    "ISP": "Buy Online Pickup In Store",
-    "TS": "Technology Services",
-    "F1": "Computer Workstation",
-    "STS": "Ship to Store",
-    "CPC": "Print & Marketing Services",
-    "UPS": "UPS Prepaid Drop-off",
-    "MPR": "Mobile Printing",
-    "FSU": "Full-service UPS Shipping",
-}
-
 # ===========================================================================
 # User Agents
 # ===========================================================================
@@ -167,8 +155,4 @@ def build_services_url(store_number: str) -> str:
 # Rate Limiting
 # ===========================================================================
 
-MIN_DELAY = 0.3
-MAX_DELAY = 0.5
-MAX_RETRIES = 3
 TIMEOUT = 60  # Higher timeout for Web Scraper API
-RATE_LIMIT_BASE_WAIT = 30

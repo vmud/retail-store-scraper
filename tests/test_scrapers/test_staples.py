@@ -21,7 +21,6 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from src.scrapers.staples import (
-    DAYS_OF_WEEK,
     StaplesStore,
     _enrich_services,
     _format_features,
