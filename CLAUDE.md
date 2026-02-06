@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, Telus, Cricket, Bell, Home Depot, Staples, Apple, Costco, Sam's Club, and Lowe's. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
+Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, Telus, Cricket, Bell, Home Depot, Staples, Apple, Costco, Sam's Club, Lowe's, and GameStop. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
 
 ## Environment Setup
 
@@ -138,7 +138,8 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   ├── homedepot.py            # GraphQL Federation Gateway API
 │   ├── staples.py              # StaplesConnect API + store locator gap-fill (US)
 │   ├── apple.py                # Next.js SSR + detail page enrichment
-│   └── lowes.py                # State directory + embedded Redux JSON (~1,761 US)
+│   ├── lowes.py                # State directory + embedded Redux JSON (~1,761 US)
+│   └── gamestop.py             # SFCC grid search + JSON-LD enrichment (~4,000+ US)
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
 │   ├── constants.py            # Centralized magic numbers (HTTP, CACHE, PAUSE, WORKERS, etc.) (#171)
@@ -393,7 +394,8 @@ tests/
 │   ├── test_bell.py
 │   ├── test_homedepot.py
 │   ├── test_apple.py
-│   └── test_lowes.py
+│   ├── test_lowes.py
+│   └── test_gamestop.py
 ├── test_setup/              # Setup module tests
 │   ├── test_probe.py        # Environment probing tests
 │   ├── test_fix.py          # Auto-fix function tests

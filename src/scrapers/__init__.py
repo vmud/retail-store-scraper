@@ -26,6 +26,7 @@ SCRAPER_REGISTRY: Dict[str, str] = {
     'homedepot': 'src.scrapers.homedepot',
     'staples': 'src.scrapers.staples',
     'lowes': 'src.scrapers.lowes',
+    'gamestop': 'src.scrapers.gamestop',
 }
 
 

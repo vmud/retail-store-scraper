@@ -27,6 +27,7 @@ concurrency:
     homedepot: 5    # GraphQL API, moderate parallelism
     staples: 5      # API-based store number scan
     lowes: 3        # PerimeterX, moderate concurrency
+    gamestop: 3     # Cloudflare, moderate concurrency
 
   # Proxy rate limiting (requests per second)
   # Applies when using residential or web_scraper_api modes
@@ -977,4 +978,63 @@ retailers:
       - corp_number
       - area_number
       - region_number
+      - scraped_at
+
+  gamestop:
+    name: "GameStop"
+    enabled: true
+    base_url: "https://www.gamestop.com"
+    # GameStop uses SFCC Stores-FindStores API with geographic grid discovery
+    sitemap_urls: []
+    discovery_method: "geo_grid"
+
+    # Dual delay profiles (Cloudflare protection requires conservative direct delays)
+    delays:
+      direct:
+        min_delay: 1.5
+        max_delay: 3.0
+      proxied:
+        min_delay: 0.3
+        max_delay: 0.7
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 50
+
+    # Sequential enrichment (Cloudflare rate-limits aggressive requests)
+    parallel_workers: 1
+
+    # Disable long pauses when using proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Residential proxy for Cloudflare bypass
+    proxy:
+      mode: "residential"
+      render_js: false
+
+    output_fields:
+      - store_id
+      - name
+      - street_address
+      - address2
+      - city
+      - state
+      - zip_code
+      - country
+      - latitude
+      - longitude
+      - phone
+      - store_mode
+      - hours
+      - midday_closure
+      - description
+      - knows_about
+      - payment_accepted
+      - currencies_accepted
+      - image_url
+      - url
       - scraped_at
