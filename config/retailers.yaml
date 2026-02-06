@@ -24,6 +24,7 @@ concurrency:
     telus: 3        # Single API call, minimal
     costco: 3       # Akamai protection, conservative
     samsclub: 3     # Hybrid mode
+    lowes: 3        # PerimeterX, moderate concurrency
 
   # Proxy rate limiting (requests per second)
   # Applies when using residential or web_scraper_api modes
@@ -714,4 +715,65 @@ retailers:
       - plus_hours_mon_fri
       - plus_hours_saturday
       - plus_hours_sunday
+      - scraped_at
+
+  lowes:
+    name: "Lowe's"
+    enabled: true
+    base_url: "https://www.lowes.com"
+    # Lowe's uses state directory + store detail pages (no sitemap for stores)
+    sitemap_urls: []
+    discovery_method: "html_crawl"
+
+    # Dual delay profiles (PerimeterX bot protection requires conservative direct delays)
+    delays:
+      direct:
+        min_delay: 1.5
+        max_delay: 3.0
+      proxied:
+        min_delay: 0.3
+        max_delay: 0.7
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 50
+
+    # Parallel workers (keep moderate due to PerimeterX)
+    parallel_workers: 3
+
+    # Disable long pauses when using proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Residential proxy for PerimeterX bypass
+    proxy:
+      mode: "residential"
+      render_js: false
+
+    output_fields:
+      - store_id
+      - name
+      - street_address
+      - city
+      - state
+      - state_full_name
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - fax
+      - timezone
+      - store_type
+      - store_status
+      - open_date
+      - features
+      - hours
+      - url
+      - corp_number
+      - area_number
+      - region_number
       - scraped_at
