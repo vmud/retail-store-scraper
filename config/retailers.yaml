@@ -588,6 +588,60 @@ retailers:
       - url
       - scraped_at
 
+  apple:
+    name: "Apple"
+    enabled: true
+    base_url: "https://www.apple.com/retail"
+    # Apple uses Next.js SSR storelist endpoint + detail page enrichment
+    sitemap_urls:
+      - "https://www.apple.com/retail/sitemap/sitemap.xml"
+    discovery_method: "api"
+
+    # Dual delay profiles (minimal bot protection)
+    delays:
+      direct:
+        min_delay: 1.0
+        max_delay: 2.0
+      proxied:
+        min_delay: 0.3
+        max_delay: 0.5
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 25
+
+    # Sequential enrichment (conservative approach)
+    parallel_workers: 1
+
+    # Direct mode - no bot protection observed
+    proxy:
+      mode: "direct"
+      render_js: false
+
+    output_fields:
+      - store_id
+      - name
+      - slug
+      - street_address
+      - address2
+      - city
+      - state
+      - state_name
+      - zip_code
+      - country
+      - phone
+      - email
+      - latitude
+      - longitude
+      - timezone
+      - hours
+      - current_status
+      - services
+      - operating_model
+      - hero_image_url
+      - programs
+      - url
+      - scraped_at
+
   costco:
     name: "Costco"
     enabled: true
