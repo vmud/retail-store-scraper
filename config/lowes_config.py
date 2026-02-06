@@ -44,9 +44,6 @@ STORE_LINK_PATTERN = r'href="/store/[^"]*/(\d+)"'
 # Embedded store IDs in state directory JSON data
 EMBEDDED_STORE_ID_PATTERN = r'"id"\s*:\s*"(\d+)"'
 
-# Store names in embedded data
-STORE_NAME_PATTERN = r'"storeName"\s*:\s*"([^"]+)"'
-
 # Marker for finding embedded JSON in store detail pages
 # Uses '"_id":' (without trailing quote) to match both minified and
 # pretty-printed JSON: '"_id":"abc"' and '"_id": "abc"'
@@ -87,15 +84,3 @@ def build_store_detail_url(store_id: str) -> str:
         Full URL for the store detail page.
     """
     return STORE_DETAIL_URL_TEMPLATE.format(store_id=store_id)
-
-
-# Rate limiting (conservative for HTML scraping with PerimeterX)
-MIN_DELAY = 1.0
-MAX_DELAY = 2.0
-
-# Retry settings
-MAX_RETRIES = 3
-TIMEOUT = 30
-
-# Rate limit handling
-RATE_LIMIT_BASE_WAIT = 30

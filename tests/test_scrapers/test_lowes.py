@@ -242,10 +242,9 @@ class TestExtractJsonFromHtml:
         """Test returns None when JSON is malformed."""
         html = 'prefix {"_id":"abc", broken json here} suffix'
         result = _extract_json_from_html(html)
-        # The brace matching will find something, but json.loads should fail
-        # or return a partial object. Either None or a partial result is acceptable.
-        # The key is it doesn't raise an exception.
-        assert result is None or isinstance(result, dict)
+        # The brace matching will find a string, but json.loads will fail.
+        # The function should catch the JSONDecodeError and return None.
+        assert result is None
 
     def test_nested_braces(self):
         """Test extraction handles nested JSON objects correctly."""
@@ -567,8 +566,10 @@ class TestGetAllStoreIds:
 
     @patch("src.scrapers.lowes.get_store_ids_from_state")
     @patch("src.scrapers.lowes.utils.random_delay")
-    def test_aggregates_across_states(self, mock_delay, mock_get_state):
+    @patch("src.scrapers.lowes.utils.select_delays")
+    def test_aggregates_across_states(self, mock_select, mock_delay, mock_get_state):
         """Test aggregation of store IDs across multiple states."""
+        mock_select.return_value = (1.0, 2.0)
         mock_get_state.side_effect = [
             ["1001", "1002"],
             ["1003", "1004"],
@@ -585,8 +586,10 @@ class TestGetAllStoreIds:
 
     @patch("src.scrapers.lowes.get_store_ids_from_state")
     @patch("src.scrapers.lowes.utils.random_delay")
-    def test_deduplicates_across_states(self, mock_delay, mock_get_state):
+    @patch("src.scrapers.lowes.utils.select_delays")
+    def test_deduplicates_across_states(self, mock_select, mock_delay, mock_get_state):
         """Test deduplication when same store appears in multiple states."""
+        mock_select.return_value = (1.0, 2.0)
         mock_get_state.side_effect = [
             ["1001", "1002"],
             ["1002", "1003"],  # 1002 is a duplicate
@@ -602,8 +605,10 @@ class TestGetAllStoreIds:
 
     @patch("src.scrapers.lowes.get_store_ids_from_state")
     @patch("src.scrapers.lowes.utils.random_delay")
-    def test_filters_by_state(self, mock_delay, mock_get_state):
+    @patch("src.scrapers.lowes.utils.select_delays")
+    def test_filters_by_state(self, mock_select, mock_delay, mock_get_state):
         """Test state filter limits discovery to specified states."""
+        mock_select.return_value = (1.0, 2.0)
         mock_get_state.return_value = ["1001"]
         yaml_config = {"proxy": {"mode": "direct"}}
 
@@ -619,8 +624,10 @@ class TestGetAllStoreIds:
 
     @patch("src.scrapers.lowes.get_store_ids_from_state")
     @patch("src.scrapers.lowes.utils.random_delay")
-    def test_returns_sorted_ids(self, mock_delay, mock_get_state):
+    @patch("src.scrapers.lowes.utils.select_delays")
+    def test_returns_sorted_ids(self, mock_select, mock_delay, mock_get_state):
         """Test IDs are returned sorted."""
+        mock_select.return_value = (1.0, 2.0)
         mock_get_state.return_value = ["1003", "1001", "1002"]
         yaml_config = {"proxy": {"mode": "direct"}}
 
@@ -924,7 +931,6 @@ class TestLowesConfig:
         import re
         re.compile(lowes_config.STORE_LINK_PATTERN)
         re.compile(lowes_config.EMBEDDED_STORE_ID_PATTERN)
-        re.compile(lowes_config.STORE_NAME_PATTERN)
 
     def test_store_link_pattern_matches(self):
         """Test store link regex matches expected format."""

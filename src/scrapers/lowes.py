@@ -274,8 +274,10 @@ def get_all_store_ids(
     """
     all_ids: Set[str] = set()
     proxy_mode = 'direct'
+    min_delay, max_delay = None, None
     if yaml_config:
         proxy_mode = yaml_config.get('proxy', {}).get('mode', 'direct')
+        min_delay, max_delay = utils.select_delays(yaml_config, proxy_mode)
 
     states_to_process = config.STATES
     if states:
@@ -299,7 +301,7 @@ def get_all_store_ids(
 
         # Respect rate limiting between state pages
         if yaml_config:
-            utils.random_delay(yaml_config, proxy_mode)
+            utils.random_delay(min_delay, max_delay)
 
     logging.info(f"[{retailer}] Phase 1 complete: {len(all_ids)} unique store IDs discovered")
     return sorted(all_ids)
@@ -448,6 +450,14 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
         failed_ids: List[str] = []
 
+        def _build_checkpoint_data() -> dict:
+            return {
+                'completed_count': len(stores),
+                'completed_ids': list(completed_ids),
+                'stores': stores,
+                'last_updated': datetime.now().isoformat(),
+            }
+
         for i, store_id in enumerate(remaining_ids, 1):
             store_obj = extract_store_details(
                 session, store_id, retailer_name, yaml_config
@@ -465,16 +475,11 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
             # Checkpoint at intervals
             if i % checkpoint_interval == 0:
-                utils.save_checkpoint({
-                    'completed_count': len(stores),
-                    'completed_ids': list(completed_ids),
-                    'stores': stores,
-                    'last_updated': datetime.now().isoformat(),
-                }, checkpoint_path)
+                utils.save_checkpoint(_build_checkpoint_data(), checkpoint_path)
                 logging.info(f"[{retailer_name}] Checkpoint saved: {len(stores)} stores")
 
             # Respect rate limiting
-            utils.random_delay(yaml_config, proxy_mode)
+            utils.random_delay(min_delay, max_delay)
 
         # Log failed extractions
         if failed_ids:
@@ -486,12 +491,7 @@ def run(session, yaml_config: dict, **kwargs) -> dict:
 
         # Final checkpoint
         if stores:
-            utils.save_checkpoint({
-                'completed_count': len(stores),
-                'completed_ids': list(completed_ids),
-                'stores': stores,
-                'last_updated': datetime.now().isoformat(),
-            }, checkpoint_path)
+            utils.save_checkpoint(_build_checkpoint_data(), checkpoint_path)
 
         # Validate store data
         validation_summary = utils.validate_stores_batch(stores)
