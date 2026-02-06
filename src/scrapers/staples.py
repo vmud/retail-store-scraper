@@ -32,6 +32,7 @@ import requests as req_lib
 
 from config import staples_config as config
 from src.shared import utils
+from src.shared.concurrency import GlobalConcurrencyManager
 from src.shared.proxy_client import ProxyClient, ProxyConfig, ProxyMode
 
 logger = logging.getLogger(__name__)
@@ -407,12 +408,16 @@ def _merge_store_data(
     Fields unique to secondary (features, google_place_id) are added
     to the primary store if missing.
 
+    Warning:
+        Mutates ``primary`` in-place and returns the same reference.
+        Callers should treat the returned object as the merged result.
+
     Args:
-        primary: Main store data (typically from StaplesConnect).
+        primary: Main store data (typically from StaplesConnect).  Modified in-place.
         secondary: Supplemental data (typically from store locator).
 
     Returns:
-        Merged StaplesStore with combined data.
+        The same ``primary`` instance, enriched with secondary data.
     """
     # Enrich primary with fields only secondary has
     if not primary.features and secondary.features:
@@ -503,6 +508,9 @@ def _scan_worker(
 ) -> Tuple[str, Optional[StaplesStore]]:
     """Worker function for parallel store number scanning.
 
+    Acquires a GlobalConcurrencyManager slot to coordinate with other
+    scrapers when running ``--all``.
+
     Args:
         store_number: Store number to scan.
         proxy_client: ProxyClient instance (thread-safe for Web Scraper API).
@@ -510,7 +518,9 @@ def _scan_worker(
     Returns:
         Tuple of (store_number, StaplesStore or None).
     """
-    data = _fetch_store_detail(store_number, proxy_client)
+    manager = GlobalConcurrencyManager()
+    with manager.acquire_slot("staples"):
+        data = _fetch_store_detail(store_number, proxy_client)
     if data is None:
         return store_number, None
 
@@ -537,6 +547,7 @@ def _scan_store_numbers(
     resume: bool = False,
     limit: int = 0,
     test: bool = False,
+    retailer: str = "staples",
 ) -> Tuple[Dict[str, StaplesStore], bool]:
     """Phase 1: Scan store numbers via StaplesConnect API.
 
@@ -546,6 +557,7 @@ def _scan_store_numbers(
         resume: Whether to resume from checkpoint.
         limit: Maximum stores to collect (0 = unlimited).
         test: If True, scan only first 20 store numbers.
+        retailer: Retailer name for checkpoint path derivation.
 
     Returns:
         Tuple of (stores dict keyed by store_number, checkpoints_used bool).
@@ -559,8 +571,8 @@ def _scan_store_numbers(
     if test:
         all_numbers = all_numbers[:20]
 
-    # Checkpoint support
-    checkpoint_dir = Path("data/staples/checkpoints")
+    # Checkpoint support — path derived from retailer name
+    checkpoint_dir = Path(f"data/{retailer}/checkpoints")
     checkpoint_path = checkpoint_dir / "scan_checkpoint.json"
     scanned_numbers: Set[str] = set()
 
@@ -666,6 +678,10 @@ def _zip_code_gap_fill(
 
     logger.info("Phase 2: Sweeping %d ZIP codes for gap-fill", len(zip_codes))
 
+    # Sequential by design: the store locator API is session-dependent and
+    # rate-limited; parallel requests risk 429s and IP bans.  With ~60 ZIPs
+    # at 1-2s each, wall time is ~2 min — acceptable given Phase 1 already
+    # captures the majority of stores.
     for i, zip_code in enumerate(zip_codes, 1):
         stores = _search_stores_by_zip(proxy_client, zip_code)
         for store in stores:
@@ -792,9 +808,16 @@ def _enrich_services(
     logger.info("Phase 3: Enriching %d stores with service data", len(store_ids))
 
     enriched = 0
+    manager = GlobalConcurrencyManager()
+
+    def _enrichment_worker(store_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Fetch services within a concurrency slot."""
+        with manager.acquire_slot("staples"):
+            return _fetch_store_services(store_id, proxy_client)
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_fetch_store_services, sid, proxy_client): sid
+            executor.submit(_enrichment_worker, sid): sid
             for sid in store_ids
         }
 
@@ -824,8 +847,15 @@ def run(
       2. ZIP code gap-fill via store locator
       3. Service enrichment
 
+    Note:
+        The ``session`` parameter is accepted for interface compliance but
+        not used.  Staples requires a custom ProxyClient (built from
+        ``retailer_config``) because the StaplesConnect API and store
+        locator need distinct auth / header configurations that differ from
+        the shared session setup.
+
     Args:
-        session: Requests session (may be proxied).
+        session: Requests session (unused — see Note above).
         retailer_config: YAML config dict for staples.
         retailer: Retailer name string.
         **kwargs: Additional options:
@@ -857,6 +887,7 @@ def run(
         resume=resume,
         limit=limit,
         test=test,
+        retailer=retailer,
     )
 
     # Phase 2: ZIP code gap-fill (skip if we hit the limit already)
