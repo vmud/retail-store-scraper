@@ -87,6 +87,49 @@ class StaplesStore:
     google_place_id: str = ""
     scraped_at: str = ""
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, str]) -> "StaplesStore":
+        """Create a StaplesStore from a dictionary (e.g., checkpoint restore).
+
+        Args:
+            data: Dictionary with store fields.
+
+        Returns:
+            StaplesStore instance populated from the dict.
+        """
+        return cls(
+            store_id=data.get("store_id", ""),
+            name=data.get("name", ""),
+            street_address=data.get("street_address", ""),
+            address_line2=data.get("address_line2", ""),
+            city=data.get("city", ""),
+            state=data.get("state", ""),
+            zip=data.get("zip", ""),
+            country=data.get("country", "US"),
+            latitude=data.get("latitude", ""),
+            longitude=data.get("longitude", ""),
+            phone=data.get("phone", ""),
+            fax=data.get("fax", ""),
+            timezone=data.get("timezone", ""),
+            store_url=data.get("url", ""),
+            plaza_mall=data.get("plaza_mall", ""),
+            store_region=data.get("store_region", ""),
+            store_district=data.get("store_district", ""),
+            store_division=data.get("store_division", ""),
+            published_status=data.get("published_status", ""),
+            hours_monday=data.get("hours_monday", ""),
+            hours_tuesday=data.get("hours_tuesday", ""),
+            hours_wednesday=data.get("hours_wednesday", ""),
+            hours_thursday=data.get("hours_thursday", ""),
+            hours_friday=data.get("hours_friday", ""),
+            hours_saturday=data.get("hours_saturday", ""),
+            hours_sunday=data.get("hours_sunday", ""),
+            features=data.get("features", ""),
+            services=data.get("services", ""),
+            google_place_id=data.get("google_place_id", ""),
+            scraped_at=data.get("scraped_at", ""),
+        )
+
     def to_dict(self) -> Dict[str, str]:
         """Convert store to dictionary for export.
 
@@ -526,8 +569,8 @@ def _scan_store_numbers(
         if checkpoint:
             scanned_numbers = set(checkpoint.get("scanned", []))
             for store_data in checkpoint.get("stores", []):
-                store = _parse_staplesconnect_store(store_data)
-                if store:
+                store = StaplesStore.from_dict(store_data)
+                if store.store_id:
                     stores[store.store_id] = store
             checkpoints_used = True
             logger.info(
@@ -576,8 +619,7 @@ def _scan_store_numbers(
                         checkpoint_data = {
                             "scanned": list(scanned_numbers),
                             "stores": [
-                                {"storeNumber": s.store_id, "name": s.name}
-                                for s in stores.values()
+                                s.to_dict() for s in stores.values()
                             ],
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
@@ -605,15 +647,21 @@ def _zip_code_gap_fill(
 ) -> Dict[str, StaplesStore]:
     """Phase 2: Geographic gap-fill using store locator ZIP code sweep.
 
+    Returns ALL discovered stores (including overlaps with Phase 1) so that
+    the caller can merge locator-exclusive fields (features, google_place_id)
+    into existing stores.
+
     Args:
         proxy_client: Configured ProxyClient.
         known_store_ids: Set of store IDs already found in Phase 1.
         test: If True, only sweep 5 ZIP codes.
 
     Returns:
-        Dict of newly discovered stores keyed by store number.
+        Dict of all discovered stores keyed by store number, including
+        stores that overlap with known_store_ids (for merge enrichment).
     """
-    new_stores: Dict[str, StaplesStore] = {}
+    discovered_stores: Dict[str, StaplesStore] = {}
+    new_count = 0
     zip_codes = config.GAP_FILL_ZIP_CODES[:5] if test else config.GAP_FILL_ZIP_CODES
 
     logger.info("Phase 2: Sweeping %d ZIP codes for gap-fill", len(zip_codes))
@@ -621,15 +669,23 @@ def _zip_code_gap_fill(
     for i, zip_code in enumerate(zip_codes, 1):
         stores = _search_stores_by_zip(proxy_client, zip_code)
         for store in stores:
-            if store.store_id not in known_store_ids and store.store_id not in new_stores:
-                new_stores[store.store_id] = store
-                logger.debug("Gap-fill found new store: %s", store.store_id)
+            if store.store_id not in discovered_stores:
+                discovered_stores[store.store_id] = store
+                if store.store_id not in known_store_ids:
+                    new_count += 1
+                    logger.debug("Gap-fill found new store: %s", store.store_id)
 
         if i % 10 == 0:
-            logger.info("Phase 2 progress: %d/%d ZIPs, %d new stores", i, len(zip_codes), len(new_stores))
+            logger.info(
+                "Phase 2 progress: %d/%d ZIPs, %d discovered (%d new)",
+                i, len(zip_codes), len(discovered_stores), new_count,
+            )
 
-    logger.info("Phase 2 complete: %d new stores found", len(new_stores))
-    return new_stores
+    logger.info(
+        "Phase 2 complete: %d stores discovered (%d new, %d overlap for merge)",
+        len(discovered_stores), new_count, len(discovered_stores) - new_count,
+    )
+    return discovered_stores
 
 
 def _search_stores_by_zip(
@@ -670,15 +726,23 @@ def _search_stores_by_zip(
             ],
         }
 
-        response = req_lib.post(
-            proxy_client.config.scraper_api_endpoint,
-            auth=(proxy_client.config.username, proxy_client.config.password),
-            json=payload,
-            timeout=proxy_client.config.timeout,
-        )
+        try:
+            response = req_lib.post(
+                proxy_client.config.scraper_api_endpoint,
+                auth=(proxy_client.config.username, proxy_client.config.password),
+                json=payload,
+                timeout=proxy_client.config.timeout,
+            )
+        except req_lib.RequestException as e:
+            logger.warning("Web Scraper API request failed for ZIP %s: %s", zip_code, e)
+            return []
 
         if response.status_code == 200:
-            api_data = response.json()
+            try:
+                api_data = response.json()
+            except (json.JSONDecodeError, ValueError):
+                logger.warning("Invalid JSON from Web Scraper API for ZIP %s", zip_code)
+                return []
             content = api_data.get("results", [{}])[0].get("content", "")
             try:
                 store_data = json.loads(content)
@@ -688,7 +752,6 @@ def _search_stores_by_zip(
                 return []
     else:
         # Direct mode: POST directly (may fail without session cookies)
-        import requests as req_lib  # noqa: E402 - conditional import
         try:
             response = req_lib.post(
                 config.STORE_LOCATOR_URL,

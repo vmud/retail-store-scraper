@@ -249,6 +249,69 @@ class TestStaplesStore:
         assert result["url"] == "https://example.com/store/1571"
         assert "store_url" not in result
 
+    def test_from_dict_roundtrip(self):
+        """Test from_dict can reconstruct a store from to_dict output."""
+        original = StaplesStore(
+            store_id="1571",
+            name="Staples Ocean Township",
+            street_address="1100 State Route 35",
+            address_line2="STE A",
+            city="Ocean Township",
+            state="NJ",
+            zip="07712",
+            country="US",
+            latitude="40.2395",
+            longitude="-74.0362",
+            phone="(732) 918-9446",
+            fax="(732) 517-2393",
+            timezone="America/New_York",
+            store_url="https://www.staplesconnect.com/nj/ocean-township/1100-state-route-35",
+            plaza_mall="Plaza at Ocean",
+            store_region="R230",
+            store_district="D155",
+            store_division="Northeast",
+            published_status="ACTIVE",
+            hours_monday="8:00 AM - 9:00 PM",
+            hours_tuesday="8:00 AM - 9:00 PM",
+            services="Print and Marketing Services, Shredding Services",
+            features="Passport Photo",
+            google_place_id="ChIJ...",
+            scraped_at="2026-01-15T12:00:00+00:00",
+        )
+        data = original.to_dict()
+        restored = StaplesStore.from_dict(data)
+
+        assert restored.store_id == original.store_id
+        assert restored.name == original.name
+        assert restored.street_address == original.street_address
+        assert restored.city == original.city
+        assert restored.state == original.state
+        assert restored.zip == original.zip
+        assert restored.latitude == original.latitude
+        assert restored.phone == original.phone
+        assert restored.hours_monday == original.hours_monday
+        assert restored.features == original.features
+        assert restored.google_place_id == original.google_place_id
+        assert restored.plaza_mall == original.plaza_mall
+        assert restored.store_region == original.store_region
+        assert restored.published_status == original.published_status
+        assert restored.store_url == original.store_url
+
+    def test_from_dict_minimal_data(self):
+        """Test from_dict with minimal fields defaults correctly."""
+        data = {"store_id": "0001", "name": "Test"}
+        store = StaplesStore.from_dict(data)
+        assert store.store_id == "0001"
+        assert store.name == "Test"
+        assert store.country == "US"
+        assert store.city == ""
+
+    def test_from_dict_empty_store_id(self):
+        """Test from_dict with missing store_id returns empty string."""
+        data = {"name": "Test"}
+        store = StaplesStore.from_dict(data)
+        assert store.store_id == ""
+
 
 # ===========================================================================
 # TestFormatPhone: Phone number formatting
@@ -720,10 +783,11 @@ class TestZipCodeGapFill:
         assert "9999" in result
 
     @patch("src.scrapers.staples._search_stores_by_zip")
-    def test_skips_known_stores(self, mock_search):
-        """Gap-fill doesn't duplicate stores from Phase 1."""
+    def test_includes_known_stores_for_merge(self, mock_search):
+        """Gap-fill returns known stores so caller can merge locator data."""
         known_store = StaplesStore(
             store_id="0001", name="Known Store", street_address="123 Main",
+            features="Passport Photo", google_place_id="ChIJ...",
         )
         mock_search.return_value = [known_store]
 
@@ -731,7 +795,9 @@ class TestZipCodeGapFill:
         known_ids = {"0001"}
 
         result = _zip_code_gap_fill(mock_proxy, known_ids, test=True)
-        assert "0001" not in result
+        # Known stores ARE returned (for merge enrichment with locator-exclusive fields)
+        assert "0001" in result
+        assert result["0001"].features == "Passport Photo"
 
     @patch("src.scrapers.staples._search_stores_by_zip")
     def test_test_mode_limits_zips(self, mock_search):
@@ -900,6 +966,103 @@ class TestRunFunction:
         assert result["count"] == 1
         assert "Passport Photo" in result["stores"][0]["features"]
         assert result["stores"][0]["google_place_id"] == "ChIJ..."
+
+
+# ===========================================================================
+# TestSearchStoresByZip: ZIP search with proxy error handling
+# ===========================================================================
+
+class TestSearchStoresByZip:
+    """Tests for _search_stores_by_zip error handling."""
+
+    @patch("src.scrapers.staples.req_lib")
+    def test_web_scraper_api_request_exception(self, mock_req_lib):
+        """WEB_SCRAPER_API branch handles RequestException gracefully."""
+        mock_req_lib.RequestException = Exception
+        mock_req_lib.post.side_effect = Exception("Connection refused")
+
+        from src.shared.proxy_client import ProxyMode
+        mock_proxy = MagicMock()
+        mock_proxy.config.mode = ProxyMode.WEB_SCRAPER_API
+        mock_proxy.config.scraper_api_endpoint = "https://realtime.oxylabs.io/v1/queries"
+        mock_proxy.config.username = "user"
+        mock_proxy.config.password = "pass"  # pragma: allowlist secret
+        mock_proxy.config.timeout = 60
+
+        result = _search_stores_by_zip(mock_proxy, "10001")
+        assert result == []
+
+    @patch("src.scrapers.staples.req_lib")
+    def test_web_scraper_api_invalid_json(self, mock_req_lib):
+        """WEB_SCRAPER_API branch handles invalid JSON from proxy."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+        mock_req_lib.post.return_value = mock_response
+        mock_req_lib.RequestException = Exception
+
+        from src.shared.proxy_client import ProxyMode
+        mock_proxy = MagicMock()
+        mock_proxy.config.mode = ProxyMode.WEB_SCRAPER_API
+        mock_proxy.config.scraper_api_endpoint = "https://realtime.oxylabs.io/v1/queries"
+        mock_proxy.config.username = "user"
+        mock_proxy.config.password = "pass"  # pragma: allowlist secret
+        mock_proxy.config.timeout = 60
+
+        result = _search_stores_by_zip(mock_proxy, "10001")
+        assert result == []
+
+
+# ===========================================================================
+# TestCheckpointRoundtrip: Checkpoint save/restore fidelity
+# ===========================================================================
+
+class TestCheckpointRoundtrip:
+    """Tests for checkpoint data preservation."""
+
+    def test_checkpoint_stores_full_data(self):
+        """Checkpoint saves full store data via to_dict(), not just ID/name."""
+        store = StaplesStore(
+            store_id="1571",
+            name="Staples Ocean Township",
+            street_address="1100 State Route 35",
+            city="Ocean Township",
+            state="NJ",
+            zip="07712",
+            phone="(732) 918-9446",
+            hours_monday="8:00 AM - 9:00 PM",
+        )
+        # Simulate what the checkpoint code does
+        checkpoint_entry = store.to_dict()
+        assert checkpoint_entry["store_id"] == "1571"
+        assert checkpoint_entry["street_address"] == "1100 State Route 35"
+        assert checkpoint_entry["city"] == "Ocean Township"
+        assert checkpoint_entry["phone"] == "(732) 918-9446"
+        assert checkpoint_entry["hours_monday"] == "8:00 AM - 9:00 PM"
+
+    def test_checkpoint_restore_preserves_fields(self):
+        """Restoring from checkpoint via from_dict preserves all fields."""
+        original = StaplesStore(
+            store_id="1571",
+            name="Staples Ocean Township",
+            street_address="1100 State Route 35",
+            city="Ocean Township",
+            state="NJ",
+            zip="07712",
+            phone="(732) 918-9446",
+            hours_monday="8:00 AM - 9:00 PM",
+            services="Print and Marketing Services",
+        )
+        # Save -> restore roundtrip
+        saved = original.to_dict()
+        restored = StaplesStore.from_dict(saved)
+
+        assert restored.store_id == "1571"
+        assert restored.street_address == "1100 State Route 35"
+        assert restored.city == "Ocean Township"
+        assert restored.phone == "(732) 918-9446"
+        assert restored.hours_monday == "8:00 AM - 9:00 PM"
+        assert restored.services == "Print and Marketing Services"
 
 
 # ===========================================================================
