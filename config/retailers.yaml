@@ -24,6 +24,7 @@ concurrency:
     telus: 3        # Single API call, minimal
     costco: 3       # Akamai protection, conservative
     samsclub: 3     # Hybrid mode
+    staples: 5      # API-based store number scan
 
   # Proxy rate limiting (requests per second)
   # Applies when using residential or web_scraper_api modes
@@ -714,4 +715,73 @@ retailers:
       - plus_hours_mon_fri
       - plus_hours_saturday
       - plus_hours_sunday
+      - scraped_at
+
+  staples:
+    name: "Staples"
+    enabled: true
+    base_url: "https://www.staples.com"
+    # StaplesConnect REST API for store detail (primary data source)
+    # Store locator for geographic gap-fill (secondary)
+    sitemap_urls: []
+    discovery_method: "api_scan"
+
+    # Dual delay profiles (Web Scraper API handles rate limiting)
+    delays:
+      direct:
+        min_delay: 1.0
+        max_delay: 2.0
+      proxied:
+        min_delay: 0.3
+        max_delay: 0.5
+
+    # Parallel workers for store number scanning and enrichment
+    parallel_workers: 5
+
+    # Checkpoint interval for resume support
+    checkpoint_interval: 100
+
+    # Disable long pauses when using proxy
+    pause_50_requests: 999999
+    pause_200_requests: 999999
+    pause_50_min: 0
+    pause_50_max: 0
+    pause_200_min: 0
+    pause_200_max: 0
+
+    # Web Scraper API for PerimeterX/Akamai bypass
+    proxy:
+      mode: "web_scraper_api"
+      render_js: false
+
+    output_fields:
+      - store_id
+      - name
+      - street_address
+      - address_line2
+      - city
+      - state
+      - zip
+      - country
+      - latitude
+      - longitude
+      - phone
+      - fax
+      - timezone
+      - url
+      - plaza_mall
+      - store_region
+      - store_district
+      - store_division
+      - published_status
+      - hours_monday
+      - hours_tuesday
+      - hours_wednesday
+      - hours_thursday
+      - hours_friday
+      - hours_saturday
+      - hours_sunday
+      - features
+      - services
+      - google_place_id
       - scraped_at
