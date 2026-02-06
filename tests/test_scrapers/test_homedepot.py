@@ -696,6 +696,18 @@ class TestDiscoverStores:
         assert len(results) == 0
 
     @patch('src.scrapers.homedepot._post_graphql')
+    def test_null_data_field_in_discovery(self, mock_post, mock_session, yaml_config):
+        """Test that null 'data' field in discovery response is handled gracefully."""
+        mock_post.return_value = {"data": None}
+        counter = RequestCounter()
+
+        results = discover_stores(
+            mock_session, "homedepot", yaml_config, counter
+        )
+
+        assert len(results) == 0
+
+    @patch('src.scrapers.homedepot._post_graphql')
     def test_county_preserved_in_results(self, mock_post, mock_session, yaml_config):
         """Test that county from state directory is preserved in discovery results."""
         mock_post.return_value = {
@@ -867,7 +879,7 @@ class TestExtractStoreDetails:
 
         # Verify the storeSearchInput was zero-padded
         call_args = mock_post.call_args
-        variables = call_args[1].get("variables") or call_args[0][3]
+        variables = call_args.kwargs["variables"]
         assert variables["storeSearchInput"] == "0121"
 
     @patch('src.scrapers.homedepot._post_graphql')
@@ -907,6 +919,103 @@ class TestExtractStoreDetails:
         )
 
         assert result is None
+
+    @patch('src.scrapers.homedepot._post_graphql')
+    def test_null_data_field_in_response(self, mock_post, mock_session, yaml_config):
+        """Test handling of null 'data' field in GraphQL response.
+
+        GraphQL APIs may return {"data": null} without an errors field.
+        The chained .get() must not raise AttributeError on None.
+        """
+        mock_post.return_value = {
+            "data": None
+        }
+        counter = RequestCounter()
+
+        item = {"store_id": "9999", "name": "Null Data", "county": ""}
+
+        result = extract_store_details(
+            mock_session, item, "homedepot", yaml_config, counter
+        )
+
+        assert result is None
+
+    @patch('src.scrapers.homedepot._post_graphql')
+    def test_null_boolean_fields_coerced_to_false(self, mock_post, mock_session, yaml_config):
+        """Test that null boolean service/flag fields become False, not None.
+
+        GraphQL returns null for requested fields, so dict.get(key, False)
+        returns None (key exists). The fix uses 'or False' to coerce.
+        """
+        response = {
+            "data": {
+                "storeSearch": {
+                    "stores": [
+                        {
+                            "storeId": "0888",
+                            "name": "Null Bools",
+                            "address": {
+                                "street": "1 Test St",
+                                "city": "Test",
+                                "state": "TX",
+                                "postalCode": "75001",
+                                "country": "US"
+                            },
+                            "coordinates": {"lat": 33.0, "lng": -84.0},
+                            "services": {
+                                "loadNGo": None,
+                                "propane": None,
+                                "toolRental": True,
+                                "penske": None,
+                                "keyCutting": None,
+                                "wiFi": None,
+                                "applianceShowroom": None,
+                                "expandedFlooringShowroom": None,
+                                "largeEquipment": None,
+                                "kitchenShowroom": None,
+                                "hdMoving": None
+                            },
+                            "storeHours": None,
+                            "storeDetailsPageLink": "/l/Test/TX/Test/75001/888",
+                            "storeType": "retail",
+                            "proDeskPhone": None,
+                            "phone": "(555)000-0000",
+                            "toolRentalPhone": None,
+                            "storeServicesPhone": None,
+                            "flags": {
+                                "bopisFlag": None,
+                                "bodfsFlag": None,
+                                "curbsidePickupFlag": None
+                            },
+                            "storeTimeZone": "CST6CDT",
+                            "proDeskHours": None,
+                            "toolRentalHours": None,
+                            "curbsidePickupHours": None
+                        }
+                    ]
+                }
+            }
+        }
+        mock_post.return_value = response
+        counter = RequestCounter()
+
+        item = {"store_id": "888", "name": "Null Bools", "county": ""}
+
+        result = extract_store_details(
+            mock_session, item, "homedepot", yaml_config, counter
+        )
+
+        assert result is not None
+        # Null service fields must be False, not None
+        assert result.service_load_n_go is False
+        assert result.service_propane is False
+        assert result.service_penske is False
+        # True values must remain True
+        assert result.service_tool_rental is True
+        # Null flag fields must be False, not None
+        assert result.flag_bopis is False
+        assert result.flag_bodfs is False
+        assert result.flag_curbside is False
 
 
 # ---------------------------------------------------------------------------

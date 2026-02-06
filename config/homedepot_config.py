@@ -9,6 +9,7 @@ No authentication tokens or API keys are required.
 """
 
 import random
+from typing import Dict, Optional
 
 # GraphQL API endpoint
 GRAPHQL_URL = "https://apionline.homedepot.com/federation-gateway/graphql"
@@ -164,7 +165,7 @@ USER_AGENTS = [
 ]
 
 
-def get_headers(user_agent=None):
+def get_headers(user_agent: Optional[str] = None) -> Dict[str, str]:
     """Get merged headers for GraphQL requests.
 
     Combines the required GraphQL headers (content-type, x-experience-name,

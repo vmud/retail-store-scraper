@@ -116,14 +116,9 @@ class HomeDepotStore:
         """
         result = asdict(self)
         # Convert coordinates to strings for CSV compatibility
-        if result.get("latitude") is None:
-            result["latitude"] = ""
-        else:
-            result["latitude"] = str(result["latitude"])
-        if result.get("longitude") is None:
-            result["longitude"] = ""
-        else:
-            result["longitude"] = str(result["longitude"])
+        for key in ("latitude", "longitude"):
+            value = result.get(key)
+            result[key] = str(value) if value is not None else ""
         return result
 
 
@@ -180,10 +175,10 @@ def _post_graphql(
     query: str,
     variables: Dict[str, Any],
     headers: Optional[Dict[str, str]] = None,
-    max_retries: int = None,
-    timeout: int = None,
-    min_delay: float = None,
-    max_delay: float = None,
+    max_retries: Optional[int] = None,
+    timeout: Optional[int] = None,
+    min_delay: Optional[float] = None,
+    max_delay: Optional[float] = None,
     retailer: str = "homedepot",
 ) -> Optional[Dict]:
     """POST a GraphQL query with retry logic.
@@ -294,8 +289,8 @@ def _post_graphql(
 def discover_stores(
     session: requests.Session,
     retailer: str = "homedepot",
-    yaml_config: dict = None,
-    request_counter: RequestCounter = None,
+    yaml_config: Optional[dict] = None,
+    request_counter: Optional[RequestCounter] = None,
     **kwargs,
 ) -> List[Dict[str, Any]]:
     """Discover all Home Depot stores by querying each state directory.
@@ -340,10 +335,13 @@ def discover_stores(
             )
 
         if not data:
-            logging.warning(f"[{retailer}] Failed to fetch state: {state_code}")
+            log_safe(
+                f"[{retailer}] Failed to fetch state: {state_code}",
+                level=logging.WARNING,
+            )
             continue
 
-        state_data = data.get("data", {}).get("storeDirectoryByState")
+        state_data = (data.get("data") or {}).get("storeDirectoryByState")
         if not state_data:
             continue
 
@@ -383,8 +381,8 @@ def extract_store_details(
     session: requests.Session,
     item: Dict[str, Any],
     retailer: str = "homedepot",
-    yaml_config: dict = None,
-    request_counter: RequestCounter = None,
+    yaml_config: Optional[dict] = None,
+    request_counter: Optional[RequestCounter] = None,
     **kwargs,
 ) -> Optional[HomeDepotStore]:
     """Extract detailed store data using the storeSearch GraphQL operation.
@@ -438,10 +436,13 @@ def extract_store_details(
         )
 
     if not data:
-        logging.warning(f"[{retailer}] Failed to fetch details for store {store_id}")
+        log_safe(
+            f"[{retailer}] Failed to fetch details for store {store_id}",
+            level=logging.WARNING,
+        )
         return None
 
-    store_search = data.get("data", {}).get("storeSearch") or {}
+    store_search = (data.get("data") or {}).get("storeSearch") or {}
     stores = store_search.get("stores") or []
 
     if not stores:
@@ -470,8 +471,9 @@ def extract_store_details(
 
     # Build the URL from base + detail page link (validate prefix)
     detail_link = store.get("storeDetailsPageLink", "")
+    base_url = (yaml_config or {}).get("base_url", "https://www.homedepot.com")
     if detail_link and detail_link.startswith("/l/"):
-        url = f"https://www.homedepot.com{detail_link}"
+        url = f"{base_url}{detail_link}"
     else:
         url = ""
 
@@ -502,22 +504,22 @@ def extract_store_details(
         hours_fri=_format_day_hours(hours.get("friday")),
         hours_sat=_format_day_hours(hours.get("saturday")),
         hours_sun=_format_day_hours(hours.get("sunday")),
-        # Services
-        service_load_n_go=services.get("loadNGo", False),
-        service_propane=services.get("propane", False),
-        service_tool_rental=services.get("toolRental", False),
-        service_penske=services.get("penske", False),
-        service_key_cutting=services.get("keyCutting", False),
-        service_wifi=services.get("wiFi", False),
-        service_appliance_showroom=services.get("applianceShowroom", False),
-        service_flooring_showroom=services.get("expandedFlooringShowroom", False),
-        service_large_equipment=services.get("largeEquipment", False),
-        service_kitchen_showroom=services.get("kitchenShowroom", False),
-        service_hd_moving=services.get("hdMoving", False),
-        # Flags
-        flag_bopis=flags.get("bopisFlag", False),
-        flag_bodfs=flags.get("bodfsFlag", False),
-        flag_curbside=flags.get("curbsidePickupFlag", False),
+        # Services (use `or False` to coerce None -> False when key exists)
+        service_load_n_go=services.get("loadNGo") or False,
+        service_propane=services.get("propane") or False,
+        service_tool_rental=services.get("toolRental") or False,
+        service_penske=services.get("penske") or False,
+        service_key_cutting=services.get("keyCutting") or False,
+        service_wifi=services.get("wiFi") or False,
+        service_appliance_showroom=services.get("applianceShowroom") or False,
+        service_flooring_showroom=services.get("expandedFlooringShowroom") or False,
+        service_large_equipment=services.get("largeEquipment") or False,
+        service_kitchen_showroom=services.get("kitchenShowroom") or False,
+        service_hd_moving=services.get("hdMoving") or False,
+        # Flags (use `or False` to coerce None -> False when key exists)
+        flag_bopis=flags.get("bopisFlag") or False,
+        flag_bodfs=flags.get("bodfsFlag") or False,
+        flag_curbside=flags.get("curbsidePickupFlag") or False,
         # Specialty hours (JSON strings)
         pro_desk_hours=_format_hours_json(store.get("proDeskHours")),
         tool_rental_hours=_format_hours_json(store.get("toolRentalHours")),

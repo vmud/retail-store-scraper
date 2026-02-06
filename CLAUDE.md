@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, Telus, Cricket, and Bell. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
+Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, Telus, Cricket, Bell, and Home Depot. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
 
 ## Environment Setup
 
@@ -387,7 +387,8 @@ tests/
 │   ├── test_walmart.py
 │   ├── test_bestbuy.py
 │   ├── test_cricket.py
-│   └── test_bell.py
+│   ├── test_bell.py
+│   └── test_homedepot.py
 ├── test_setup/              # Setup module tests
 │   ├── test_probe.py        # Environment probing tests
 │   ├── test_fix.py          # Auto-fix function tests
