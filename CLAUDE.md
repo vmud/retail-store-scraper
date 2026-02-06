@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, Telus, Cricket, Bell, Costco, Sam's Club, and Lowe's. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
+Multi-retailer web scraper that collects retail store locations from Verizon, AT&T, Target, T-Mobile, Walmart, Best Buy, Telus, Cricket, Bell, Home Depot, Costco, Sam's Club, and Lowe's. Features concurrent execution, change detection, checkpoint/resume system, and optional Oxylabs proxy integration.
 
 ## Environment Setup
 
@@ -135,6 +135,7 @@ run.py                          # Main CLI entry point - handles arg parsing, co
 │   ├── telus.py                # Uberall API (Canadian)
 │   ├── cricket.py              # Yext API (US)
 │   ├── bell.py                 # Sitemap + JSON-LD (Canadian)
+│   ├── homedepot.py            # GraphQL Federation Gateway API
 │   └── lowes.py                # State directory + embedded Redux JSON (~1,761 US)
 ├── src/shared/
 │   ├── utils.py                # HTTP helpers, checkpoints, delays, store validation
@@ -388,6 +389,7 @@ tests/
 │   ├── test_bestbuy.py
 │   ├── test_cricket.py
 │   ├── test_bell.py
+│   ├── test_homedepot.py
 │   └── test_lowes.py
 ├── test_setup/              # Setup module tests
 │   ├── test_probe.py        # Environment probing tests
