@@ -65,6 +65,27 @@ TIMEOUT = 30
 RATE_LIMIT_BASE_WAIT = 30
 
 
+def _get_base_headers(user_agent: str = None) -> dict:
+    """Get base headers common to all Apple retail requests.
+
+    Args:
+        user_agent: Optional specific user agent string
+
+    Returns:
+        Base headers dict with common fields
+    """
+    if user_agent is None:
+        user_agent = random.choice(USER_AGENTS)
+
+    return {
+        "User-Agent": user_agent,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Referer": RETAIL_BASE_URL,
+    }
+
+
 def get_headers(user_agent: str = None) -> dict:
     """Get headers dict for Apple retail page requests.
 
@@ -74,17 +95,9 @@ def get_headers(user_agent: str = None) -> dict:
     Returns:
         Headers dict suitable for Apple retail requests
     """
-    if user_agent is None:
-        user_agent = random.choice(USER_AGENTS)
-
-    return {
-        "User-Agent": user_agent,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Referer": RETAIL_BASE_URL,
-    }
+    headers = _get_base_headers(user_agent)
+    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    return headers
 
 
 def get_json_headers(user_agent: str = None) -> dict:
@@ -96,17 +109,9 @@ def get_json_headers(user_agent: str = None) -> dict:
     Returns:
         Headers dict suitable for JSON API requests
     """
-    if user_agent is None:
-        user_agent = random.choice(USER_AGENTS)
-
-    return {
-        "User-Agent": user_agent,
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Referer": RETAIL_BASE_URL,
-    }
+    headers = _get_base_headers(user_agent)
+    headers["Accept"] = "application/json"
+    return headers
 
 
 def get_graphql_headers(user_agent: str = None) -> dict:

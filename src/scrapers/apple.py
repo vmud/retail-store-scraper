@@ -67,14 +67,9 @@ class AppleStore:
             Dict with all store fields, coordinates as strings for CSV.
         """
         result = asdict(self)
-        if result.get("latitude") is None:
-            result["latitude"] = ""
-        else:
-            result["latitude"] = str(result["latitude"])
-        if result.get("longitude") is None:
-            result["longitude"] = ""
-        else:
-            result["longitude"] = str(result["longitude"])
+        for key in ("latitude", "longitude"):
+            value = result.get(key)
+            result[key] = str(value) if value is not None else ""
         return result
 
 
@@ -180,11 +175,10 @@ def get_store_directory(
         store_list = data.get("pageProps", {}).get("storeList", [])
 
         # Find US locale entry
-        us_entry = None
-        for entry in store_list:
-            if entry.get("locale") == config.US_LOCALE:
-                us_entry = entry
-                break
+        us_entry = next(
+            (entry for entry in store_list if entry.get("locale") == config.US_LOCALE),
+            None,
+        )
 
         if not us_entry:
             logging.warning(f"[{retailer}] US locale not found in store directory")
@@ -520,9 +514,10 @@ def run(session, retailer_config: dict, retailer: str = "apple", **kwargs) -> di
 
         if cached_slugs is not None:
             logging.info(f"[{retailer_name}] Using {len(cached_slugs)} cached store slugs")
-            directory_stores = []
-            for slug_str in cached_slugs:
-                directory_stores.append({"slug": slug_str, "id": "", "name": "", "telephone": "", "address": {}})
+            directory_stores = [
+                {"slug": slug_str, "id": "", "name": "", "telephone": "", "address": {}}
+                for slug_str in cached_slugs
+            ]
         else:
             # Fetch buildId and directory
             build_id = get_build_id(session, retailer_name, yaml_config=retailer_config)
