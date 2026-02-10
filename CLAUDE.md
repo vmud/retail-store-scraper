@@ -136,6 +136,17 @@ See `.claude/rules/devops-workflow.md` (auto-loaded) for full rules. Quick refer
 - **Agent IDs in commits**: `Agent: cc1` (or `cc2`, `cursor`, `copilot`, etc.)
 - **High-conflict files**: `run.py`, `config/retailers.yaml`, `CLAUDE.md`, `requirements.txt`
 
+## Scale Roadmap
+
+The project is scaling from 15 to 50-100 retailers. See [`docs/plans/2026-02-09-scale-roadmap.md`](docs/plans/2026-02-09-scale-roadmap.md) for the full plan. Track progress via GitHub issues labeled `roadmap`.
+
+**Key architectural rule:** All business logic lives in `src/core/` (pure Python API). The CLI (`run.py`) and any future frontend are thin presentation layers. No orchestration, registry, or status logic in the CLI.
+
+**Phases:**
+1. **Foundation** — Extract `src/core/` from `run.py`, auto-discovery registry, base scraper classes
+2. **Groups & Testing** — Retailer groups (`--group wireless`), fixture-driven tests, `--validate`, `--scaffold`
+3. **Observability** — Run ledger, enhanced `--status` with health rules
+
 ## Behavioral Guidelines
 
 - Focus narrowly on the specific task before broadening exploration. Front-load actionable steps.
