@@ -16,6 +16,7 @@ sensitive_patterns=(
     'package-lock\.json$'
     'poetry\.lock$'
     'requirements\.txt\.lock$'
+    'src/scrapers/__init__\.py$'
 )
 
 # Check if file matches any sensitive pattern

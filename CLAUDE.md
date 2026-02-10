@@ -63,20 +63,20 @@ Each scraper uses a different discovery strategy (sitemaps, APIs, HTML crawling,
 
 ### Key Modules in src/shared/
 
-The shared layer was split from a monolithic `utils.py` into focused modules:
+27 modules (split from a monolithic `utils.py`). The most important to understand:
 
 - **constants.py** — All magic numbers as frozen dataclasses (`HTTP`, `CACHE`, `PAUSE`, `WORKERS`, `VALIDATION`). Import these instead of hardcoding values.
 - **concurrency.py** — `GlobalConcurrencyManager` singleton coordinates worker slots across all scrapers. Configured in `retailers.yaml` under `concurrency:`.
-- **http.py** / **delays.py** / **checkpoint.py** — Split from utils.py. HTTP helpers, delay logic, checkpoint save/load.
-- **cache_interface.py** — Unified caching with consistent TTL (replaces legacy `cache.py`).
 - **proxy_client.py** — Oxylabs abstraction (`ProxyMode`, `ProxyClient`). Modes: `direct`, `residential`, `web_scraper_api`.
-- **store_schema.py** / **store_serializer.py** — Central store data model and serialization.
-- **scrape_runner.py** / **scraper_utils.py** — Shared orchestration patterns extracted from scrapers.
+- **store_schema.py** — Central store data model. All scrapers normalize to this schema.
+- **scrape_runner.py** — Shared orchestration patterns (discovery → extraction → export pipeline).
 - **export_service.py** — Multi-format export (JSON, CSV, Excel, GeoJSON).
-- **structured_logging.py** / **logging_config.py** — Structured logging setup.
 - **cloud_storage.py** — GCS sync for backup. See `.env.example` for `GCS_*` vars.
+- **validation.py** — Store data validation. Required fields: `store_id`, `name`, `street_address`, `city`, `state`.
+- **cache_interface.py** — Unified caching with consistent TTL (replaces legacy `cache.py`).
+- **sentry_integration.py** — Sentry.io error monitoring with retailer-specific context.
 
-Legacy aliases in `utils.py` preserve backward compatibility.
+Other modules (`http.py`, `delays.py`, `checkpoint.py`, `io.py`, `session_factory.py`, `store_serializer.py`, `scraper_utils.py`, `structured_logging.py`, `logging_config.py`, `notifications.py`, `request_counter.py`, `run_tracker.py`, `scraper_manager.py`, `status.py`) are smaller utilities discoverable by reading imports. Legacy aliases in `utils.py` preserve backward compatibility.
 
 ### Configuration
 
@@ -140,7 +140,7 @@ See `.claude/rules/devops-workflow.md` (auto-loaded) for full rules. Quick refer
 
 The project is scaling from 15 to 50-100 retailers. See [`docs/plans/2026-02-09-scale-roadmap.md`](docs/plans/2026-02-09-scale-roadmap.md) for the full plan. Track progress via GitHub issues labeled `roadmap`.
 
-**Key architectural rule:** All business logic lives in `src/core/` (pure Python API). The CLI (`run.py`) and any future frontend are thin presentation layers. No orchestration, registry, or status logic in the CLI.
+**Key architectural rule (target state):** All business logic will move to `src/core/` (pure Python API). The CLI (`run.py`, currently 1,075 lines) and any future frontend become thin presentation layers. `src/core/` does not exist yet — Phase 1 creates it.
 
 **Phases:**
 1. **Foundation** — Extract `src/core/` from `run.py`, auto-discovery registry, base scraper classes

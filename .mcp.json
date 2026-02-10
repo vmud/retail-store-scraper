@@ -10,6 +10,11 @@
       "command": "npx",
       "args": ["-y", "@anthropic/mcp-memory"],
       "description": "Cross-session context persistence for retailer quirks, API changes, and debugging insights"
+    },
+    "sentry": {
+      "command": "npx",
+      "args": ["-y", "@sentry/mcp-server"],
+      "description": "Sentry error triage — investigate scraper failures by retailer context without leaving the terminal"
     }
   }
 }
