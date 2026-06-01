@@ -204,17 +204,31 @@ def extract_store_details(
             logging.warning(f"[{retailer}] No JSON-LD found for {url}")
             return None
 
-        # Try each script until we find a MobilePhoneStore
+        # Try each script until we find a MobilePhoneStore. AT&T serves either a
+        # single top-level MobilePhoneStore object or a JSON-LD '@graph' array
+        # containing it alongside Organization/WebSite/etc. entries.
         data = None
         for script in scripts:
             try:
                 script_data = json.loads(script.string)
-                if script_data.get('@type') == 'MobilePhoneStore':
-                    data = script_data
-                    break
             except json.JSONDecodeError as e:
                 logging.debug(f"[{retailer}] Failed to parse JSON-LD script for {url}: {e}")
                 continue
+
+            # Normalize to a list of candidate nodes (handles '@graph' wrappers).
+            if isinstance(script_data, dict) and '@graph' in script_data:
+                candidates = script_data['@graph']
+            elif isinstance(script_data, list):
+                candidates = script_data
+            else:
+                candidates = [script_data]
+
+            for node in candidates:
+                if isinstance(node, dict) and node.get('@type') == 'MobilePhoneStore':
+                    data = node
+                    break
+            if data:
+                break
 
         # If no MobilePhoneStore found, log and return None
         if not data:
